@@ -1,0 +1,23 @@
+# Git / secrets / local env
+.git
+.gitignore
+.env
+.env.*
+
+# Python build context noise
+.venv
+__pycache__
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Docs are not needed in the runtime image (keep README in repo via git)
+docs/
+
+# Editor / OS
+.cursor
+.DS_Store
+@eaDir/
+**/@eaDir/

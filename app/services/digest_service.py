@@ -1,0 +1,299 @@
+"""주간 리뷰(다이제스트) 생성 서비스."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.control_db import get_sessionmaker
+from app.models.control.group import Group
+from app.models.pg.channel import Channel
+from app.models.pg.digest import Digest
+from app.models.pg.tag import Tag, VideoTag
+from app.models.pg.video import Video
+from app.models.pg.video_analysis import VideoAnalysis
+from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.llm_client import LiteLLMClient
+from app.services.notify_service import send_telegram
+from app.services.settings_manager import get_settings_manager
+from app.services.settings_types import DigestSettings
+
+_DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+DEFAULT_DIGEST_PROMPT = """다음은 YouTube 분석 데이터 집계입니다. 한국어로 주간 브리핑을 작성하세요.
+
+반드시 JSON으로만 출력:
+{
+  "headline": "string",
+  "summary_md": "string",
+  "telegram_summary": "string"
+}
+
+요구사항:
+- headline: 한 줄 핵심 제목
+- summary_md: 핵심 변화, 주요 태그/채널, 감성 분포, 다음 주 관전 포인트 포함
+- telegram_summary: 900자 이내 요약
+"""
+
+
+@dataclass
+class DigestAggregate:
+    video_count: int
+    sentiment_breakdown: dict[str, int]
+    top_tags: list[dict[str, Any]]
+    top_channels: list[dict[str, Any]]
+
+
+@dataclass
+class DigestGenerated:
+    headline: str
+    summary_md: str
+    telegram_summary: str
+    model_name: str
+
+
+def _period(now_utc: datetime, weeks: int) -> tuple[datetime, datetime]:
+    end = now_utc.replace(second=0, microsecond=0)
+    start = now_utc - timedelta(days=7 * max(1, weeks))
+    return start.replace(second=0, microsecond=0), end
+
+
+def _render_payload(agg: DigestAggregate, start: datetime, end: datetime, category: str) -> str:
+    payload = {
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "category": category or None,
+        "video_count": agg.video_count,
+        "sentiment_breakdown": agg.sentiment_breakdown,
+        "top_tags": agg.top_tags,
+        "top_channels": agg.top_channels,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+async def aggregate_period(
+    session: AsyncSession,
+    period_start: datetime,
+    period_end: datetime,
+    category: str = "",
+) -> DigestAggregate:
+    base = (
+        select(Video.video_pk, VideoAnalysis.sentiment, Channel.channel_name)
+        .join(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
+        .join(Channel, Channel.channel_pk == Video.channel_pk)
+        .where(VideoAnalysis.analyzed_at >= period_start, VideoAnalysis.analyzed_at < period_end)
+    )
+    if category:
+        base = base.where(Channel.category == category)
+    rows = (await session.execute(base)).all()
+    video_pks = [r[0] for r in rows]
+    sentiment: dict[str, int] = {}
+    channel_count: dict[str, int] = {}
+    for _, s, channel_name in rows:
+        key = (s or "unknown").strip() or "unknown"
+        sentiment[key] = sentiment.get(key, 0) + 1
+        cname = (channel_name or "(알 수 없음)").strip() or "(알 수 없음)"
+        channel_count[cname] = channel_count.get(cname, 0) + 1
+
+    top_channels = [
+        {"name": name, "count": count}
+        for name, count in sorted(channel_count.items(), key=lambda x: (-x[1], x[0]))[:10]
+    ]
+
+    top_tags: list[dict[str, Any]] = []
+    if video_pks:
+        tag_rows = (
+            await session.execute(
+                select(Tag.name, func.count(VideoTag.video_pk))
+                .join(VideoTag, VideoTag.tag_pk == Tag.tag_pk)
+                .where(VideoTag.video_pk.in_(video_pks))
+                .group_by(Tag.name)
+                .order_by(func.count(VideoTag.video_pk).desc(), Tag.name.asc())
+                .limit(20)
+            )
+        ).all()
+        top_tags = [{"name": n, "count": int(c)} for n, c in tag_rows]
+
+    return DigestAggregate(
+        video_count=len(video_pks),
+        sentiment_breakdown=sentiment,
+        top_tags=top_tags,
+        top_channels=top_channels,
+    )
+
+
+async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_start: datetime, period_end: datetime, category: str = "") -> DigestGenerated:
+    mgr = get_settings_manager()
+    ai = await mgr.get_ai_gateway(group_id)
+    prompts = await mgr.get_prompts(group_id)
+    model = ai.digest_model or ai.primary_model
+    prompt = (prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
+    context_json = _render_payload(aggregate, period_start, period_end, category)
+    user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}"
+    client = LiteLLMClient(ai)
+    try:
+        chat = await client.chat(
+            model=model,
+            messages=[{"role": "user", "content": user_msg}],
+            temperature=0.2,
+            max_tokens=min(ai.max_tokens or 4096, 4096),
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(chat.content)
+        headline = str(data.get("headline") or "").strip()
+        summary_md = str(data.get("summary_md") or "").strip()
+        telegram_summary = str(data.get("telegram_summary") or "").strip()
+        if not headline:
+            headline = "주간 리뷰 브리핑"
+        if not summary_md:
+            summary_md = f"- 분석 영상 수: {aggregate.video_count}\n- 감성 분포: {aggregate.sentiment_breakdown}"
+        if not telegram_summary:
+            telegram_summary = summary_md[:900]
+        return DigestGenerated(
+            headline=headline,
+            summary_md=summary_md,
+            telegram_summary=telegram_summary[:900],
+            model_name=model,
+        )
+    finally:
+        await client.aclose()
+
+
+def _fallback_generated(aggregate: DigestAggregate, period_start: datetime, period_end: datetime) -> DigestGenerated:
+    headline = "주간 리뷰 브리핑 (Fallback)"
+    lines = [
+        f"- 기간: {period_start.date()} ~ {period_end.date()}",
+        f"- 분석 영상 수: {aggregate.video_count}",
+        f"- 감성 분포: {aggregate.sentiment_breakdown or {}}",
+        "- 상위 태그:",
+    ]
+    lines.extend([f"  - {t['name']}: {t['count']}" for t in aggregate.top_tags[:10]])
+    lines.append("- 상위 채널:")
+    lines.extend([f"  - {c['name']}: {c['count']}" for c in aggregate.top_channels[:10]])
+    summary = "\n".join(lines)
+    return DigestGenerated(
+        headline=headline,
+        summary_md=summary,
+        telegram_summary=summary[:900],
+        model_name="fallback",
+    )
+
+
+async def _send_digest_telegram(group_id: int, headline: str, telegram_summary: str) -> None:
+    notif = await get_settings_manager().get_notification(group_id)
+    if not notif.is_sendable:
+        return
+    text = f"<b>{headline}</b>\n\n{telegram_summary}"
+    import httpx
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for chat_id in notif.chat_ids:
+            await send_telegram(client, notif.bot_token, chat_id, text, notif.parse_mode)
+
+
+async def generate_digest_for_group(
+    group: Group,
+    digest_cfg: DigestSettings,
+    period_weeks: Optional[int] = None,
+    category: Optional[str] = None,
+    save: bool = True,
+) -> Digest:
+    await dpm.ensure_schema(group)
+    engine = await dpm.get_engine_for_group(group)
+    make_session = lambda: dpm.session_for_group(engine, group.schema_name)
+
+    weeks = max(1, int(period_weeks or digest_cfg.period_weeks or 1))
+    cat = (category if category is not None else digest_cfg.category).strip()
+    now = datetime.now(timezone.utc)
+    period_start, period_end = _period(now, weeks)
+
+    async with make_session() as session:
+        if save:
+            existing = (
+                await session.execute(
+                    select(Digest).where(
+                        Digest.period_type == "weekly",
+                        Digest.period_weeks == weeks,
+                        Digest.period_start == period_start,
+                        Digest.period_end == period_end,
+                        Digest.category == (cat or None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                return existing
+
+        agg = await aggregate_period(session, period_start, period_end, cat)
+        status = "done"
+        error = None
+        try:
+            generated = await synthesize_with_llm(group.group_id, agg, period_start, period_end, cat)
+        except Exception as e:
+            generated = _fallback_generated(agg, period_start, period_end)
+            status = "fallback"
+            error = str(e)[:500]
+
+        digest = Digest(
+            period_type="weekly",
+            period_weeks=weeks,
+            period_start=period_start,
+            period_end=period_end,
+            category=cat or None,
+            video_count=agg.video_count,
+            headline=generated.headline,
+            summary_md=generated.summary_md,
+            telegram_summary=generated.telegram_summary,
+            sentiment_breakdown=agg.sentiment_breakdown,
+            top_tags=agg.top_tags,
+            top_channels=agg.top_channels,
+            model_name=generated.model_name,
+            status=status,
+            error=error,
+        )
+        if save:
+            session.add(digest)
+            await session.commit()
+            await session.refresh(digest)
+        return digest
+
+
+def _is_due_now(now_local: datetime, cfg: DigestSettings) -> bool:
+    idx = _DAY_INDEX.get(cfg.schedule_day, 6)
+    if now_local.weekday() != idx:
+        return False
+    try:
+        hh, mm = cfg.schedule_time.split(":")
+        return now_local.hour == int(hh) and now_local.minute == int(mm)
+    except Exception:
+        return False
+
+
+async def run_digest_tick_once() -> None:
+    sf = get_sessionmaker()
+    mgr = get_settings_manager()
+    async with sf() as session:
+        groups = list(
+            (await session.execute(select(Group).where(Group.is_active.is_(True)))).scalars().all()
+        )
+    for group in groups:
+        try:
+            cfg = await mgr.get_digest(group.group_id)
+            if not cfg.enabled:
+                continue
+            from zoneinfo import ZoneInfo
+
+            now_local = datetime.now(ZoneInfo(cfg.timezone))
+            if not _is_due_now(now_local, cfg):
+                continue
+            digest = await generate_digest_for_group(group, cfg, save=True)
+            if cfg.telegram_enabled and digest.telegram_summary:
+                await _send_digest_telegram(group.group_id, digest.headline or "주간 리뷰", digest.telegram_summary)
+        except DBNotConfiguredError:
+            continue
+        except Exception as e:
+            print(f"[{group.slug}] digest tick 실패: {e}")

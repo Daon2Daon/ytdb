@@ -1,0 +1,67 @@
+"""제어 평면(app 스키마) PostgreSQL 비동기 엔진/세션.
+
+groups/settings 등 그룹 정의와 설정을 보관하는 신뢰원(信賴源).
+데이터 평면(그룹별 스키마) 엔진은 services/db_engine.py에서 별도로 관리한다.
+"""
+
+from __future__ import annotations
+
+from typing import AsyncIterator, Optional
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase
+
+from app.config import settings
+
+# 제어 평면 스키마명. 사용자 설정 대상이 아니라 고정값이다.
+APP_SCHEMA = "app"
+
+
+class Base(DeclarativeBase):
+    """제어 평면 ORM Base."""
+
+
+_engine: Optional[AsyncEngine] = None
+_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+
+
+def get_engine() -> AsyncEngine:
+    global _engine, _sessionmaker
+    if _engine is None:
+        if not settings.CONTROL_DATABASE_URL:
+            raise RuntimeError(
+                "CONTROL_DATABASE_URL이 설정되지 않았습니다. .env를 확인하세요."
+            )
+        _engine = create_async_engine(settings.CONTROL_DATABASE_URL, pool_pre_ping=True)
+        _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
+    return _engine
+
+
+def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    if _sessionmaker is None:
+        get_engine()
+    assert _sessionmaker is not None
+    return _sessionmaker
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI 의존성: 제어 평면 세션."""
+    async with get_sessionmaker()() as session:
+        yield session
+
+
+async def ensure_control_schema() -> None:
+    """app 스키마와 groups/settings 테이블을 멱등 생성한다."""
+    # 모델을 임포트해 Base.metadata에 등록되도록 한다.
+    from app.models.control import group, setting  # noqa: F401
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{APP_SCHEMA}"'))
+        await conn.run_sync(Base.metadata.create_all)

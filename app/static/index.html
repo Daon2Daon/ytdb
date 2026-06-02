@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ytdb · 다중 그룹 YouTube 모니터</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">ytdb</div>
+    <div class="group-picker">
+      <select id="group-select"></select>
+      <button id="btn-new-group" class="btn">+ 새 그룹</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="channels" class="tab active">채널</button>
+    <button data-tab="videos" class="tab">영상</button>
+    <button data-tab="instant" class="tab">영상 분석</button>
+    <button data-tab="tags" class="tab">태그</button>
+    <button data-tab="digests" class="tab">주간 리뷰</button>
+    <button data-tab="settings" class="tab">설정</button>
+    <button data-tab="logs" class="tab">로그</button>
+  </nav>
+
+  <main id="content" class="content">
+    <div class="empty">그룹을 선택하거나 생성하세요.</div>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
