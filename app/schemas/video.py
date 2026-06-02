@@ -36,8 +36,10 @@ class VideoListItem(BaseModel):
     thumbnail_url: Optional[str]
     published_at: datetime
     duration_seconds: Optional[int]
+    view_count: Optional[int] = None
     analysis_status: str
     notified_at: Optional[datetime]
+    source_channel_name: Optional[str] = None
     # 분석이 있으면 헤드라인/한 줄 요약을 함께 노출
     headline: Optional[str] = None
     one_line: Optional[str] = None

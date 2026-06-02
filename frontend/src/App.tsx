@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
@@ -10,15 +10,20 @@ function Placeholder({ name }: { name: string }) {
   return <div className="text-gray-500">{name} — Plan 2에서 구현 예정</div>
 }
 
-// 루트 진입: 첫 그룹으로 보정.
+// 루트 진입: 첫 그룹으로 보정. 그룹이 없거나 조회 실패 시 안내.
 function RootRedirect() {
   const navigate = useNavigate()
+  const [message, setMessage] = useState('로딩 중…')
   useEffect(() => {
-    groupApi.list().then((groups) => {
-      if (groups.length > 0) navigate(`/g/${groups[0].slug}/`, { replace: true })
-    })
+    groupApi
+      .list()
+      .then((groups) => {
+        if (groups.length > 0) navigate(`/g/${groups[0].slug}/`, { replace: true })
+        else setMessage('그룹이 없습니다. 그룹을 먼저 생성하세요. (v1b에서 생성 UI 제공)')
+      })
+      .catch((e) => setMessage(`그룹 목록을 불러오지 못했습니다: ${(e as Error).message}`))
   }, [navigate])
-  return <div className="min-h-screen flex items-center justify-center text-gray-400">로딩 중…</div>
+  return <div className="min-h-screen flex items-center justify-center text-gray-500 px-4 text-center">{message}</div>
 }
 
 export default function App() {

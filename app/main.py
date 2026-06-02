@@ -54,7 +54,7 @@ app.include_router(health.router)
 
 
 @app.get("/health", tags=["meta"])
-async def health() -> dict:
+async def meta_health() -> dict:
     return {"status": "ok"}
 
 
