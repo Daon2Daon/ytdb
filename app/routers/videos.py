@@ -108,7 +108,7 @@ def _page_number(limit: int, offset: int) -> int:
     return offset // limit + 1
 
 
-@router.get("")
+@router.get("", response_model=list[VideoListItem] | PaginatedVideos)
 async def list_videos(
     group: Group = Depends(get_group_or_404),
     status: str | None = Query(None, description="analysis_status 필터"),
@@ -135,6 +135,19 @@ async def list_videos(
             )
         rows = (await session.execute(stmt)).all()
 
+        total = None
+        if paged:
+            count_stmt = select(func.count()).select_from(Video)
+            if status:
+                count_stmt = count_stmt.where(Video.analysis_status == status)
+            if tag:
+                count_stmt = (
+                    count_stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
+                    .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
+                    .where(Tag.name == tag)
+                )
+            total = (await session.execute(count_stmt)).scalar_one()
+
     items: list[VideoListItem] = []
     for video, headline, one_line in rows:
         item = VideoListItem.model_validate(video)
@@ -145,20 +158,8 @@ async def list_videos(
     if not paged:
         return items
 
-    async with dpm.group_session(group) as session:
-        count_stmt = select(func.count()).select_from(Video)
-        if status:
-            count_stmt = count_stmt.where(Video.analysis_status == status)
-        if tag:
-            count_stmt = (
-                count_stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
-                .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
-                .where(Tag.name == tag)
-            )
-        total = (await session.execute(count_stmt)).scalar_one()
-
     return PaginatedVideos(
-        total=int(total),
+        total=total,
         page=_page_number(limit, offset),
         page_size=limit,
         items=items,
