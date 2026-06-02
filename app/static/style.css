@@ -78,7 +78,8 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 
 .field { margin-bottom: 14px; }
 .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px; }
-.field input, .field select { width: 100%; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select { width: 100%; }
+.field input[type="checkbox"] { width: auto; flex: none; }
 .subtabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
 .subtab { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--muted); background: var(--panel); }
 .subtab.active { color: var(--text); border-color: var(--accent); }

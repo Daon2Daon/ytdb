@@ -107,12 +107,16 @@ class MonitorService:
         channel: Channel,
         session: AsyncSession,
         api_client: YouTubeAPIClient,
-        backfill: bool = False,
     ) -> List[int]:
-        """채널 폴링 → 신규 영상 INSERT → 새 video_pk 목록 반환."""
+        """채널 폴링 → 신규 영상 INSERT → 새 video_pk 목록 반환.
+
+        polling.window_hours(최신 영상 수집 범위) 안의 영상을 모두 수집한다.
+        """
         now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=int(self.polling.window_hours or 24))
         items: Sequence[PlaylistItemMeta] = await api_client.get_latest_playlist_items(
-            channel.upload_playlist_id, max_results=5
+            channel.upload_playlist_id,
+            published_after=cutoff,
         )
         if not items:
             await self._update_last_checked(session, channel, now)
@@ -124,9 +128,7 @@ class MonitorService:
             return []
 
         metas = await api_client.get_video_details(new_ids)
-        if not backfill:
-            cutoff = now - timedelta(hours=int(self.polling.window_hours or 24))
-            metas = [v for v in metas if _parse_iso(v.published_at) >= cutoff]
+        metas = [v for v in metas if _parse_iso(v.published_at) >= cutoff]
         if not metas:
             await self._update_last_checked(session, channel, now, items[0].video_id)
             return []

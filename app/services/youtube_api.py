@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Tuple
 from urllib.parse import urlparse
 
@@ -194,31 +194,59 @@ class YouTubeAPIClient:
         )
 
     async def get_latest_playlist_items(
-        self, playlist_id: str, max_results: int = 5
+        self,
+        playlist_id: str,
+        max_results: int = 5,
+        published_after: datetime | None = None,
     ) -> List[PlaylistItemMeta]:
-        data = await self._get(
-            "playlistItems",
-            {"part": "snippet,contentDetails", "playlistId": playlist_id, "maxResults": max_results},
-            1,
-        )
+        """업로드 플레이리스트의 최신 영상 목록.
+
+        published_after가 주어지면 해당 시점 이후 영상을 모두 수집하기 위해
+        페이지를 넘기며 조회한다(업로드 목록은 최신순이라 컷오프보다 오래된
+        항목을 만나면 중단). published_after가 없으면 단일 페이지에서
+        max_results개만 조회한다.
+        """
+        MAX_PAGES = 20  # 안전 상한 (페이지당 50개 → 최대 1000개)
         out: List[PlaylistItemMeta] = []
-        for it in data.get("items") or []:
-            vid = (it.get("contentDetails") or {}).get("videoId")
-            if not vid:
-                continue
-            s = it.get("snippet") or {}
-            out.append(PlaylistItemMeta(video_id=vid, published_at=s.get("publishedAt"), title=s.get("title")))
+        page_token: str | None = None
+        pages = 0
+        while True:
+            params: Dict[str, Any] = {
+                "part": "snippet,contentDetails",
+                "playlistId": playlist_id,
+                "maxResults": 50 if published_after else max_results,
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            data = await self._get("playlistItems", params, 1)
+            reached_cutoff = False
+            for it in data.get("items") or []:
+                vid = (it.get("contentDetails") or {}).get("videoId")
+                if not vid:
+                    continue
+                s = it.get("snippet") or {}
+                published = s.get("publishedAt")
+                if published_after is not None and published:
+                    try:
+                        pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                        if pub_dt < published_after:
+                            reached_cutoff = True
+                            break
+                    except ValueError:
+                        pass
+                out.append(
+                    PlaylistItemMeta(video_id=vid, published_at=published, title=s.get("title"))
+                )
+            page_token = data.get("nextPageToken")
+            pages += 1
+            if published_after is None or reached_cutoff or not page_token or pages >= MAX_PAGES:
+                break
         return out
 
     async def get_video_details(self, video_ids: Iterable[str]) -> List[VideoMeta]:
         ids = [v for v in video_ids if v]
         if not ids:
             return []
-        data = await self._get(
-            "videos",
-            {"part": "snippet,contentDetails,statistics", "id": ",".join(ids), "maxResults": len(ids)},
-            1,
-        )
 
         def to_int(x: Any) -> int | None:
             try:
@@ -227,24 +255,36 @@ class YouTubeAPIClient:
                 return None
 
         out: List[VideoMeta] = []
-        for it in data.get("items") or []:
-            vid = it.get("id")
-            snippet = it.get("snippet") or {}
-            cdetails = it.get("contentDetails") or {}
-            stats = it.get("statistics") or {}
-            out.append(
-                VideoMeta(
-                    video_id=vid,
-                    video_url=f"https://www.youtube.com/watch?v={vid}",
-                    title=snippet.get("title") or "",
-                    description=snippet.get("description"),
-                    thumbnail_url=_first_thumb(snippet),
-                    published_at=snippet.get("publishedAt") or "",
-                    duration=cdetails.get("duration"),
-                    view_count=to_int(stats.get("viewCount")),
-                    like_count=to_int(stats.get("likeCount")),
-                    channel_id=snippet.get("channelId"),
-                    channel_title=snippet.get("channelTitle"),
-                )
+        # videos.list는 요청당 최대 50개 ID만 허용하므로 50개씩 배치 조회한다.
+        for start in range(0, len(ids), 50):
+            batch = ids[start : start + 50]
+            data = await self._get(
+                "videos",
+                {
+                    "part": "snippet,contentDetails,statistics",
+                    "id": ",".join(batch),
+                    "maxResults": len(batch),
+                },
+                1,
             )
+            for it in data.get("items") or []:
+                vid = it.get("id")
+                snippet = it.get("snippet") or {}
+                cdetails = it.get("contentDetails") or {}
+                stats = it.get("statistics") or {}
+                out.append(
+                    VideoMeta(
+                        video_id=vid,
+                        video_url=f"https://www.youtube.com/watch?v={vid}",
+                        title=snippet.get("title") or "",
+                        description=snippet.get("description"),
+                        thumbnail_url=_first_thumb(snippet),
+                        published_at=snippet.get("publishedAt") or "",
+                        duration=cdetails.get("duration"),
+                        view_count=to_int(stats.get("viewCount")),
+                        like_count=to_int(stats.get("likeCount")),
+                        channel_id=snippet.get("channelId"),
+                        channel_title=snippet.get("channelTitle"),
+                    )
+                )
         return out

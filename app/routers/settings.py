@@ -8,6 +8,8 @@ from app.models.control.group import Group
 from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
+from app.config import settings as app_settings
+from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
 
 router = APIRouter(prefix="/api/groups/{slug}/settings", tags=["settings"])
@@ -52,6 +54,8 @@ async def put_settings(
         category,
         [item.model_dump() for item in payload.items],
     )
+    if category == "polling" and app_settings.SCHEDULER_ENABLED:
+        await apply_pending_analysis_schedule()
     return await mgr.list_for_api(group.group_id, category)
 
 

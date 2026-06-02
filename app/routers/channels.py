@@ -67,7 +67,7 @@ async def add_channel(
 
                 if payload.backfill:
                     service = MonitorService(polling=polling)
-                    await service.process_channel(channel, session, api, backfill=True)
+                    await service.process_channel(channel, session, api)
 
             async with dpm.group_session(group) as s2:
                 return (

@@ -98,6 +98,35 @@ function newGroupModal() {
   };
 }
 
+function editGroupModal() {
+  const group = state.groups.find((g) => g.slug === state.slug);
+  if (!group) {
+    toast("수정할 그룹을 먼저 선택하세요.", true);
+    return;
+  }
+  openModal(`
+    <h2>그룹 이름 수정</h2>
+    <div class="field"><label>그룹 영문 ID (변경 불가)</label><input value="${esc(group.slug)}" disabled /></div>
+    <div class="field"><label>그룹 명칭</label><input id="eg-name" value="${esc(group.name)}" /></div>
+    <div class="row"><button class="btn" id="eg-save">저장</button></div>
+  `);
+  document.getElementById("eg-save").onclick = async () => {
+    try {
+      const name = document.getElementById("eg-name").value.trim();
+      if (!name) {
+        toast("그룹 명칭을 입력하세요.", true);
+        return;
+      }
+      await api("PATCH", `/api/groups/${state.slug}`, { name });
+      closeModal();
+      await loadGroups();
+      toast("그룹 이름 변경됨");
+    } catch (e) {
+      toast(e.message, true);
+    }
+  };
+}
+
 // ── 탭 라우팅 ──────────────────────────────────────────────
 function render() {
   document.querySelectorAll(".tab").forEach((t) =>
@@ -333,10 +362,19 @@ async function openVideo(pk) {
         <div class="muted" style="margin-top:10px">감성: ${esc(a.sentiment || "-")} · 신뢰도: ${a.confidence_score ?? "-"} · 모델: ${esc(a.model_name || "-")}</div>
       ` : `<div class="muted">분석 결과가 아직 없습니다.</div>`}
       <div class="row" style="margin-top:16px">
+        <button class="btn" onclick="analyzeNow(${pk})">즉시분석</button>
         <button class="btn secondary" onclick="reanalyze(${pk})">재분석 요청</button>
         <button class="btn danger" onclick="deleteVideo(${pk})">삭제</button>
       </div>
     `);
+  } catch (e) { toast(e.message, true); }
+}
+async function analyzeNow(pk) {
+  try {
+    await api("POST", `/api/groups/${state.slug}/videos/${pk}/analyze-now`);
+    closeModal();
+    toast("즉시 분석을 시작했습니다. 잠시 후 상세에서 결과를 확인하세요.");
+    loadVideos();
   } catch (e) { toast(e.message, true); }
 }
 async function reanalyze(pk) {
@@ -453,6 +491,12 @@ const SETTING_DEFS = {
       help: "각 채널의 새 영상 확인 기본 주기. 예: 12시간",
     },
     { key: "max_concurrent_channels", label: "동시 점검 채널 수", type: "int" },
+    {
+      key: "pending_analysis_interval_min",
+      label: "AI 분석 주기 (분)",
+      type: "int",
+      help: "대기(pending) 영상을 AI로 분석하는 스케줄 간격. 기본 12분. 활성 그룹이 여러 개면 가장 짧은 값이 적용됩니다.",
+    },
     { key: "max_concurrent_analyses", label: "AI 동시 요약 수", type: "int" },
   ],
   notification: [
@@ -796,5 +840,6 @@ function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
 // ── 초기화 ────────────────────────────────────────────────
 document.getElementById("group-select").onchange = (e) => { state.slug = e.target.value; render(); };
 document.getElementById("btn-new-group").onclick = newGroupModal;
+document.getElementById("btn-edit-group").onclick = editGroupModal;
 document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => { state.tab = t.dataset.tab; render(); }));
 loadGroups().catch((e) => toast(e.message, true));

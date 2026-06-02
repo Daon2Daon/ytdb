@@ -48,19 +48,19 @@ DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석
 ## 출력 형식
 반드시 아래 JSON 형식으로만 출력. 모든 텍스트는 한국어 개조식('~함','~임').
 
-{{
+{
   "one_line": "string",
   "headline": "string",
   "short_summary_md": "string",
   "bullet_points": ["string"],
   "full_analysis_md": "string",
-  "key_points": [{{"timestamp":"hh:mm:ss","point":"string"}}],
+  "key_points": [{"timestamp":"hh:mm:ss","point":"string"}],
   "insights": ["string"],
-  "entities": [{{"type":"person|company|ticker|metric","name":"string"}}],
+  "entities": [{"type":"person|company|ticker|metric","name":"string"}],
   "sentiment": "bullish|bearish|neutral|mixed",
-  "tags": [{{"name":"string","type":"topic|ticker|person|sector","weight":0.0}}],
+  "tags": [{"name":"string","type":"topic|ticker|person|sector","weight":0.0}],
   "confidence_score": 0.0
-}}"""
+}"""
 
 REQUIRED_FIELDS = {
     "one_line",
@@ -137,10 +137,13 @@ class AnalysisPipeline:
         from zoneinfo import ZoneInfo
 
         today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y년 %m월 %d일")
-        return self._prompt_template.format(
-            channel_name=channel_name,
-            published_at_kst=_published_at_kst(published_at_str),
-            today=today,
+        # str.format() 대신 알려진 플레이스홀더만 치환한다.
+        # (프롬프트의 JSON 예시 내 중괄호가 format 치환 필드로 오인되는 것을 방지)
+        return (
+            self._prompt_template
+            .replace("{today}", today)
+            .replace("{channel_name}", channel_name)
+            .replace("{published_at_kst}", _published_at_kst(published_at_str))
         )
 
     async def run(
