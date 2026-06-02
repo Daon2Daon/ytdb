@@ -113,6 +113,7 @@ async def list_videos(
     group: Group = Depends(get_group_or_404),
     status: str | None = Query(None, description="analysis_status 필터"),
     tag: str | None = Query(None, description="태그명 필터"),
+    channel_pk: int | None = Query(None, description="채널 PK 필터"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     paged: bool = Query(False, description="true면 {items,total,page,page_size} 반환"),
@@ -127,6 +128,8 @@ async def list_videos(
         )
         if status:
             stmt = stmt.where(Video.analysis_status == status)
+        if channel_pk is not None:
+            stmt = stmt.where(Video.channel_pk == channel_pk)
         if tag:
             stmt = (
                 stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
@@ -140,6 +143,8 @@ async def list_videos(
             count_stmt = select(func.count()).select_from(Video)
             if status:
                 count_stmt = count_stmt.where(Video.analysis_status == status)
+            if channel_pk is not None:
+                count_stmt = count_stmt.where(Video.channel_pk == channel_pk)
             if tag:
                 count_stmt = (
                     count_stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
