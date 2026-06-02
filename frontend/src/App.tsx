@@ -3,12 +3,12 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import Channels from './pages/Channels'
+import Videos from './pages/Videos'
+import VideoDetail from './pages/VideoDetail'
+import InstantAnalyze from './pages/InstantAnalyze'
+import Logs from './pages/Logs'
 import { groupApi } from './api/groups'
-
-// v1a 나머지 페이지는 Plan 2에서 라우트 추가.
-function Placeholder({ name }: { name: string }) {
-  return <div className="text-gray-500">{name} — Plan 2에서 구현 예정</div>
-}
 
 // 루트 진입: 첫 그룹으로 보정. 그룹이 없거나 조회 실패 시 안내.
 function RootRedirect() {
@@ -32,10 +32,11 @@ export default function App() {
       <Route path="/g/:slug" element={<GroupProvider />}>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="channels" element={<Placeholder name="채널 관리" />} />
-          <Route path="videos" element={<Placeholder name="영상 목록" />} />
-          <Route path="instant-analyze" element={<Placeholder name="영상 분석" />} />
-          <Route path="logs" element={<Placeholder name="Logs" />} />
+          <Route path="channels" element={<Channels />} />
+          <Route path="videos" element={<Videos />} />
+          <Route path="videos/:videoPk" element={<VideoDetail />} />
+          <Route path="instant-analyze" element={<InstantAnalyze />} />
+          <Route path="logs" element={<Logs />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
       </Route>
