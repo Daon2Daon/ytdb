@@ -21,3 +21,7 @@ docs/
 .DS_Store
 @eaDir/
 **/@eaDir/
+
+# Node build artifacts (regenerated in Docker build stage)
+frontend/node_modules
+app/static/ui

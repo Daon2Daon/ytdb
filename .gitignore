@@ -55,3 +55,6 @@ Thumbs.db
 
 # Cursor local state (rules file .cursorrules is tracked intentionally)
 .cursor/
+
+# React 빌드 산출물 (Docker 빌드 단계에서 생성)
+app/static/ui/
