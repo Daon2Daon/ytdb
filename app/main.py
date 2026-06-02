@@ -64,3 +64,20 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+UI_DIR = STATIC_DIR / "ui"
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/{spa_path:path}", include_in_schema=False)
+async def spa(spa_path: str = "") -> FileResponse:
+    """React SPA 진입점. 정적 자산은 /static/ui/ 로 로드되고,
+    클라이언트 라우팅 경로(/app/...)는 모두 index.html로 폴백한다."""
+    index_file = UI_DIR / "index.html"
+    if not index_file.exists():
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=503,
+            content={"detail": "UI가 아직 빌드되지 않았습니다. frontend에서 npm run build 후 사용하세요."},
+        )
+    return FileResponse(str(index_file))
