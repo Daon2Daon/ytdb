@@ -1,6 +1,6 @@
 import { groupClient } from './http'
-import { toVideo } from './adapters'
-import type { PaginatedVideos } from './types'
+import { toVideo, toVideoDetail } from './adapters'
+import type { PaginatedVideos, VideoDetail } from './types'
 
 export function videoApi(slug: string) {
   const c = groupClient(slug)
@@ -8,12 +8,14 @@ export function videoApi(slug: string) {
     listPaged: async (params: {
       status?: string
       tag?: string
+      channel_pk?: number
       limit?: number
       offset?: number
     }): Promise<PaginatedVideos> => {
       const q = new URLSearchParams({ paged: '1' })
       if (params.status) q.set('status', params.status)
       if (params.tag) q.set('tag', params.tag)
+      if (params.channel_pk != null) q.set('channel_pk', String(params.channel_pk))
       if (params.limit != null) q.set('limit', String(params.limit))
       if (params.offset != null) q.set('offset', String(params.offset))
       const raw = await c.get<any>(`/videos?${q}`)
@@ -24,5 +26,8 @@ export function videoApi(slug: string) {
         items: (raw.items as any[]).map(toVideo),
       }
     },
+    get: async (pk: number): Promise<VideoDetail> => toVideoDetail(await c.get<any>(`/videos/${pk}`)),
+    remove: (pk: number) => c.del<void>(`/videos/${pk}`),
+    analyzeNow: (pk: number) => c.post<{ status: string; video_pk: number }>(`/videos/${pk}/analyze-now`),
   }
 }
