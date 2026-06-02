@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings as app_settings
 from app.control_db import ensure_control_schema
-from app.routers import actions, channels, digests, groups, logs, settings, stats, tags, videos
+from app.routers import actions, channels, digests, groups, health, logs, settings, stats, tags, videos
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
 
@@ -50,6 +50,7 @@ app.include_router(digests.router)
 app.include_router(actions.router)
 app.include_router(logs.router)
 app.include_router(stats.router)
+app.include_router(health.router)
 
 
 @app.get("/health", tags=["meta"])
