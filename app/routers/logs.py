@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.control.group import Group
 from app.models.pg.job_log import JobLog
@@ -30,13 +30,46 @@ class JobLogOut(BaseModel):
     started_at: datetime
 
 
-@router.get("", response_model=list[JobLogOut])
+class PaginatedJobLogs(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[JobLogOut]
+
+
+@router.get("")
 async def list_logs(
     group: Group = Depends(get_group_or_404),
+    job_type: str | None = Query(None, description="job_type 필터"),
+    status: str | None = Query(None, description="status 필터"),
     limit: int = Query(50, ge=1, le=200),
-) -> list[JobLog]:
+    offset: int = Query(0, ge=0),
+    paged: bool = Query(False, description="true면 {items,total,page,page_size} 반환"),
+):
     async with dpm.group_session(group) as session:
-        result = await session.execute(
-            select(JobLog).order_by(JobLog.log_pk.desc()).limit(limit)
-        )
-        return list(result.scalars().all())
+        stmt = select(JobLog).order_by(JobLog.log_pk.desc()).limit(limit).offset(offset)
+        if job_type:
+            stmt = stmt.where(JobLog.job_type == job_type)
+        if status:
+            stmt = stmt.where(JobLog.status == status)
+        rows = list((await session.execute(stmt)).scalars().all())
+
+        total = None
+        if paged:
+            count_stmt = select(func.count()).select_from(JobLog)
+            if job_type:
+                count_stmt = count_stmt.where(JobLog.job_type == job_type)
+            if status:
+                count_stmt = count_stmt.where(JobLog.status == status)
+            total = (await session.execute(count_stmt)).scalar_one()
+
+    if not paged:
+        return rows
+
+    page = offset // limit + 1 if limit else 1
+    return PaginatedJobLogs(
+        total=total,
+        page=page,
+        page_size=limit,
+        items=[JobLogOut.model_validate(r) for r in rows],
+    )
