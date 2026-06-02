@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 
 from app.models.control.group import Group
@@ -10,7 +10,7 @@ from app.models.pg.channel import Channel
 from app.routers.deps import get_group_or_404
 from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
 from app.services.db_engine import data_plane_engine_manager as dpm
-from app.services.monitor_service import MonitorService
+from app.services.monitor_service import MonitorService, poll_single_channel
 from app.services.settings_manager import get_settings_manager
 from app.services.youtube_api import YouTubeAPIError, YouTubeAPIClient
 
@@ -110,3 +110,14 @@ async def delete_channel(
             if channel is None:
                 raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
             await session.delete(channel)
+
+
+@router.post("/{channel_pk}/poll", status_code=202)
+async def poll_channel(
+    channel_pk: int,
+    background: BackgroundTasks,
+    group: Group = Depends(get_group_or_404),
+) -> dict:
+    """단일 채널을 백그라운드에서 즉시 폴링한다."""
+    background.add_task(poll_single_channel, group, channel_pk)
+    return {"status": "started", "channel_pk": channel_pk, "message": "폴링을 시작했습니다. 잠시 후 영상/로그를 확인하세요."}

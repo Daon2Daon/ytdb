@@ -534,6 +534,68 @@ async def analyze_group(group: Group) -> None:
     await _analyze_group(group)
 
 
+async def poll_single_channel(group: Group, channel_pk: int) -> None:
+    """단일 채널을 즉시 폴링한다(수동 트리거용). _poll_group의 1채널 버전."""
+    mgr = get_settings_manager()
+    polling = await mgr.get_polling(group.group_id)
+    if not polling.youtube_api_key:
+        print(f"[{group.slug}] YouTube API 키 미설정 - 단건 폴링 SKIP")
+        return
+    try:
+        await dpm.ensure_schema(group)
+        engine = await dpm.get_engine_for_group(group)
+    except DBNotConfiguredError:
+        print(f"[{group.slug}] DB 미설정 - 단건 폴링 SKIP")
+        return
+
+    make_session = _make_session_factory(engine, group.schema_name)
+    service = MonitorService(polling=polling)
+
+    async with make_session() as session:
+        channel = (
+            await session.execute(select(Channel).where(Channel.channel_pk == channel_pk))
+        ).scalar_one_or_none()
+    if channel is None:
+        print(f"[{group.slug}] 채널 없음(channel_pk={channel_pk}) - 단건 폴링 SKIP")
+        return
+
+    api_client = YouTubeAPIClient(polling)
+    timer = JobTimer()
+    try:
+        with timer:
+            async with make_session() as sess:
+                async with sess.begin():
+                    new_pks = await service.process_channel(channel, sess, api_client)
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_CHANNEL_POLL,
+            status=STATUS_SUCCESS,
+            message=f"신규 영상 {len(new_pks)}건 수집" if new_pks else "신규 영상 없음",
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel.channel_pk,
+        )
+    except YouTubeQuotaExceededError as e:
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_CHANNEL_POLL,
+            status=STATUS_SKIP,
+            message=f"쿼터 초과: {e}",
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel.channel_pk,
+        )
+    except Exception as e:  # noqa: BLE001
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_CHANNEL_POLL,
+            status=STATUS_FAIL,
+            message=str(e),
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel.channel_pk,
+        )
+    finally:
+        await api_client.aclose()
+
+
 async def analyze_specific_video(group: Group, video_pk: int) -> None:
     """단일 그룹에서 특정 영상 1건을 즉시 분석한다(수동 등록용)."""
     try:
