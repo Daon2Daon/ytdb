@@ -4,8 +4,9 @@ import { groupClient } from './http'
 afterEach(() => vi.restoreAllMocks())
 
 function mockFetch(status: number, body: unknown) {
+  const nullBody = status === 204 || status === 205 || status === 304
   return vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(JSON.stringify(body), {
+    new Response(nullBody ? null : JSON.stringify(body), {
       status,
       headers: { 'Content-Type': 'application/json' },
     }),
