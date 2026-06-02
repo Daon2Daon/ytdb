@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.control.group import Group
@@ -17,6 +17,7 @@ from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.routers.deps import get_group_or_404
+from app.schemas.stats import PaginatedVideos
 from app.schemas.video import (
     AnalysisOut,
     InstantAnalyzeRequest,
@@ -101,14 +102,21 @@ async def _ensure_instant_channel(session, default_interval_min: int) -> Channel
     return ch
 
 
-@router.get("", response_model=list[VideoListItem])
+def _page_number(limit: int, offset: int) -> int:
+    if limit <= 0:
+        return 1
+    return offset // limit + 1
+
+
+@router.get("")
 async def list_videos(
     group: Group = Depends(get_group_or_404),
     status: str | None = Query(None, description="analysis_status 필터"),
     tag: str | None = Query(None, description="태그명 필터"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-) -> list[VideoListItem]:
+    paged: bool = Query(False, description="true면 {items,total,page,page_size} 반환"),
+):
     async with dpm.group_session(group) as session:
         stmt = (
             select(Video, VideoAnalysis.headline, VideoAnalysis.one_line)
@@ -133,7 +141,28 @@ async def list_videos(
         item.headline = headline
         item.one_line = one_line
         items.append(item)
-    return items
+
+    if not paged:
+        return items
+
+    async with dpm.group_session(group) as session:
+        count_stmt = select(func.count()).select_from(Video)
+        if status:
+            count_stmt = count_stmt.where(Video.analysis_status == status)
+        if tag:
+            count_stmt = (
+                count_stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
+                .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
+                .where(Tag.name == tag)
+            )
+        total = (await session.execute(count_stmt)).scalar_one()
+
+    return PaginatedVideos(
+        total=int(total),
+        page=_page_number(limit, offset),
+        page_size=limit,
+        items=items,
+    )
 
 
 @router.get("/{video_pk}", response_model=VideoDetail)
@@ -186,6 +215,26 @@ async def reanalyze_video(
             await session.execute(select(Video).where(Video.video_pk == video_pk))
         ).scalar_one()
     return VideoDetail.model_validate(video)
+
+
+@router.post("/{video_pk}/analyze-now", status_code=202)
+async def analyze_video_now(
+    video_pk: int,
+    background: BackgroundTasks,
+    group: Group = Depends(get_group_or_404),
+) -> dict:
+    """영상 1건을 스케줄 대기 없이 백그라운드에서 즉시 분석한다."""
+    async with dpm.group_session(group) as session:
+        async with session.begin():
+            result = await session.execute(
+                update(Video)
+                .where(Video.video_pk == video_pk)
+                .values(analysis_status="pending", analysis_error=None, retry_count=0)
+            )
+            if (result.rowcount or 0) == 0:
+                raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+    background.add_task(analyze_specific_video, group, video_pk)
+    return {"status": "started", "video_pk": video_pk}
 
 
 @router.delete("/{video_pk}", status_code=204)
