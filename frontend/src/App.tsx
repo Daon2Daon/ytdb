@@ -8,6 +8,7 @@ import Videos from './pages/Videos'
 import VideoDetail from './pages/VideoDetail'
 import InstantAnalyze from './pages/InstantAnalyze'
 import Logs from './pages/Logs'
+import Settings from './pages/Settings'
 import { groupApi } from './api/groups'
 
 // 루트 진입: 첫 그룹으로 보정. 그룹이 없거나 조회 실패 시 안내.
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="videos/:videoPk" element={<VideoDetail />} />
           <Route path="instant-analyze" element={<InstantAnalyze />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="settings/:category" element={<Settings />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
       </Route>

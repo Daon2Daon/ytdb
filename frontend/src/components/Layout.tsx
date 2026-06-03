@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
+import { SETTING_CATEGORIES } from '../settings/defs'
+import { NewGroupModal, EditGroupModal } from './GroupModals'
 
 const NAV = [
   { sub: '', label: '대시보드', icon: '🏠', end: true },
@@ -13,6 +16,7 @@ export default function Layout() {
   const { groups, activeSlug } = useGroup()
   const navigate = useNavigate()
   const location = useLocation()
+  const [groupModal, setGroupModal] = useState<null | 'new' | 'edit'>(null)
 
   // 그룹 전환: 현재 페이지(첫 경로 세그먼트)를 유지하되, PK 종속 상세 경로면 대시보드로.
   const onSwitchGroup = (slug: string) => {
@@ -40,6 +44,8 @@ export default function Layout() {
             <option key={g.slug} value={g.slug}>{g.name} ({g.slug})</option>
           ))}
         </select>
+        <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">이름 수정</button>
+        <button onClick={() => setGroupModal('new')} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ 새 그룹</button>
       </header>
 
       <div className="flex flex-col lg:flex-row flex-1 max-w-7xl mx-auto w-full px-3 sm:px-4 py-4 gap-4 lg:gap-6">
@@ -56,12 +62,22 @@ export default function Layout() {
                 <span>{item.label}</span>
               </NavLink>
             ))}
+            <div className="mt-1 pt-1 border-t border-gray-100 flex flex-row lg:flex-col gap-1">
+              <span className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase">설정</span>
+              {SETTING_CATEGORIES.map((c) => (
+                <NavLink key={c.key} to={`/g/${activeSlug}/settings/${c.key}`} className={linkClass}>
+                  <span>⚙️</span><span>{c.label}</span>
+                </NavLink>
+              ))}
+            </div>
           </nav>
         </aside>
         <main className="flex-1 min-w-0 w-full">
           <Outlet />
         </main>
       </div>
+      {groupModal === 'new' && <NewGroupModal onClose={() => setGroupModal(null)} />}
+      {groupModal === 'edit' && <EditGroupModal onClose={() => setGroupModal(null)} />}
     </div>
   )
 }
