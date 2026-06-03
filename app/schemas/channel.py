@@ -36,6 +36,7 @@ class ChannelOut(BaseModel):
     poll_interval_min: int
     is_active: bool
     notify_enabled: bool
+    notify_from: Optional[datetime]
     last_checked_at: Optional[datetime]
     last_video_id: Optional[str]
     created_at: datetime

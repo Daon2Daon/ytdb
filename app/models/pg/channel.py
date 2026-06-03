@@ -28,6 +28,9 @@ class Channel(PgBase):
     poll_interval_min: Mapped[int] = mapped_column(Integer, nullable=False, default=720)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 이 시각 이후 게시(published_at)된 영상만 자동 발송. NULL이면 전부 발송.
+    # 알림이 켜진 순간(생성 시 notify_enabled=true / OFF→ON 토글)에 now로 설정된다.
+    notify_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_video_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

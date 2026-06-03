@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 
@@ -60,6 +62,9 @@ async def add_channel(
                     poll_interval_min=payload.poll_interval_min
                     or polling.default_channel_interval_min,
                     category=payload.category,
+                    # 알림 기본 ON으로 생성 → 기준 시점을 지금으로. 과거 백로그는
+                    # 분석/저장만 되고 자동 발송되지 않는다(이후 게시분부터 발송).
+                    notify_from=datetime.now(timezone.utc),
                 )
                 session.add(channel)
                 await session.flush()
@@ -91,8 +96,12 @@ async def update_channel(
             ).scalar_one_or_none()
             if channel is None:
                 raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
+            was_notify = channel.notify_enabled
             for field, value in data.items():
                 setattr(channel, field, value)
+            # 알림 OFF→ON 전환 시 기준 시점을 지금으로 재설정("알림 켠 이후"부터 발송).
+            if data.get("notify_enabled") is True and not was_notify:
+                channel.notify_from = datetime.now(timezone.utc)
         return (
             await session.execute(select(Channel).where(Channel.channel_pk == channel_pk))
         ).scalar_one()

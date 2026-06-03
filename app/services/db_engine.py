@@ -169,6 +169,19 @@ class DataPlaneEngineManager:
                             table.create(sync_conn, checkfirst=False)
 
                 await conn.run_sync(_create_missing)
+
+                # 기존 스키마 자가치유: 추가 컬럼을 멱등 패치한다.
+                # (create_all은 기존 테이블에 컬럼을 추가하지 않으므로 명시 ALTER)
+                additive_columns = [
+                    ("channels", "notify_from", "timestamptz"),
+                ]
+                for tbl, col, coltype in additive_columns:
+                    await conn.execute(
+                        text(
+                            f'ALTER TABLE "{group.schema_name}"."{tbl}" '
+                            f'ADD COLUMN IF NOT EXISTS "{col}" {coltype}'
+                        )
+                    )
             self._initialized.add(key)
 
     async def dispose_current_loop(self) -> None:

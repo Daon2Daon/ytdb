@@ -354,6 +354,16 @@ async def run_master_poll_once() -> None:
             print(f"[{group.slug}] 폴링 그룹 처리 오류: {e}")
 
 
+def _passes_notify_baseline(notify_from: Optional[datetime], published_at: datetime) -> bool:
+    """채널 알림 기준 시점 게이트. notify_from 이후 게시된 영상만 발송.
+
+    notify_from이 None이면(기준 없음) 전부 발송한다(기존 채널 호환).
+    """
+    if notify_from is None:
+        return True
+    return published_at >= notify_from
+
+
 async def _notify_after_analysis(
     group: Group,
     make_session: MakeSession,
@@ -391,6 +401,18 @@ async def _notify_after_analysis(
         )
         return
     if not video or not analysis:
+        return
+
+    # 채널 알림 기준 시점 게이트: 기준 이전에 게시된(백로그) 영상은 자동 발송하지 않는다.
+    if channel is not None and not _passes_notify_baseline(channel.notify_from, video.published_at):
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_NOTIFY,
+            status=STATUS_SKIP,
+            message="기준 시점 이전 영상(알림 baseline)",
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
         return
 
     timer = JobTimer()
