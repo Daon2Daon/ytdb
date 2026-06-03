@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
 import { videoApi } from '../api/videos'
+import { promptApi } from '../api/prompts'
 import type { VideoDetail as VideoDetailType } from '../api/types'
 import { useGroup } from '../group/useGroup'
 import Spinner from '../components/Spinner'
@@ -33,6 +34,10 @@ export default function VideoDetail() {
   const [reanalyzing, setReanalyzing] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [notifying, setNotifying] = useState(false)
+  const [promptOpen, setPromptOpen] = useState(false)
+  const [customPrompt, setCustomPrompt] = useState('')
+  const [promptLoaded, setPromptLoaded] = useState(false)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -97,7 +102,7 @@ export default function VideoDetail() {
     if (!videoPk) return
     setReanalyzing(true)
     try {
-      await videoApi(activeSlug).analyzeNow(Number(videoPk))
+      await videoApi(activeSlug).analyzeNow(Number(videoPk), promptOpen && customPrompt.trim() ? customPrompt.trim() : undefined)
       await silentRefresh()
       pollingRef.current = setInterval(silentRefresh, 2000)
       // 3분 후 주기적 새로고침 자동 중단 (분석이 비정상적으로 오래 걸리는 경우 대비)
@@ -109,6 +114,27 @@ export default function VideoDetail() {
       setReanalyzing(false)
       alert((e as Error).message)
     }
+  }
+
+  const handleOpenPrompt = async () => {
+    if (!promptLoaded) {
+      try { setCustomPrompt(await promptApi(activeSlug).getAnalysisPrompt()) } catch { /* 무시 */ }
+      setPromptLoaded(true)
+    }
+    setPromptOpen((v) => !v)
+  }
+
+  const handleNotify = async (force = false) => {
+    if (!video) return
+    if (video.analysis_status !== 'done') { alert('분석 완료 후 발송할 수 있습니다.'); return }
+    if (video.notified_at && !force && !window.confirm('이미 발송된 영상입니다. 다시 발송할까요?')) return
+    setNotifying(true)
+    try {
+      const res = await videoApi(activeSlug).notify(Number(videoPk), force || Boolean(video.notified_at))
+      await silentRefresh()
+      alert(res.message)
+    } catch (e) { alert((e as Error).message) }
+    finally { setNotifying(false) }
   }
 
   if (loading) return <Spinner />
@@ -144,12 +170,20 @@ export default function VideoDetail() {
                   >
                     YouTube에서 보기
                   </a>
+                  <button onClick={handleOpenPrompt} disabled={reanalyzing || notifying}
+                    className={`px-3 py-1.5 text-xs rounded-lg font-medium disabled:opacity-60 ${promptOpen ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {promptOpen ? '프롬프트 닫기' : '프롬프트 수정'}
+                  </button>
                   <button
                     onClick={handleReanalyze}
                     disabled={reanalyzing || deleting}
                     className="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs rounded-lg hover:bg-blue-100 disabled:opacity-60 font-medium"
                   >
-                    {reanalyzing ? '분석 중...' : '재분석'}
+                    {reanalyzing ? '분석 중...' : promptOpen ? '이 프롬프트로 재분석' : '재분석'}
+                  </button>
+                  <button onClick={() => handleNotify(false)} disabled={notifying || reanalyzing || video.analysis_status !== 'done'}
+                    className="px-3 py-1.5 bg-sky-50 text-sky-700 text-xs rounded-lg hover:bg-sky-100 disabled:opacity-60 font-medium">
+                    {notifying ? '발송 중...' : video.notified_at ? 'Telegram 재발송' : 'Telegram 발송'}
                   </button>
                   <button
                     type="button"
@@ -193,6 +227,15 @@ export default function VideoDetail() {
               )}
             </div>
           </div>
+
+          {/* 커스텀 프롬프트 패널 */}
+          {promptOpen && (
+            <div className="mt-3 border border-amber-200 rounded-lg bg-amber-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-700">이 영상 전용 분석 프롬프트 (기본 프롬프트 기반)</p>
+              <textarea value={customPrompt} onChange={(e) => setCustomPrompt(e.target.value)} rows={10} spellCheck={false}
+                className="w-full border border-amber-300 rounded-lg px-3 py-2 text-xs font-mono bg-white resize-y" />
+            </div>
+          )}
 
           {/* YouTube 원본 설명문 */}
           {video.description && (
@@ -290,6 +333,22 @@ export default function VideoDetail() {
             <p className="font-semibold">분석 오류</p>
             <p className="font-mono whitespace-pre-wrap">{video.analysis_error}</p>
             {video.retry_count != null && <p className="text-gray-500">재시도: {video.retry_count}회</p>}
+          </div>
+        )}
+
+        {/* Telegram 알림 미리보기 */}
+        {(video.headline || video.full_analysis_md || (video.bullet_points && video.bullet_points.length > 0)) && (
+          <div className="bg-gray-800 rounded-xl p-4 text-gray-100 text-xs space-y-2 break-words">
+            <p className="text-gray-400 uppercase tracking-wide">Telegram 알림 미리보기</p>
+            <p className="font-bold">🎬 [{video.source_channel_name || '모니터 채널'}] 신규 영상</p>
+            {video.headline && <p className="font-semibold">{video.headline}</p>}
+            {video.full_analysis_md && (
+              <div className="text-gray-200 whitespace-pre-wrap font-sans max-h-48 overflow-y-auto border border-gray-600 rounded-lg p-2">
+                {video.full_analysis_md.length > 1200 ? `${video.full_analysis_md.slice(0, 1200)}…` : video.full_analysis_md}
+              </div>
+            )}
+            {video.tags.length > 0 && <p className="text-blue-300">🏷 {video.tags.slice(0, 8).join(', ')}</p>}
+            {video.notified_at && <p className="text-green-400">✅ 발송됨: {dayjs(video.notified_at).format('MM/DD HH:mm')}</p>}
           </div>
         )}
       </div>
