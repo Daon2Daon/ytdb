@@ -61,6 +61,8 @@ class VideoDetail(BaseModel):
     analysis_status: str
     analysis_error: Optional[str]
     notified_at: Optional[datetime]
+    retry_count: int = 0
+    source_channel_name: Optional[str] = None
     tags: list[str] = []
     analysis: Optional[AnalysisOut] = None
 

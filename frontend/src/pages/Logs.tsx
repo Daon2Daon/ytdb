@@ -10,7 +10,6 @@ const JOB_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: '전체' },
   { value: 'channel_poll', label: '채널 모니터링' },
   { value: 'video_analyze', label: '영상 분석' },
-  { value: 'video_reanalyze', label: '영상 재분석' },
   { value: 'notify', label: '텔레그램 알림' },
   { value: 'gateway_health', label: '게이트웨이 헬스' },
 ]
@@ -19,7 +18,6 @@ function formatJobTypeLabel(jobType: string): string {
   const map: Record<string, string> = {
     channel_poll: '채널 모니터링',
     video_analyze: '영상 분석',
-    video_reanalyze: '영상 재분석',
     notify: '텔레그램 알림',
     gateway_health: '게이트웨이 헬스',
   }

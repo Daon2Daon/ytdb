@@ -43,7 +43,7 @@ export default function Channels() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [activeSlug])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()

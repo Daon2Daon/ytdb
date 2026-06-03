@@ -58,7 +58,7 @@ export default function Videos() {
     }
   }
 
-  useEffect(() => { load() }, [page, channelPk, tagFilter, statusFilter])
+  useEffect(() => { load() }, [page, channelPk, tagFilter, statusFilter, activeSlug])
 
   const handleDelete = async () => {
     if (!deleteTarget) return

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { videoApi } from '../api/videos'
 import { groupClient } from '../api/http'
@@ -24,6 +24,9 @@ export default function InstantAnalyze() {
     }
   }
 
+  // 언마운트 시 폴링 정리(이동 후 stale navigate 방지).
+  useEffect(() => () => stopPolling(), [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!url.trim()) return
@@ -34,13 +37,12 @@ export default function InstantAnalyze() {
 
     try {
       const res = await groupClient(activeSlug).post<InstantAnalyzeResponse>('/videos/instant', { video_url: url.trim() })
-      if (res.existing) {
-        setMessage('이미 분석된 영상입니다. 결과로 이동합니다.')
-        setPhase('done')
-        setTimeout(() => navigate(`/g/${activeSlug}/videos/${res.video_pk}`), 1000)
-        return
-      }
-      setMessage('분석 대기열에 등록되었습니다. 완료되면 결과로 이동합니다.')
+      // 신규/기존 모두 백엔드가 분석을 재대기열에 등록하므로 완료까지 폴링 후 이동한다.
+      setMessage(
+        res.existing
+          ? '기존 영상을 다시 분석합니다. 완료되면 결과로 이동합니다.'
+          : '분석 대기열에 등록되었습니다. 완료되면 결과로 이동합니다.',
+      )
       setPhase('analyzing')
       const videoPk = res.video_pk
       pollingRef.current = setInterval(async () => {
