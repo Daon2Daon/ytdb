@@ -27,10 +27,10 @@ export function NewGroupModal({ onClose }: { onClose: () => void }) {
     setBusy(true)
     setErr(null)
     try {
-      await groupApi.create({ slug: slug.trim(), name: name.trim(), schema_name: schema.trim() || undefined })
+      const created = await groupApi.create({ slug: slug.trim(), name: name.trim(), schema_name: schema.trim() || undefined })
       await reloadGroups()
       onClose()
-      navigate(`/g/${slug.trim()}/`)
+      navigate(`/g/${created.slug}/`)
     } catch (e) {
       setErr((e as Error).message)
     } finally {

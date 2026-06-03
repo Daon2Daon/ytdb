@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
 import { settingsApi, type SettingItem } from '../api/settings'
@@ -20,7 +20,7 @@ export default function Settings() {
 
   const defs = category ? SETTING_DEFS[category] : undefined
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!category || !defs) return
     setLoading(true)
     setError(null)
@@ -40,9 +40,9 @@ export default function Settings() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeSlug, category, defs])
 
-  useEffect(() => { load() }, [activeSlug, category])
+  useEffect(() => { load() }, [load])
 
   const handleSave = async (toSave: SettingItem[]) => {
     if (!category) return

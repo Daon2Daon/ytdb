@@ -65,11 +65,13 @@ function Field({
 
   if (def.type === 'bool') {
     return (
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={value as boolean} onChange={(e) => onChange(e.target.checked)} />
-        <span className="font-medium text-gray-700">{def.label}</span>
+      <div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+          <input type="checkbox" checked={value as boolean} onChange={(e) => onChange(e.target.checked)} />
+          <span className="font-medium text-gray-700">{def.label}</span>
+        </label>
         {help}
-      </label>
+      </div>
     )
   }
 
@@ -98,6 +100,7 @@ function Field({
           onChange={(e) => onChange(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
+          {(!value || !(def.options ?? []).includes(value as string)) && <option value="">(미설정)</option>}
           {(def.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : def.type === 'model_select' ? (

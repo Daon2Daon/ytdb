@@ -33,7 +33,7 @@ export default function GroupProvider() {
   if (groups.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
-        그룹이 없습니다. 그룹을 먼저 생성하세요. (v1b에서 생성 UI 제공)
+        운영 중인 모니터링 그룹이 없습니다. 그룹을 먼저 생성하세요.
       </div>
     )
   }

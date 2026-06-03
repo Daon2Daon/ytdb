@@ -20,7 +20,7 @@ function RootRedirect() {
       .list()
       .then((groups) => {
         if (groups.length > 0) navigate(`/g/${groups[0].slug}/`, { replace: true })
-        else setMessage('그룹이 없습니다. 그룹을 먼저 생성하세요. (v1b에서 생성 UI 제공)')
+        else setMessage('운영 중인 모니터링 그룹이 없습니다. 그룹을 먼저 생성하세요.')
       })
       .catch((e) => setMessage(`그룹 목록을 불러오지 못했습니다: ${(e as Error).message}`))
   }, [navigate])
