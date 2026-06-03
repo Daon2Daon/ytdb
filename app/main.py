@@ -8,8 +8,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings as app_settings
@@ -61,23 +61,41 @@ async def meta_health() -> dict:
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.get("/", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(str(STATIC_DIR / "index.html"))
-
-
 UI_DIR = STATIC_DIR / "ui"
 
 
-@app.get("/app", include_in_schema=False)
-@app.get("/app/{spa_path:path}", include_in_schema=False)
-async def spa(spa_path: str = "") -> FileResponse:
-    """React SPA 진입점. 정적 자산은 /static/ui/ 로 로드되고,
-    클라이언트 라우팅 경로(/app/...)는 모두 index.html로 폴백한다."""
+def _serve_react() -> Response:
+    """React SPA index.html 서빙(미빌드 시 503)."""
     index_file = UI_DIR / "index.html"
     if not index_file.exists():
-        return JSONResponse(  # type: ignore[return-value]
+        return JSONResponse(
             status_code=503,
             content={"detail": "UI가 아직 빌드되지 않았습니다. frontend에서 npm run build 후 사용하세요."},
         )
     return FileResponse(str(index_file))
+
+
+@app.get("/legacy", include_in_schema=False)
+async def legacy_index() -> FileResponse:
+    """구 vanilla UI(컷오버 롤백용)."""
+    return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> Response:
+    return _serve_react()
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str) -> Response:
+    """클라이언트 라우팅 경로(/g/... 등)는 모두 React index.html로 폴백한다.
+    /api·/static·/health·/legacy 는 위 라우트/마운트가 먼저 처리하므로,
+    여기 도달한 api/static/health/legacy 경로는 매칭 실패로 보고 404를 반환한다."""
+    if (
+        full_path.startswith("api")
+        or full_path.startswith("static")
+        or full_path == "health"
+        or full_path.startswith("legacy")
+    ):
+        raise HTTPException(status_code=404)
+    return _serve_react()
