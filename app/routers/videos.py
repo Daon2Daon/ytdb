@@ -29,6 +29,7 @@ from app.schemas.video import (
 )
 from app.services.db_engine import data_plane_engine_manager as dpm
 from app.services.monitor_service import analyze_specific_video
+from app.services.notify_service import notify_video
 from app.services.settings_manager import get_settings_manager
 from app.services.youtube_api import YouTubeAPIClient, YouTubeAPIError
 
@@ -39,6 +40,16 @@ _INSTANT_CHANNEL_ID = "__instant__"
 
 class AnalyzeNowRequest(BaseModel):
     custom_prompt: Optional[str] = None
+
+
+class NotifyRequest(BaseModel):
+    force: bool = False
+
+
+class VideoNotifyResponse(BaseModel):
+    success: bool
+    message: str
+    notified_at: Optional[datetime] = None
 
 
 def _extract_video_id(raw: str) -> str | None:
@@ -269,6 +280,47 @@ async def delete_video(
                 .on_conflict_do_nothing(index_elements=["video_id"])
             )
             await session.delete(video)
+
+
+@router.post("/{video_pk}/notify", response_model=VideoNotifyResponse)
+async def notify_video_now(
+    video_pk: int,
+    payload: NotifyRequest | None = None,
+    group: Group = Depends(get_group_or_404),
+) -> VideoNotifyResponse:
+    force = payload.force if payload else False
+    notif = await get_settings_manager().get_notification(group.group_id)
+    async with dpm.group_session(group) as session:
+        video = (
+            await session.execute(select(Video).where(Video.video_pk == video_pk))
+        ).scalar_one_or_none()
+        if video is None:
+            raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+        if video.analysis_status != "done":
+            raise HTTPException(status_code=400, detail="분석이 완료된 영상만 발송할 수 있습니다.")
+        analysis = (
+            await session.execute(select(VideoAnalysis).where(VideoAnalysis.video_pk == video_pk))
+        ).scalar_one_or_none()
+        if analysis is None:
+            raise HTTPException(status_code=400, detail="분석 결과가 없어 발송할 수 없습니다.")
+        if video.notified_at is not None and not force:
+            return VideoNotifyResponse(
+                success=False,
+                message="이미 발송된 영상입니다. 재발송하려면 force=true로 요청하세요.",
+                notified_at=video.notified_at,
+            )
+        try:
+            sent = await notify_video(notif, video, analysis)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"발송 실패: {e}") from e
+        if sent == 0:
+            raise HTTPException(status_code=400, detail="발송된 메시지가 없습니다. 알림 설정(봇 토큰/Chat ID)을 확인하세요.")
+        now = datetime.now(timezone.utc)
+        async with session.begin():
+            await session.execute(
+                update(Video).where(Video.video_pk == video_pk).values(notified_at=now)
+            )
+    return VideoNotifyResponse(success=True, message=f"{sent}개 대상에 발송했습니다.", notified_at=now)
 
 
 @router.post("/instant", response_model=InstantAnalyzeResponse, status_code=202)
