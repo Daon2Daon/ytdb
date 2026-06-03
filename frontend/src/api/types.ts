@@ -145,3 +145,30 @@ export interface PollResponse {
   channel_pk: number
   message: string
 }
+
+export interface TagCount { name: string; count: number }
+
+export interface Digest {
+  digest_pk: number
+  period_type: string
+  period_weeks: number
+  period_start: string
+  period_end: string
+  category: string | null
+  video_count: number
+  headline: string | null
+  summary_md: string | null
+  telegram_summary: string | null
+  sentiment_breakdown: Record<string, number> | null
+  top_tags: TagCount[] | null
+  top_channels: TagCount[] | null
+  status: string
+  error: string | null
+  created_at: string
+}
+
+export interface VideoNotifyResponse {
+  success: boolean
+  message: string
+  notified_at: string | null
+}

@@ -1,6 +1,6 @@
 import { groupClient } from './http'
 import { toVideo, toVideoDetail } from './adapters'
-import type { PaginatedVideos, VideoDetail } from './types'
+import type { PaginatedVideos, VideoDetail, VideoNotifyResponse } from './types'
 
 export function videoApi(slug: string) {
   const c = groupClient(slug)
@@ -28,6 +28,9 @@ export function videoApi(slug: string) {
     },
     get: async (pk: number): Promise<VideoDetail> => toVideoDetail(await c.get<any>(`/videos/${pk}`)),
     remove: (pk: number) => c.del<void>(`/videos/${pk}`),
-    analyzeNow: (pk: number) => c.post<{ status: string; video_pk: number }>(`/videos/${pk}/analyze-now`),
+    analyzeNow: (pk: number, customPrompt?: string) =>
+      c.post<{ status: string; video_pk: number }>(`/videos/${pk}/analyze-now`, { custom_prompt: customPrompt ?? null }),
+    notify: (pk: number, force = false) =>
+      c.post<VideoNotifyResponse>(`/videos/${pk}/notify`, { force }),
   }
 }
