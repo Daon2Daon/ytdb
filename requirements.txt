@@ -23,6 +23,9 @@ isodate>=0.6.1
 # Secrets encryption
 cryptography>=42.0.0
 
+# 세션 쿠키 서명 (Starlette SessionMiddleware)
+itsdangerous>=2.1.0
+
 # 테스트
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

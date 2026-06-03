@@ -5,16 +5,19 @@
 
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings as app_settings
 from app.control_db import ensure_control_schema
-from app.routers import actions, channels, digests, groups, health, logs, settings, stats, tags, videos
+from app.routers import actions, auth, channels, digests, groups, health, logs, settings, stats, tags, videos
+from app.routers.auth import require_auth
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
 
@@ -35,22 +38,34 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ytdb", description="다중 그룹 YouTube 모니터", lifespan=lifespan)
 
+# 세션 미들웨어(서명된 httpOnly 쿠키). 비밀키는 SESSION_SECRET → FERNET_KEY → 임시생성.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=(app_settings.SESSION_SECRET or app_settings.FERNET_KEY or secrets.token_urlsafe(32)),
+    https_only=app_settings.SESSION_HTTPS_ONLY,
+    same_site="lax",
+)
+
 
 @app.exception_handler(DBNotConfiguredError)
 async def db_not_configured_handler(_request: Request, exc: DBNotConfiguredError) -> JSONResponse:
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-app.include_router(groups.router)
-app.include_router(settings.router)
-app.include_router(channels.router)
-app.include_router(videos.router)
-app.include_router(tags.router)
-app.include_router(digests.router)
-app.include_router(actions.router)
-app.include_router(logs.router)
-app.include_router(stats.router)
-app.include_router(health.router)
+# 인증 라우터는 무인증(로그인/상태 확인). 나머지 데이터 라우터는 require_auth로 보호.
+app.include_router(auth.router)
+
+_protected = [Depends(require_auth)]
+app.include_router(groups.router, dependencies=_protected)
+app.include_router(settings.router, dependencies=_protected)
+app.include_router(channels.router, dependencies=_protected)
+app.include_router(videos.router, dependencies=_protected)
+app.include_router(tags.router, dependencies=_protected)
+app.include_router(digests.router, dependencies=_protected)
+app.include_router(actions.router, dependencies=_protected)
+app.include_router(logs.router, dependencies=_protected)
+app.include_router(stats.router, dependencies=_protected)
+app.include_router(health.router, dependencies=_protected)
 
 
 @app.get("/health", tags=["meta"])
