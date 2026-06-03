@@ -7,6 +7,7 @@ import Channels from './pages/Channels'
 import Videos from './pages/Videos'
 import VideoDetail from './pages/VideoDetail'
 import InstantAnalyze from './pages/InstantAnalyze'
+import Tags from './pages/Tags'
 import Logs from './pages/Logs'
 import Digests from './pages/Digests'
 import DigestDetail from './pages/DigestDetail'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="videos" element={<Videos />} />
           <Route path="videos/:videoPk" element={<VideoDetail />} />
           <Route path="instant-analyze" element={<InstantAnalyze />} />
+          <Route path="tags" element={<Tags />} />
           <Route path="logs" element={<Logs />} />
           <Route path="digests" element={<Digests />} />
           <Route path="digests/:digestPk" element={<DigestDetail />} />

@@ -9,6 +9,7 @@ const NAV = [
   { sub: 'channels', label: '채널 관리', icon: '📺' },
   { sub: 'videos', label: '영상 목록', icon: '🎬' },
   { sub: 'instant-analyze', label: '영상 분석', icon: '🔍' },
+  { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
   { sub: 'digests', label: '주간 리뷰', icon: '📊' },
   { sub: 'logs', label: 'Logs', icon: '📋' },
 ]
@@ -23,7 +24,7 @@ export default function Layout() {
   const onSwitchGroup = (slug: string) => {
     const after = location.pathname.replace(/^\/g\/[^/]+/, '')
     const seg = after.split('/').filter(Boolean)[0] ?? ''
-    const safe = ['channels', 'videos', 'instant-analyze', 'digests', 'logs'].includes(seg) ? seg : ''
+    const safe = ['channels', 'videos', 'instant-analyze', 'tags', 'digests', 'logs'].includes(seg) ? seg : ''
     navigate(`/g/${slug}/${safe}`)
   }
 
