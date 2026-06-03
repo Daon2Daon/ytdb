@@ -62,16 +62,24 @@ DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석
   "confidence_score": 0.0
 }"""
 
+# UI가 실제로 필요로 하는 핵심 필드만 필수로 강제한다.
+# sentiment/confidence_score/headline/bullet_points 등은 선택값으로,
+# 그룹 성격(경제·마케팅·통신 등)에 따라 없거나 자유 값이어도 분석을 실패시키지 않는다.
+# sentiment는 자유 문자열로 저장한다(경제="bullish", 마케팅="trendy" 등). 경제 enum 강제 안 함.
 REQUIRED_FIELDS = {
     "one_line",
-    "headline",
     "short_summary_md",
-    "bullet_points",
     "full_analysis_md",
-    "sentiment",
-    "confidence_score",
 }
-_VALID_SENTIMENT = {"bullish", "bearish", "neutral", "mixed"}
+
+
+def _coerce_confidence(v: Any) -> Optional[float]:
+    """신뢰도 값을 관대하게 변환한다. 0~1 범위의 숫자만 채택, 그 외/잘못된 값은 None."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if 0.0 <= f <= 1.0 else None
 
 
 class AnalysisFailedError(RuntimeError):
@@ -96,11 +104,7 @@ def _validate(data: Dict[str, Any]) -> None:
     missing = REQUIRED_FIELDS - set(data.keys())
     if missing:
         raise AnalysisValidationError(f"필수 필드 누락: {missing}")
-    if data.get("sentiment") not in _VALID_SENTIMENT:
-        raise AnalysisValidationError(f"sentiment 값이 잘못됨: {data.get('sentiment')!r}")
-    score = data.get("confidence_score")
-    if not isinstance(score, (int, float)) or not (0.0 <= float(score) <= 1.0):
-        raise AnalysisValidationError(f"confidence_score 범위 오류: {score!r}")
+    # sentiment/confidence_score는 선택값 — 검증으로 막지 않는다(저장 단계에서 관대 처리).
 
 
 def _published_at_kst(published_at_str: str) -> str:
@@ -206,7 +210,7 @@ class AnalysisPipeline:
             insights=data.get("insights"),
             entities=data.get("entities"),
             sentiment=data.get("sentiment"),
-            confidence_score=float(data.get("confidence_score") or 0.0),
+            confidence_score=_coerce_confidence(data.get("confidence_score")),
             model_name=result.model_name,
             gateway_url=result.gateway_url,
             prompt_version=result.prompt_version,
