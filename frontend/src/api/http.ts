@@ -23,6 +23,8 @@ export function groupClient(slug: string) {
       }),
     patch: <T>(path: string, body: unknown) =>
       request<T>(`${base}${path}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    put: <T>(path: string, body: unknown) =>
+      request<T>(`${base}${path}`, { method: 'PUT', body: JSON.stringify(body) }),
     del: <T>(path: string) => request<T>(`${base}${path}`, { method: 'DELETE' }),
   }
 }
