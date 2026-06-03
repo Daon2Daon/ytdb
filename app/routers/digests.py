@@ -61,6 +61,6 @@ async def generate_digest(
         digest_cfg=cfg,
         period_weeks=payload.period_weeks,
         category=payload.category,
-        save=True,
+        save=payload.save,
     )
     return digest

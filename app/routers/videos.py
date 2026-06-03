@@ -309,15 +309,19 @@ async def notify_video_now(
                 message="이미 발송된 영상입니다. 재발송하려면 force=true로 요청하세요.",
                 notified_at=video.notified_at,
             )
-        try:
-            sent = await notify_video(notif, video, analysis)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=f"발송 실패: {e}") from e
-        if sent == 0:
-            raise HTTPException(status_code=400, detail="발송된 메시지가 없습니다. 알림 설정(봇 토큰/Chat ID)을 확인하세요.")
-        now = datetime.now(timezone.utc)
-        async with session.begin():
-            await session.execute(
+
+    # 네트워크 발송은 트랜잭션 밖에서 수행한다(읽기 세션은 위에서 이미 닫힘).
+    try:
+        sent = await notify_video(notif, video, analysis)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"발송 실패: {e}") from e
+    if sent == 0:
+        raise HTTPException(status_code=400, detail="발송된 메시지가 없습니다. 알림 설정(봇 토큰/Chat ID)을 확인하세요.")
+
+    now = datetime.now(timezone.utc)
+    async with dpm.group_session(group) as write_session:
+        async with write_session.begin():
+            await write_session.execute(
                 update(Video).where(Video.video_pk == video_pk).values(notified_at=now)
             )
     return VideoNotifyResponse(success=True, message=f"{sent}개 대상에 발송했습니다.", notified_at=now)

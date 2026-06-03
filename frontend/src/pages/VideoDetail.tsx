@@ -336,15 +336,16 @@ export default function VideoDetail() {
           </div>
         )}
 
-        {/* Telegram 알림 미리보기 */}
-        {(video.headline || video.full_analysis_md || (video.bullet_points && video.bullet_points.length > 0)) && (
+        {/* Telegram 알림 미리보기 (실제 발송 본문과 동일: headline + one_line + short_summary_md) */}
+        {(video.headline || video.one_line || video.short_summary_md) && (
           <div className="bg-gray-800 rounded-xl p-4 text-gray-100 text-xs space-y-2 break-words">
             <p className="text-gray-400 uppercase tracking-wide">Telegram 알림 미리보기</p>
             <p className="font-bold">🎬 [{video.source_channel_name || '모니터 채널'}] 신규 영상</p>
             {video.headline && <p className="font-semibold">{video.headline}</p>}
-            {video.full_analysis_md && (
+            {video.one_line && <p className="text-gray-300">{video.one_line}</p>}
+            {video.short_summary_md && (
               <div className="text-gray-200 whitespace-pre-wrap font-sans max-h-48 overflow-y-auto border border-gray-600 rounded-lg p-2">
-                {video.full_analysis_md.length > 1200 ? `${video.full_analysis_md.slice(0, 1200)}…` : video.full_analysis_md}
+                {video.short_summary_md}
               </div>
             )}
             {video.tags.length > 0 && <p className="text-blue-300">🏷 {video.tags.slice(0, 8).join(', ')}</p>}
