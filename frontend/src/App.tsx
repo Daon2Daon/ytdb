@@ -8,6 +8,8 @@ import Videos from './pages/Videos'
 import VideoDetail from './pages/VideoDetail'
 import InstantAnalyze from './pages/InstantAnalyze'
 import Logs from './pages/Logs'
+import Digests from './pages/Digests'
+import DigestDetail from './pages/DigestDetail'
 import Settings from './pages/Settings'
 import { groupApi } from './api/groups'
 
@@ -38,6 +40,8 @@ export default function App() {
           <Route path="videos/:videoPk" element={<VideoDetail />} />
           <Route path="instant-analyze" element={<InstantAnalyze />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="digests" element={<Digests />} />
+          <Route path="digests/:digestPk" element={<DigestDetail />} />
           <Route path="settings/:category" element={<Settings />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
