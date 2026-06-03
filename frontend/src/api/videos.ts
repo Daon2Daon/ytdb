@@ -32,5 +32,6 @@ export function videoApi(slug: string) {
       c.post<{ status: string; video_pk: number }>(`/videos/${pk}/analyze-now`, { custom_prompt: customPrompt ?? null }),
     notify: (pk: number, force = false) =>
       c.post<VideoNotifyResponse>(`/videos/${pk}/notify`, { force }),
+    resetFailed: () => c.post<{ reset: number }>('/videos/reset-failed'),
   }
 }

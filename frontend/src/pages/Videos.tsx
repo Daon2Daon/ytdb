@@ -31,6 +31,7 @@ export default function Videos() {
   const [tags, setTags] = useState<Tag[]>([])
   const [deleteTarget, setDeleteTarget] = useState<Video | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const page = Number(searchParams.get('page') ?? 1)
   const channelPk = searchParams.get('channel_pk') ? Number(searchParams.get('channel_pk')) : undefined
@@ -78,6 +79,20 @@ export default function Videos() {
       alert((e as Error).message)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleResetFailed = async () => {
+    if (!window.confirm('실패한 영상을 모두 분석 대기열로 되돌립니다(재시도 횟수 초기화). 계속할까요?')) return
+    setResetting(true)
+    try {
+      const r = await videoApi(activeSlug).resetFailed()
+      alert(`${r.reset}건을 대기열로 되돌렸습니다.`)
+      await load()
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -136,6 +151,15 @@ export default function Videos() {
             필터 초기화
           </button>
         )}
+
+        <button
+          onClick={handleResetFailed}
+          disabled={resetting}
+          className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 disabled:opacity-60"
+          title="실패(failed) 영상을 전부 pending으로 되돌리고 재시도 횟수를 초기화합니다"
+        >
+          {resetting ? '되돌리는 중...' : '실패 영상 일괄 재분석'}
+        </button>
 
         <span className="ml-auto text-sm text-gray-400 self-center">총 {total}개</span>
       </div>

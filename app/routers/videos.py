@@ -188,6 +188,23 @@ async def list_videos(
     )
 
 
+@router.post("/reset-failed")
+async def reset_failed_videos(group: Group = Depends(get_group_or_404)) -> dict:
+    """실패(failed) 영상을 전부 pending으로 되돌리고 retry_count를 초기화한다.
+
+    영구 failed(retry_count >= 한도)를 포함해 다시 분석 대기열에 올린다.
+    retry_count를 0으로 리셋해야 새로 재시도 기회를 받는다.
+    """
+    async with dpm.group_session(group) as session:
+        async with session.begin():
+            result = await session.execute(
+                update(Video)
+                .where(Video.analysis_status == "failed")
+                .values(analysis_status="pending", analysis_error=None, retry_count=0)
+            )
+    return {"reset": int(result.rowcount or 0)}
+
+
 @router.get("/{video_pk}", response_model=VideoDetail)
 async def get_video(
     video_pk: int, group: Group = Depends(get_group_or_404)
