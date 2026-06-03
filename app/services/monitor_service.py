@@ -596,7 +596,7 @@ async def poll_single_channel(group: Group, channel_pk: int) -> None:
         await api_client.aclose()
 
 
-async def analyze_specific_video(group: Group, video_pk: int) -> None:
+async def analyze_specific_video(group: Group, video_pk: int, custom_prompt: Optional[str] = None) -> None:
     """단일 그룹에서 특정 영상 1건을 즉시 분석한다(수동 등록용)."""
     try:
         await dpm.ensure_schema(group)
@@ -605,7 +605,7 @@ async def analyze_specific_video(group: Group, video_pk: int) -> None:
         return
 
     make_session = _make_session_factory(engine, group.schema_name)
-    pipeline = await build_analysis_pipeline(group.group_id)
+    pipeline = await build_analysis_pipeline(group.group_id, analysis_prompt_override=custom_prompt)
     timer = JobTimer()
     title: Optional[str] = None
     channel_pk: Optional[int] = None

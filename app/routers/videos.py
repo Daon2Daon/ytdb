@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -33,6 +35,10 @@ from app.services.youtube_api import YouTubeAPIClient, YouTubeAPIError
 router = APIRouter(prefix="/api/groups/{slug}/videos", tags=["videos"])
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _INSTANT_CHANNEL_ID = "__instant__"
+
+
+class AnalyzeNowRequest(BaseModel):
+    custom_prompt: Optional[str] = None
 
 
 def _extract_video_id(raw: str) -> str | None:
@@ -227,6 +233,7 @@ async def reanalyze_video(
 async def analyze_video_now(
     video_pk: int,
     background: BackgroundTasks,
+    payload: AnalyzeNowRequest | None = None,
     group: Group = Depends(get_group_or_404),
 ) -> dict:
     """영상 1건을 스케줄 대기 없이 백그라운드에서 즉시 분석한다."""
@@ -239,7 +246,8 @@ async def analyze_video_now(
             )
             if (result.rowcount or 0) == 0:
                 raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
-    background.add_task(analyze_specific_video, group, video_pk)
+    custom = payload.custom_prompt if payload else None
+    background.add_task(analyze_specific_video, group, video_pk, custom)
     return {"status": "started", "video_pk": video_pk}
 
 

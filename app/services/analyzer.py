@@ -307,7 +307,9 @@ class AnalysisPipeline:
 
 
 async def build_analysis_pipeline(
-    group_id: int, notify_callback: Optional[Callable[[int], Awaitable[Any]]] = None
+    group_id: int,
+    notify_callback: Optional[Callable[[int], Awaitable[Any]]] = None,
+    analysis_prompt_override: Optional[str] = None,
 ) -> AnalysisPipeline:
     """그룹의 AI agent 설정 + 프롬프트로 파이프라인 생성."""
     mgr = get_settings_manager()
@@ -317,6 +319,10 @@ async def build_analysis_pipeline(
     return AnalysisPipeline(
         llm_client=llm,
         ai_settings=ai,
-        analysis_prompt=prompts.analysis_prompt,
+        analysis_prompt=(
+            analysis_prompt_override.strip()
+            if analysis_prompt_override and analysis_prompt_override.strip()
+            else prompts.analysis_prompt
+        ),
         notify_callback=notify_callback,
     )
