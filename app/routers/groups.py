@@ -11,6 +11,7 @@ from app.control_db import get_session
 from app.models.control.group import Group
 from app.routers.deps import get_group_or_404
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
+from app.services.default_settings import seed_default_settings
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -41,6 +42,8 @@ async def create_group(
             status_code=409, detail="slug 또는 schema_name이 이미 존재합니다."
         )
     await session.refresh(group)
+    # 사용자 편의: 추천 기본 설정값을 미리 채워 둔다(시크릿/접속정보 제외).
+    await seed_default_settings(group.group_id)
     return group
 
 
