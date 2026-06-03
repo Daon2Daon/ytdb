@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
+import { useAuth } from '../auth/useAuth'
 import { SETTING_CATEGORIES } from '../settings/defs'
 import { NewGroupModal, EditGroupModal } from './GroupModals'
 
@@ -16,6 +17,7 @@ const NAV = [
 
 export default function Layout() {
   const { groups, activeSlug } = useGroup()
+  const { authEnabled, username, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [groupModal, setGroupModal] = useState<null | 'new' | 'edit'>(null)
@@ -48,6 +50,12 @@ export default function Layout() {
         </select>
         <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">이름 수정</button>
         <button onClick={() => setGroupModal('new')} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ 새 그룹</button>
+        {authEnabled && (
+          <div className="ml-auto flex items-center gap-2">
+            {username && <span className="text-xs text-gray-400">{username}</span>}
+            <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
+          </div>
+        )}
       </header>
 
       <div className="flex flex-col lg:flex-row flex-1 max-w-7xl mx-auto w-full px-3 sm:px-4 py-4 gap-4 lg:gap-6">
