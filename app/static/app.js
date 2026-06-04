@@ -433,7 +433,7 @@ const SETTING_DEFS = {
     {
       key: "base_url",
       label: "게이트웨이 Base URL",
-      help: "예: 100.114.126.67:4000 또는 http://... 형식. 저장 후 모델 목록 조회 가능",
+      help: "예: http://litellm:4000 또는 http://<게이트웨이 호스트>:4000 형식. 저장 후 모델 목록 조회 가능",
     },
     { key: "api_key", label: "API 키", secret: true, help: "litellm 게이트웨이 인증 키" },
     {

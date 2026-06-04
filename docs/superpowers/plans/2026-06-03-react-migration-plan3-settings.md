@@ -114,7 +114,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
 
 export const SETTING_DEFS: Record<string, FieldDef[]> = {
   ai_gateway: [
-    { key: 'base_url', label: '게이트웨이 Base URL', help: '예: http://100.114.126.67:4000 또는 http://litellm:4000' },
+    { key: 'base_url', label: '게이트웨이 Base URL', help: '예: http://litellm:4000 또는 http://<게이트웨이 호스트>:4000' },
     { key: 'api_key', label: 'API 키', secret: true, help: 'litellm 게이트웨이 인증 키' },
     { key: 'primary_model', label: '기본 모델 (경로 A)', type: 'model_select', help: '영상 분석 1차 호출 모델' },
     { key: 'fallback_model', label: '폴백 모델 (경로 B)', type: 'model_select', help: '기본 모델 실패 시 재시도 모델' },
