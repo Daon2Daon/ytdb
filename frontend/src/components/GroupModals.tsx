@@ -72,6 +72,7 @@ export function NewGroupModal({ onClose }: { onClose: () => void }) {
 export function EditGroupModal({ onClose }: { onClose: () => void }) {
   const { activeGroup, activeSlug, reloadGroups } = useGroup()
   const [name, setName] = useState(activeGroup?.name ?? '')
+  const [isActive, setIsActive] = useState(activeGroup?.is_active ?? true)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -80,7 +81,7 @@ export function EditGroupModal({ onClose }: { onClose: () => void }) {
     setBusy(true)
     setErr(null)
     try {
-      await groupApi.rename(activeSlug, name.trim())
+      await groupApi.update(activeSlug, { name: name.trim(), is_active: isActive })
       await reloadGroups()
       onClose()
     } catch (e) {
@@ -91,7 +92,7 @@ export function EditGroupModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ModalShell title="그룹 이름 수정" onClose={onClose}>
+    <ModalShell title="그룹 수정" onClose={onClose}>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <div>
         <label className="block text-xs text-gray-500 mb-1">그룹 영문 ID (변경 불가)</label>
@@ -101,6 +102,23 @@ export function EditGroupModal({ onClose }: { onClose: () => void }) {
         <label className="block text-xs text-gray-500 mb-1">그룹 명칭</label>
         <input value={name} onChange={(e) => setName(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <button
+            type="button"
+            onClick={() => setIsActive((v) => !v)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${isActive ? 'bg-blue-600' : 'bg-gray-300'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isActive ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+          <span className="text-sm font-medium text-gray-700">{isActive ? '활성 (자동화 동작)' : '비활성 (일시정지)'}</span>
+        </label>
+        {!isActive && (
+          <p className="text-xs text-amber-600">
+            자동 수집·분석·다이제스트·알림이 중단됩니다. 데이터 조회와 수동 실행은 계속 가능합니다.
+          </p>
+        )}
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">취소</button>

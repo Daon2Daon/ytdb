@@ -7,4 +7,6 @@ export const groupApi = {
     rootApi.post<Group>('/groups', body),
   rename: (slug: string, name: string) =>
     rootApi.patch<Group>(`/groups/${slug}`, { name }),
+  update: (slug: string, body: Partial<Pick<Group, 'name' | 'is_active'>>) =>
+    rootApi.patch<Group>(`/groups/${slug}`, body),
 }
