@@ -153,6 +153,10 @@ def _period(now_utc: datetime, weeks: int) -> tuple[datetime, datetime]:
     return start.replace(second=0, microsecond=0), end
 
 
+def _period_label(period_start: datetime, period_end: datetime) -> str:
+    return f"{period_start.date()} ~ {period_end.date()}"
+
+
 def _render_payload(agg: DigestAggregate, start: datetime, end: datetime, category: str) -> str:
     payload = {
         "period_start": start.isoformat(),
@@ -250,8 +254,21 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
     prompts = await mgr.get_prompts(group_id)
     model = ai.digest_model or ai.primary_model
     prompt = (prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
-    context_json = _render_payload(aggregate, period_start, period_end, category)
-    user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}"
+    period_label = _period_label(period_start, period_end)
+    try:
+        user_msg = prompt.format(
+            category=category or "전체",
+            period_label=period_label,
+            video_count=aggregate.video_count,
+            sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
+            top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
+            videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
+        )
+    except (KeyError, IndexError, ValueError):
+        # 프롬프트에 알 수 없는 placeholder가 있으면 안전 폴백(발송 자체는 막지 않음).
+        context_json = _render_payload(aggregate, period_start, period_end, category)
+        videos_block = _build_videos_block(aggregate.videos, aggregate.video_count)
+        user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}\n\n영상별 자료:\n{videos_block}"
     client = LiteLLMClient(ai)
     try:
         chat = await client.chat(
