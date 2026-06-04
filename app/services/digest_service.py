@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -25,20 +25,120 @@ from app.services.settings_types import DigestSettings
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
-DEFAULT_DIGEST_PROMPT = """다음은 YouTube 분석 데이터 집계입니다. 한국어로 주간 브리핑을 작성하세요.
+# 사용 가능한 placeholder: {category} {period_label} {video_count}
+#                          {sentiment_summary} {top_tags} {videos_block}
+DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
 
-반드시 JSON으로만 출력:
-{
-  "headline": "string",
-  "summary_md": "string",
-  "telegram_summary": "string"
+## 집계 정보
+- 감성 분포: {sentiment_summary}
+- 주요 태그: {top_tags}
+
+## 영상별 자료 (헤드라인 · 한줄요약 · 핵심 주장 · 인사이트 · 등장 종목/지표)
+{videos_block}
+
+## 작성 지침
+위 영상들을 가로질러 이번 기간의 핵심을 한국어로 '브리핑' 형태로 종합하라. 개별 영상 나열이 아니라, 여러 영상에 걸쳐 반복되는 주장·관점·흐름을 묶어 서술할 것.
+- 행위 서술('~을 다뤘다', '~을 분석했다') 금지. 무엇을 주장·전망·결론 내렸는지를 직접 서술.
+- 같은 방향의 견해가 여럿이면 '합의된 관점', 견해가 갈리면 '엇갈리는 관점'으로 구분해 대비할 것.
+- 인사이트는 시청자가 실제 판단에 쓸 수 있도록 구체적 근거·수치와 함께 정리.
+- '~함', '~임' 형태의 개조식. 정치·민감 주제는 사실 위주 중립 표현.
+
+## 출력 형식
+반드시 아래 JSON 형식으로만 출력:
+{{
+  "headline": "이모지 1~2개 포함, 이번 기간 핵심을 한 줄로 (40자 이내)",
+  "summary_md": "마크다운 본문. 반드시 다음 4개 섹션(## 제목)을 순서대로 포함: '## 주요 내용'(이번 기간 핵심 주제·이슈), '## 관점과 의견'(합의된 관점 / 엇갈리는 관점 구분), '## 핵심 인사이트'(실행 가능한 판단 근거), '## 주목할 종목·이슈'(등장 종목/지표 중심)",
+  "telegram_summary": "텔레그램용 짧은 브리핑 (400자 이내, 마크다운 없이 일반 텍스트). 주요 내용과 핵심 관점 위주."
+}}"""
+
+
+_MAX_VIDEOS_IN_PROMPT = 40
+_MAX_BULLETS_PER_VIDEO = 3
+_MAX_INSIGHTS_PER_VIDEO = 3
+_MAX_ENTITIES_PER_VIDEO = 6
+
+_SENTIMENT_KO = {
+    "bullish": "긍정",
+    "bearish": "부정",
+    "neutral": "중립",
+    "mixed": "혼조",
+    "unknown": "미상",
 }
 
-요구사항:
-- headline: 한 줄 핵심 제목
-- summary_md: 핵심 변화, 주요 태그/채널, 감성 분포, 다음 주 관전 포인트 포함
-- telegram_summary: 900자 이내 요약
-"""
+
+@dataclass
+class VideoBrief:
+    channel_name: str
+    headline: Optional[str]
+    one_line: Optional[str]
+    title: Optional[str]
+    sentiment: Optional[str]
+    bullet_points: Optional[Any] = None
+    insights: Optional[Any] = None
+    entities: Optional[Any] = None
+
+
+def split_category_tokens(raw: Optional[str]) -> list[str]:
+    s = (raw or "").strip()
+    if not s:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in s.split(","):
+        t = part.strip()
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _format_entities(entities: Optional[Any]) -> str:
+    if not isinstance(entities, list):
+        return ""
+    names: list[str] = []
+    for e in entities:
+        name = str((e.get("name") if isinstance(e, dict) else e) or "").strip()
+        if name:
+            names.append(name)
+        if len(names) >= _MAX_ENTITIES_PER_VIDEO:
+            break
+    return ", ".join(names)
+
+
+def _sentiment_summary_text(breakdown: dict) -> str:
+    parts = []
+    for key in ("bullish", "bearish", "neutral", "mixed", "unknown"):
+        if breakdown.get(key):
+            parts.append(f"{_SENTIMENT_KO[key]} {breakdown[key]}")
+    return ", ".join(parts) if parts else "데이터 없음"
+
+
+def _build_videos_block(videos: list["VideoBrief"], total: int) -> str:
+    lines: list[str] = []
+    shown = videos[:_MAX_VIDEOS_IN_PROMPT]
+    for v in shown:
+        head = (v.headline or v.one_line or v.title or "").strip()
+        senti = _SENTIMENT_KO.get(v.sentiment or "unknown", v.sentiment or "미상")
+        lines.append(f"- [{v.channel_name}] {head} (논조: {senti})")
+        if v.one_line and v.one_line.strip() and v.one_line.strip() != head:
+            lines.append(f"  {v.one_line.strip()}")
+        bullets = v.bullet_points if isinstance(v.bullet_points, list) else []
+        for b in bullets[:_MAX_BULLETS_PER_VIDEO]:
+            s = str(b).strip()
+            if s:
+                lines.append(f"  • {s}")
+        insights = v.insights if isinstance(v.insights, list) else []
+        for ins in insights[:_MAX_INSIGHTS_PER_VIDEO]:
+            s = str(ins).strip()
+            if s:
+                lines.append(f"  ▶ 인사이트: {s}")
+        ent = _format_entities(v.entities)
+        if ent:
+            lines.append(f"  · 등장: {ent}")
+    remaining = total - len(shown)
+    if remaining > 0:
+        lines.append(f"... 외 {remaining}건")
+    return "\n".join(lines)
 
 
 @dataclass
@@ -47,6 +147,7 @@ class DigestAggregate:
     sentiment_breakdown: dict[str, int]
     top_tags: list[dict[str, Any]]
     top_channels: list[dict[str, Any]]
+    videos: list["VideoBrief"] = field(default_factory=list)
 
 
 @dataclass
@@ -61,6 +162,10 @@ def _period(now_utc: datetime, weeks: int) -> tuple[datetime, datetime]:
     end = now_utc.replace(second=0, microsecond=0)
     start = now_utc - timedelta(days=7 * max(1, weeks))
     return start.replace(second=0, microsecond=0), end
+
+
+def _period_label(period_start: datetime, period_end: datetime) -> str:
+    return f"{period_start.date()} ~ {period_end.date()}"
 
 
 def _render_payload(agg: DigestAggregate, start: datetime, end: datetime, category: str) -> str:
@@ -82,23 +187,49 @@ async def aggregate_period(
     period_end: datetime,
     category: str = "",
 ) -> DigestAggregate:
-    base = (
-        select(Video.video_pk, VideoAnalysis.sentiment, Channel.channel_name)
-        .join(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
-        .join(Channel, Channel.channel_pk == Video.channel_pk)
-        .where(VideoAnalysis.analyzed_at >= period_start, VideoAnalysis.analyzed_at < period_end)
-    )
-    if category:
-        base = base.where(Channel.category == category)
-    rows = (await session.execute(base)).all()
-    video_pks = [r[0] for r in rows]
+    rows = (
+        await session.execute(
+            select(
+                Video.video_pk,
+                VideoAnalysis.sentiment,
+                VideoAnalysis.headline,
+                VideoAnalysis.one_line,
+                Video.title,
+                VideoAnalysis.bullet_points,
+                VideoAnalysis.insights,
+                VideoAnalysis.entities,
+                Channel.channel_name,
+                Channel.category,
+            )
+            .join(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
+            .join(Channel, Channel.channel_pk == Video.channel_pk)
+            .where(VideoAnalysis.analyzed_at >= period_start, VideoAnalysis.analyzed_at < period_end)
+            .order_by(VideoAnalysis.analyzed_at.desc())
+        )
+    ).all()
+
+    want = (category or "").strip()
+    selected = []
+    for r in rows:
+        if want:
+            if want not in split_category_tokens(r.category):
+                continue
+        selected.append(r)
+
+    video_pks = [r.video_pk for r in selected]
     sentiment: dict[str, int] = {}
     channel_count: dict[str, int] = {}
-    for _, s, channel_name in rows:
-        key = (s or "unknown").strip() or "unknown"
+    videos: list[VideoBrief] = []
+    for r in selected:
+        key = (r.sentiment or "unknown").strip() or "unknown"
         sentiment[key] = sentiment.get(key, 0) + 1
-        cname = (channel_name or "(알 수 없음)").strip() or "(알 수 없음)"
+        cname = (r.channel_name or "(알 수 없음)").strip() or "(알 수 없음)"
         channel_count[cname] = channel_count.get(cname, 0) + 1
+        videos.append(VideoBrief(
+            channel_name=cname, headline=r.headline, one_line=r.one_line, title=r.title,
+            sentiment=r.sentiment, bullet_points=r.bullet_points,
+            insights=r.insights, entities=r.entities,
+        ))
 
     top_channels = [
         {"name": name, "count": count}
@@ -124,6 +255,7 @@ async def aggregate_period(
         sentiment_breakdown=sentiment,
         top_tags=top_tags,
         top_channels=top_channels,
+        videos=videos,
     )
 
 
@@ -133,8 +265,21 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
     prompts = await mgr.get_prompts(group_id)
     model = ai.digest_model or ai.primary_model
     prompt = (prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
-    context_json = _render_payload(aggregate, period_start, period_end, category)
-    user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}"
+    period_label = _period_label(period_start, period_end)
+    try:
+        user_msg = prompt.format(
+            category=category or "전체",
+            period_label=period_label,
+            video_count=aggregate.video_count,
+            sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
+            top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
+            videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
+        )
+    except (KeyError, IndexError, ValueError):
+        # 프롬프트에 알 수 없는 placeholder가 있으면 안전 폴백(발송 자체는 막지 않음).
+        context_json = _render_payload(aggregate, period_start, period_end, category)
+        videos_block = _build_videos_block(aggregate.videos, aggregate.video_count)
+        user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}\n\n영상별 자료:\n{videos_block}"
     client = LiteLLMClient(ai)
     try:
         chat = await client.chat(

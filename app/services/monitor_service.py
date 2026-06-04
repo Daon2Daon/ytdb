@@ -457,8 +457,15 @@ async def _notify_after_analysis(
     timer = JobTimer()
     try:
         with timer:
+            from app.services.notify_service import _fetch_video_tags
+            try:
+                tags = await _fetch_video_tags(make_session, video_pk)
+            except Exception:
+                tags = []
             sent = await notify_video(
-                notif, video, analysis, threshold=notif.low_confidence_threshold
+                notif, video, analysis, threshold=notif.low_confidence_threshold,
+                channel_name=getattr(channel, "channel_name", "") or "",
+                tags=tags, detail=notif.message_detail,
             )
         async with make_session() as sess:
             async with sess.begin():

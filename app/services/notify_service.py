@@ -16,6 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pg.channel import Channel
+from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.job_logger import (
@@ -30,10 +31,48 @@ from app.services.settings_types import NotificationSettings
 MakeSession = Callable[[], AsyncSession]
 
 _TELEGRAM_API = "https://api.telegram.org"
-_MAX_LEN = 3900  # 텔레그램 4096자 제한 여유
+_TELEGRAM_MAX_LEN = 4096
 
 
-def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0) -> str:
+def _to_kst(dt) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M KST")
+    except Exception:
+        return str(dt)
+
+
+def _format_duration(seconds) -> str:
+    if not seconds:
+        return ""
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _format_bullets(bullet_points) -> str:
+    if not isinstance(bullet_points, list):
+        return ""
+    out = []
+    for b in bullet_points:
+        if b is None:
+            continue
+        s = str(b).strip()
+        if s:
+            out.append(f"• {escape(s)}")
+    return "\n".join(out)
+
+
+def _truncate_html(text: str, max_len: int, suffix: str = "...") -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - len(suffix)] + suffix
+
+
+def _build_compact(video, analysis, threshold: float) -> str:
     title = analysis.headline or video.title or ""
     low_conf = (
         analysis.confidence_score is not None
@@ -57,8 +96,80 @@ def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0)
     if video.video_url:
         lines.append("")
         lines.append(escape(video.video_url))
-    text = "\n".join(lines)
-    return text[:_MAX_LEN]
+    return "\n".join(lines)[:_TELEGRAM_MAX_LEN]
+
+
+def _render_full(*, low_conf, channel_name, headline, body, bullets_list, tags, meta_parts, url) -> str:
+    lines = []
+    if low_conf:
+        lines.append("⚠️ <b>[저신뢰도 분석]</b>")
+        lines.append("")
+    if channel_name:
+        lines.append(f"<b>🎬 [{escape(channel_name)}] 신규 영상</b>")
+        lines.append("")
+    if headline:
+        lines.append(f"<b>{escape(headline)}</b>")
+        lines.append("")
+    if body:
+        lines.append(escape(body))
+        lines.append("")
+    bullets = _format_bullets(bullets_list)
+    if bullets:
+        lines.append(bullets)
+        lines.append("")
+    if tags:
+        lines.append("🏷 " + ", ".join(escape(t) for t in tags))
+    if meta_parts:
+        lines.append("  ·  ".join(meta_parts))
+    lines.append("")
+    if url:
+        lines.append(f'🔗 <a href="{escape(url, quote=True)}">영상 보러가기</a>')
+    return "\n".join(lines)
+
+
+def _build_full(video, analysis, threshold: float, channel_name: str, tags) -> str:
+    low_conf = (
+        analysis.confidence_score is not None
+        and float(analysis.confidence_score) < float(threshold)
+    )
+    headline = analysis.headline or video.title or ""
+    body = analysis.full_analysis_md or analysis.short_summary_md or ""
+    bullets_list = analysis.bullet_points if isinstance(analysis.bullet_points, list) else []
+    meta_parts = []
+    if video.published_at:
+        meta_parts.append(f"📅 {_to_kst(video.published_at)}")
+    dur = _format_duration(video.duration_seconds)
+    if dur:
+        meta_parts.append(f"⏱ {dur}")
+
+    def render(b, bl):
+        return _render_full(
+            low_conf=low_conf, channel_name=channel_name, headline=headline,
+            body=b, bullets_list=bl, tags=tags, meta_parts=meta_parts, url=video.video_url,
+        )
+
+    text = render(body, bullets_list)
+    if len(text) <= _TELEGRAM_MAX_LEN:
+        return text
+    overflow = len(text) - _TELEGRAM_MAX_LEN + 50
+    if len(body) > overflow:
+        return render(body[: len(body) - overflow] + "…", bullets_list)
+    # 본문을 비우고 bullets를 줄여가며 한도 내로. 그래도 안 되면 본문·bullets 비워 링크 보존.
+    for n in range(len(bullets_list) - 1, -1, -1):
+        candidate = render("", bullets_list[:n])
+        if len(candidate) <= _TELEGRAM_MAX_LEN:
+            return candidate
+    stripped = render("", [])
+    if len(stripped) <= _TELEGRAM_MAX_LEN:
+        return stripped
+    return _truncate_html(stripped, _TELEGRAM_MAX_LEN)
+
+
+def build_message(video, analysis, threshold: float = 0.0, *,
+                  channel_name: str = "", tags=None, detail: str = "full") -> str:
+    if detail == "compact":
+        return _build_compact(video, analysis, threshold)
+    return _build_full(video, analysis, threshold, channel_name, tags or [])
 
 
 def _matches_scheduled_time(now_local: datetime, scheduled_times: list[str]) -> bool:
@@ -104,11 +215,16 @@ async def notify_video(
     analysis: VideoAnalysis,
     client: Optional[httpx.AsyncClient] = None,
     threshold: float = 0.0,
+    *,
+    channel_name: str = "",
+    tags=None,
+    detail: str = "full",
 ) -> int:
     """그룹의 모든 chat_id에 발송. 성공 건수 반환. 일부 실패해도 나머지는 계속 시도."""
     if not notif.is_sendable:
         return 0
-    text = build_message(video, analysis, threshold)
+    text = build_message(video, analysis, threshold,
+                         channel_name=channel_name, tags=tags or [], detail=detail)
     own_client = client is None
     cl = client or httpx.AsyncClient(timeout=20.0)
     sent = 0
@@ -126,6 +242,20 @@ async def notify_video(
     if errors and sent == 0:
         raise RuntimeError("; ".join(errors)[:500])
     return sent
+
+
+async def _fetch_video_tags(make_session, video_pk: int, limit: int = 8) -> list[str]:
+    async with make_session() as sess:
+        rows = (
+            await sess.execute(
+                select(Tag.name)
+                .join(VideoTag, VideoTag.tag_pk == Tag.tag_pk)
+                .where(VideoTag.video_pk == video_pk)
+                .order_by(VideoTag.weight.desc().nullslast(), Tag.name.asc())
+                .limit(limit)
+            )
+        ).all()
+    return [r[0] for r in rows]
 
 
 async def notify_pending_batch(
@@ -162,7 +292,7 @@ async def notify_pending_batch(
         ).all()
 
     candidates = [
-        (v, a)
+        (v, a, ch)
         for (v, a, ch) in rows
         if _passes_notify_baseline(ch.notify_from, v.published_at)
     ]
@@ -177,9 +307,14 @@ async def notify_pending_batch(
         with timer:
             client = httpx.AsyncClient(timeout=20.0)
             try:
-                for i, (video, analysis) in enumerate(batch):
+                for i, (video, analysis, channel) in enumerate(batch):
                     try:
-                        ok = await notify_video(notif, video, analysis, client, threshold)
+                        tags = await _fetch_video_tags(make_session, video.video_pk)
+                        ok = await notify_video(
+                            notif, video, analysis, client, threshold,
+                            channel_name=getattr(channel, "channel_name", "") or "",
+                            tags=tags, detail=notif.message_detail,
+                        )
                         if ok:
                             async with make_session() as sess:
                                 async with sess.begin():

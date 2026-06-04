@@ -34,6 +34,7 @@ class NotificationSettings:
     timezone: str = "Asia/Seoul"
     # 표시
     low_confidence_threshold: float = 0.5
+    message_detail: str = "full"  # full | compact
 
     @property
     def is_sendable(self) -> bool:

@@ -214,6 +214,7 @@ class SettingsManager:
             quiet_hours_end=str(d.get("quiet_hours_end") or "07:00"),
             timezone=str(d.get("timezone") or "Asia/Seoul"),
             low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
+            message_detail=str(d.get("message_detail") or "full"),
         )
 
     async def get_digest(self, group_id: int) -> DigestSettings:
