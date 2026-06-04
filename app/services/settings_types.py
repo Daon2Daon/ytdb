@@ -22,6 +22,18 @@ class NotificationSettings:
     bot_token: str = ""
     chat_ids: list[str] = field(default_factory=list)
     parse_mode: str = "HTML"
+    # 발송 모드/예약
+    send_mode: str = "immediate"  # immediate | scheduled
+    scheduled_times: list[str] = field(default_factory=list)  # HH:MM, 최대 10
+    scheduled_max_per_run: int = 5
+    wait_between_messages_sec: int = 30
+    # 야간 제한
+    quiet_hours_enabled: bool = False
+    quiet_hours_start: str = "22:00"
+    quiet_hours_end: str = "07:00"
+    timezone: str = "Asia/Seoul"
+    # 표시
+    low_confidence_threshold: float = 0.5
 
     @property
     def is_sendable(self) -> bool:
