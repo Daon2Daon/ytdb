@@ -25,20 +25,31 @@ from app.services.settings_types import DigestSettings
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
-DEFAULT_DIGEST_PROMPT = """다음은 YouTube 분석 데이터 집계입니다. 한국어로 주간 브리핑을 작성하세요.
+# 사용 가능한 placeholder: {category} {period_label} {video_count}
+#                          {sentiment_summary} {top_tags} {videos_block}
+DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
 
-반드시 JSON으로만 출력:
-{
-  "headline": "string",
-  "summary_md": "string",
-  "telegram_summary": "string"
-}
+## 집계 정보
+- 감성 분포: {sentiment_summary}
+- 주요 태그: {top_tags}
 
-요구사항:
-- headline: 한 줄 핵심 제목
-- summary_md: 핵심 변화, 주요 태그/채널, 감성 분포, 다음 주 관전 포인트 포함
-- telegram_summary: 900자 이내 요약
-"""
+## 영상별 자료 (헤드라인 · 한줄요약 · 핵심 주장 · 인사이트 · 등장 종목/지표)
+{videos_block}
+
+## 작성 지침
+위 영상들을 가로질러 이번 기간의 핵심을 한국어로 '브리핑' 형태로 종합하라. 개별 영상 나열이 아니라, 여러 영상에 걸쳐 반복되는 주장·관점·흐름을 묶어 서술할 것.
+- 행위 서술('~을 다뤘다', '~을 분석했다') 금지. 무엇을 주장·전망·결론 내렸는지를 직접 서술.
+- 같은 방향의 견해가 여럿이면 '합의된 관점', 견해가 갈리면 '엇갈리는 관점'으로 구분해 대비할 것.
+- 인사이트는 시청자가 실제 판단에 쓸 수 있도록 구체적 근거·수치와 함께 정리.
+- '~함', '~임' 형태의 개조식. 정치·민감 주제는 사실 위주 중립 표현.
+
+## 출력 형식
+반드시 아래 JSON 형식으로만 출력:
+{{
+  "headline": "이모지 1~2개 포함, 이번 기간 핵심을 한 줄로 (40자 이내)",
+  "summary_md": "마크다운 본문. 반드시 다음 4개 섹션(## 제목)을 순서대로 포함: '## 주요 내용'(이번 기간 핵심 주제·이슈), '## 관점과 의견'(합의된 관점 / 엇갈리는 관점 구분), '## 핵심 인사이트'(실행 가능한 판단 근거), '## 주목할 종목·이슈'(등장 종목/지표 중심)",
+  "telegram_summary": "텔레그램용 짧은 브리핑 (400자 이내, 마크다운 없이 일반 텍스트). 주요 내용과 핵심 관점 위주."
+}}"""
 
 
 _MAX_VIDEOS_IN_PROMPT = 40
