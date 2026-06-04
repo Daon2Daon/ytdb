@@ -16,6 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pg.channel import Channel
+from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.job_logger import (
@@ -213,11 +214,16 @@ async def notify_video(
     analysis: VideoAnalysis,
     client: Optional[httpx.AsyncClient] = None,
     threshold: float = 0.0,
+    *,
+    channel_name: str = "",
+    tags=None,
+    detail: str = "full",
 ) -> int:
     """그룹의 모든 chat_id에 발송. 성공 건수 반환. 일부 실패해도 나머지는 계속 시도."""
     if not notif.is_sendable:
         return 0
-    text = build_message(video, analysis, threshold)
+    text = build_message(video, analysis, threshold,
+                         channel_name=channel_name, tags=tags or [], detail=detail)
     own_client = client is None
     cl = client or httpx.AsyncClient(timeout=20.0)
     sent = 0
@@ -235,6 +241,20 @@ async def notify_video(
     if errors and sent == 0:
         raise RuntimeError("; ".join(errors)[:500])
     return sent
+
+
+async def _fetch_video_tags(make_session, video_pk: int, limit: int = 8) -> list[str]:
+    async with make_session() as sess:
+        rows = (
+            await sess.execute(
+                select(Tag.name)
+                .join(VideoTag, VideoTag.tag_pk == Tag.tag_pk)
+                .where(VideoTag.video_pk == video_pk)
+                .order_by(VideoTag.weight.desc().nullslast(), Tag.name.asc())
+                .limit(limit)
+            )
+        ).all()
+    return [r[0] for r in rows]
 
 
 async def notify_pending_batch(
@@ -271,7 +291,7 @@ async def notify_pending_batch(
         ).all()
 
     candidates = [
-        (v, a)
+        (v, a, ch)
         for (v, a, ch) in rows
         if _passes_notify_baseline(ch.notify_from, v.published_at)
     ]
@@ -286,9 +306,14 @@ async def notify_pending_batch(
         with timer:
             client = httpx.AsyncClient(timeout=20.0)
             try:
-                for i, (video, analysis) in enumerate(batch):
+                for i, (video, analysis, channel) in enumerate(batch):
                     try:
-                        ok = await notify_video(notif, video, analysis, client, threshold)
+                        tags = await _fetch_video_tags(make_session, video.video_pk)
+                        ok = await notify_video(
+                            notif, video, analysis, client, threshold,
+                            channel_name=getattr(channel, "channel_name", "") or "",
+                            tags=tags, detail=notif.message_detail,
+                        )
                         if ok:
                             async with make_session() as sess:
                                 async with sess.begin():

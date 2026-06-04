@@ -328,8 +328,18 @@ async def notify_video_now(
             )
 
     # 네트워크 발송은 트랜잭션 밖에서 수행한다(읽기 세션은 위에서 이미 닫힘).
+    from app.services.notify_service import _fetch_video_tags
+    make_session = lambda: dpm.group_session(group)
     try:
-        sent = await notify_video(notif, video, analysis)
+        tags = await _fetch_video_tags(make_session, video_pk)
+    except Exception:
+        tags = []
+    try:
+        sent = await notify_video(
+            notif, video, analysis,
+            channel_name=getattr(video, "source_channel_name", "") or "",
+            tags=tags, detail=notif.message_detail,
+        )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"발송 실패: {e}") from e
     if sent == 0:
