@@ -72,7 +72,7 @@ def _truncate_html(text: str, max_len: int, suffix: str = "...") -> str:
     return text[: max_len - len(suffix)] + suffix
 
 
-def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0) -> str:
+def _build_compact(video, analysis, threshold: float) -> str:
     title = analysis.headline or video.title or ""
     low_conf = (
         analysis.confidence_score is not None
@@ -96,8 +96,74 @@ def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0)
     if video.video_url:
         lines.append("")
         lines.append(escape(video.video_url))
-    text = "\n".join(lines)
-    return text[:_MAX_LEN]
+    return "\n".join(lines)[:_TELEGRAM_MAX_LEN]
+
+
+def _render_full(*, low_conf, channel_name, headline, body, bullets_list, tags, meta_parts, url) -> str:
+    lines = []
+    if low_conf:
+        lines.append("⚠️ <b>[저신뢰도 분석]</b>")
+        lines.append("")
+    if channel_name:
+        lines.append(f"<b>🎬 [{escape(channel_name)}] 신규 영상</b>")
+        lines.append("")
+    if headline:
+        lines.append(f"<b>{escape(headline)}</b>")
+        lines.append("")
+    if body:
+        lines.append(escape(body))
+        lines.append("")
+    bullets = _format_bullets(bullets_list)
+    if bullets:
+        lines.append(bullets)
+        lines.append("")
+    if tags:
+        lines.append("🏷 " + ", ".join(escape(t) for t in tags))
+    if meta_parts:
+        lines.append("  ·  ".join(meta_parts))
+    lines.append("")
+    if url:
+        lines.append(f'🔗 <a href="{escape(url, quote=True)}">영상 보러가기</a>')
+    return "\n".join(lines)
+
+
+def _build_full(video, analysis, threshold: float, channel_name: str, tags) -> str:
+    low_conf = (
+        analysis.confidence_score is not None
+        and float(analysis.confidence_score) < float(threshold)
+    )
+    headline = analysis.headline or video.title or ""
+    body = analysis.full_analysis_md or analysis.short_summary_md or ""
+    bullets_list = analysis.bullet_points if isinstance(analysis.bullet_points, list) else []
+    meta_parts = []
+    if video.published_at:
+        meta_parts.append(f"📅 {_to_kst(video.published_at)}")
+    dur = _format_duration(video.duration_seconds)
+    if dur:
+        meta_parts.append(f"⏱ {dur}")
+
+    def render(b, bl):
+        return _render_full(
+            low_conf=low_conf, channel_name=channel_name, headline=headline,
+            body=b, bullets_list=bl, tags=tags, meta_parts=meta_parts, url=video.video_url,
+        )
+
+    text = render(body, bullets_list)
+    if len(text) <= _TELEGRAM_MAX_LEN:
+        return text
+    overflow = len(text) - _TELEGRAM_MAX_LEN + 50
+    if len(body) > overflow:
+        return render(body[: len(body) - overflow] + "…", bullets_list)
+    if bullets_list:
+        return render("", bullets_list[:-1])
+    return _truncate_html(text, _TELEGRAM_MAX_LEN)
+
+
+def build_message(video, analysis, threshold: float = 0.0, *,
+                  channel_name: str = "", tags=None, detail: str = "full") -> str:
+    if detail == "compact":
+        return _build_compact(video, analysis, threshold)
+    return _build_full(video, analysis, threshold, channel_name, tags or [])
 
 
 def _matches_scheduled_time(now_local: datetime, scheduled_times: list[str]) -> bool:

@@ -31,3 +31,55 @@ def test_format_bullets():
 def test_truncate_html():
     assert _truncate_html("abcdef", 100) == "abcdef"
     assert _truncate_html("abcdef", 5) == "ab..."
+
+
+from types import SimpleNamespace
+from app.services.notify_service import build_message
+
+
+def _video(**kw):
+    base = dict(title="제목", video_url="https://youtu.be/x",
+                published_at=datetime(2026, 5, 30, 2, 5, tzinfo=timezone.utc),
+                duration_seconds=850)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _analysis(conf=0.9, **kw):
+    base = dict(headline="헤드라인", one_line="한줄", short_summary_md="짧은요약",
+                full_analysis_md="### 한 줄 요약\n본문", bullet_points=["주장1", "주장2"],
+                sentiment="bullish", confidence_score=conf)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_full_contains_rich_fields():
+    msg = build_message(_video(), _analysis(), channel_name="증시각도기TV",
+                        tags=["반도체", "금리"], detail="full")
+    assert "🎬 [증시각도기TV] 신규 영상" in msg
+    assert "<b>헤드라인</b>" in msg
+    assert "### 한 줄 요약" in msg
+    assert "• 주장1" in msg
+    assert "🏷 반도체, 금리" in msg
+    assert "⏱ 14:10" in msg
+    assert '<a href="https://youtu.be/x">영상 보러가기</a>' in msg
+
+
+def test_full_low_confidence_badge_top():
+    msg = build_message(_video(), _analysis(conf=0.3), threshold=0.5, detail="full")
+    assert msg.startswith("⚠️ <b>[저신뢰도 분석]</b>")
+
+
+def test_compact_backward_compatible():
+    msg = build_message(_video(), _analysis(), detail="compact")
+    assert msg.startswith("<b>헤드라인</b>")
+    assert "🎬" not in msg
+    assert "신뢰도" in msg
+
+
+def test_full_smart_truncation_keeps_under_limit():
+    big = "가" * 6000
+    msg = build_message(_video(), _analysis(full_analysis_md=big),
+                        channel_name="C", tags=["t"], detail="full")
+    assert len(msg) <= 4096
+    assert "영상 보러가기" in msg
