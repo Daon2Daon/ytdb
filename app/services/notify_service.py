@@ -207,3 +207,80 @@ async def notify_pending_batch(
             duration_ms=timer.elapsed_ms,
         )
     return sent
+
+
+async def run_notify_tick_once() -> None:
+    """매 1분 호출. 활성 그룹별로 예약발송/야간 보정 발송을 수행한다.
+
+    - scheduled 모드: 그룹 tz 기준 현재 분이 예약 시각과 일치하고, 야간 제한 중이
+      아니면 배치 발송.
+    - immediate 모드 + 야간 제한 활성: 야간이 끝난 뒤(현재 비-야간) 보류분을 보정 발송.
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.control_db import get_sessionmaker
+    from app.models.control.group import Group
+    from app.services.db_engine import (
+        DBNotConfiguredError,
+        data_plane_engine_manager as dpm,
+    )
+    from app.services.quiet_hours import is_quiet_hours_now
+    from app.services.settings_manager import get_settings_manager
+
+    sf = get_sessionmaker()
+    mgr = get_settings_manager()
+    async with sf() as session:
+        groups = list(
+            (await session.execute(select(Group).where(Group.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
+
+    for group in groups:
+        try:
+            notif = await mgr.get_notification(group.group_id)
+            if not notif.is_sendable:
+                continue
+            try:
+                tz = ZoneInfo(notif.timezone)
+            except Exception:
+                tz = ZoneInfo("Asia/Seoul")
+            now_local = datetime.now(tz)
+            quiet_now = is_quiet_hours_now(
+                notif.quiet_hours_enabled,
+                notif.quiet_hours_start,
+                notif.quiet_hours_end,
+                tz=tz,
+                now=now_local,
+            )
+
+            if notif.send_mode == "scheduled":
+                if quiet_now:
+                    continue
+                if not _matches_scheduled_time(now_local, notif.scheduled_times):
+                    continue
+                log_label = "예약발송 회차"
+            elif notif.send_mode == "immediate":
+                if not notif.quiet_hours_enabled or quiet_now:
+                    continue
+                log_label = "야간 보정 발송"
+            else:
+                continue
+
+            try:
+                engine = await dpm.get_engine_for_group(group)
+            except DBNotConfiguredError:
+                continue
+            make_session = lambda: dpm.session_for_group(engine, group.schema_name)
+            await notify_pending_batch(
+                notif,
+                make_session,
+                max_per=notif.scheduled_max_per_run,
+                wait_sec=notif.wait_between_messages_sec,
+                threshold=notif.low_confidence_threshold,
+                log_label=log_label,
+            )
+        except DBNotConfiguredError:
+            continue
+        except Exception as e:
+            print(f"[{group.slug}] notify tick 실패: {e}")
