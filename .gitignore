@@ -10,6 +10,9 @@ dist/
 .eggs/
 *.egg
 
+# Node (전역 — frontend/.gitignore 외 위치 방지)
+node_modules/
+
 # Virtual environments
 .venv/
 venv/
