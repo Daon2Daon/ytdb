@@ -41,6 +41,95 @@ DEFAULT_DIGEST_PROMPT = """다음은 YouTube 분석 데이터 집계입니다. �
 """
 
 
+_MAX_VIDEOS_IN_PROMPT = 40
+_MAX_BULLETS_PER_VIDEO = 3
+_MAX_INSIGHTS_PER_VIDEO = 3
+_MAX_ENTITIES_PER_VIDEO = 6
+
+_SENTIMENT_KO = {
+    "bullish": "긍정",
+    "bearish": "부정",
+    "neutral": "중립",
+    "mixed": "혼조",
+    "unknown": "미상",
+}
+
+
+@dataclass
+class VideoBrief:
+    channel_name: str
+    headline: Optional[str]
+    one_line: Optional[str]
+    title: Optional[str]
+    sentiment: Optional[str]
+    bullet_points: Optional[Any] = None
+    insights: Optional[Any] = None
+    entities: Optional[Any] = None
+
+
+def split_category_tokens(raw: Optional[str]) -> list[str]:
+    s = (raw or "").strip()
+    if not s:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in s.split(","):
+        t = part.strip()
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _format_entities(entities: Optional[Any]) -> str:
+    if not isinstance(entities, list):
+        return ""
+    names: list[str] = []
+    for e in entities:
+        name = str((e.get("name") if isinstance(e, dict) else e) or "").strip()
+        if name:
+            names.append(name)
+        if len(names) >= _MAX_ENTITIES_PER_VIDEO:
+            break
+    return ", ".join(names)
+
+
+def _sentiment_summary_text(breakdown: dict) -> str:
+    parts = []
+    for key in ("bullish", "bearish", "neutral", "mixed", "unknown"):
+        if breakdown.get(key):
+            parts.append(f"{_SENTIMENT_KO[key]} {breakdown[key]}")
+    return ", ".join(parts) if parts else "데이터 없음"
+
+
+def _build_videos_block(videos: list["VideoBrief"], total: int) -> str:
+    lines: list[str] = []
+    shown = videos[:_MAX_VIDEOS_IN_PROMPT]
+    for v in shown:
+        head = (v.headline or v.one_line or v.title or "").strip()
+        senti = _SENTIMENT_KO.get(v.sentiment or "unknown", v.sentiment or "미상")
+        lines.append(f"- [{v.channel_name}] {head} (논조: {senti})")
+        if v.one_line and v.one_line.strip() and v.one_line.strip() != head:
+            lines.append(f"  {v.one_line.strip()}")
+        bullets = v.bullet_points if isinstance(v.bullet_points, list) else []
+        for b in bullets[:_MAX_BULLETS_PER_VIDEO]:
+            s = str(b).strip()
+            if s:
+                lines.append(f"  • {s}")
+        insights = v.insights if isinstance(v.insights, list) else []
+        for ins in insights[:_MAX_INSIGHTS_PER_VIDEO]:
+            s = str(ins).strip()
+            if s:
+                lines.append(f"  ▶ 인사이트: {s}")
+        ent = _format_entities(v.entities)
+        if ent:
+            lines.append(f"  · 등장: {ent}")
+    remaining = total - len(shown)
+    if remaining > 0:
+        lines.append(f"... 외 {remaining}건")
+    return "\n".join(lines)
+
+
 @dataclass
 class DigestAggregate:
     video_count: int
