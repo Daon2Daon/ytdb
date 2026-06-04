@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -136,6 +136,7 @@ class DigestAggregate:
     sentiment_breakdown: dict[str, int]
     top_tags: list[dict[str, Any]]
     top_channels: list[dict[str, Any]]
+    videos: list["VideoBrief"] = field(default_factory=list)
 
 
 @dataclass
@@ -171,23 +172,49 @@ async def aggregate_period(
     period_end: datetime,
     category: str = "",
 ) -> DigestAggregate:
-    base = (
-        select(Video.video_pk, VideoAnalysis.sentiment, Channel.channel_name)
-        .join(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
-        .join(Channel, Channel.channel_pk == Video.channel_pk)
-        .where(VideoAnalysis.analyzed_at >= period_start, VideoAnalysis.analyzed_at < period_end)
-    )
-    if category:
-        base = base.where(Channel.category == category)
-    rows = (await session.execute(base)).all()
-    video_pks = [r[0] for r in rows]
+    rows = (
+        await session.execute(
+            select(
+                Video.video_pk,
+                VideoAnalysis.sentiment,
+                VideoAnalysis.headline,
+                VideoAnalysis.one_line,
+                Video.title,
+                VideoAnalysis.bullet_points,
+                VideoAnalysis.insights,
+                VideoAnalysis.entities,
+                Channel.channel_name,
+                Channel.category,
+            )
+            .join(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
+            .join(Channel, Channel.channel_pk == Video.channel_pk)
+            .where(VideoAnalysis.analyzed_at >= period_start, VideoAnalysis.analyzed_at < period_end)
+            .order_by(VideoAnalysis.analyzed_at.desc())
+        )
+    ).all()
+
+    want = (category or "").strip()
+    selected = []
+    for r in rows:
+        if want:
+            if want not in split_category_tokens(r.category):
+                continue
+        selected.append(r)
+
+    video_pks = [r.video_pk for r in selected]
     sentiment: dict[str, int] = {}
     channel_count: dict[str, int] = {}
-    for _, s, channel_name in rows:
-        key = (s or "unknown").strip() or "unknown"
+    videos: list[VideoBrief] = []
+    for r in selected:
+        key = (r.sentiment or "unknown").strip() or "unknown"
         sentiment[key] = sentiment.get(key, 0) + 1
-        cname = (channel_name or "(알 수 없음)").strip() or "(알 수 없음)"
+        cname = (r.channel_name or "(알 수 없음)").strip() or "(알 수 없음)"
         channel_count[cname] = channel_count.get(cname, 0) + 1
+        videos.append(VideoBrief(
+            channel_name=cname, headline=r.headline, one_line=r.one_line, title=r.title,
+            sentiment=r.sentiment, bullet_points=r.bullet_points,
+            insights=r.insights, entities=r.entities,
+        ))
 
     top_channels = [
         {"name": name, "count": count}
@@ -213,6 +240,7 @@ async def aggregate_period(
         sentiment_breakdown=sentiment,
         top_tags=top_tags,
         top_channels=top_channels,
+        videos=videos,
     )
 
 
