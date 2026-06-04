@@ -37,6 +37,14 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
     "notification": [
         {"key": "enabled", "value": "true", "value_type": "bool"},
         {"key": "parse_mode", "value": "HTML", "value_type": "string"},
+        {"key": "send_mode", "value": "immediate", "value_type": "string"},
+        {"key": "scheduled_max_per_run", "value": "5", "value_type": "int"},
+        {"key": "wait_between_messages_sec", "value": "30", "value_type": "int"},
+        {"key": "quiet_hours_enabled", "value": "false", "value_type": "bool"},
+        {"key": "quiet_hours_start", "value": "22:00", "value_type": "string"},
+        {"key": "quiet_hours_end", "value": "07:00", "value_type": "string"},
+        {"key": "timezone", "value": "Asia/Seoul", "value_type": "string"},
+        {"key": "low_confidence_threshold", "value": "0.5", "value_type": "float"},
     ],
     "digest": [
         {"key": "enabled", "value": "false", "value_type": "bool"},

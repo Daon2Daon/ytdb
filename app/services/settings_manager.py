@@ -194,11 +194,26 @@ class SettingsManager:
         single = d.get("chat_id")
         if single and str(single).strip() and str(single).strip() not in chat_ids:
             chat_ids.append(str(single).strip())
+        raw_times = d.get("scheduled_times")
+        scheduled_times: list[str] = []
+        if isinstance(raw_times, list):
+            scheduled_times = [str(x).strip() for x in raw_times if str(x).strip()]
+        elif isinstance(raw_times, str) and raw_times.strip():
+            scheduled_times = [p.strip() for p in raw_times.split(",") if p.strip()]
         return NotificationSettings(
             enabled=bool(d.get("enabled", True)),
             bot_token=str(d.get("bot_token") or ""),
             chat_ids=chat_ids,
             parse_mode=str(d.get("parse_mode") or "HTML"),
+            send_mode=str(d.get("send_mode") or "immediate"),
+            scheduled_times=scheduled_times,
+            scheduled_max_per_run=_as_int(d.get("scheduled_max_per_run"), 5),
+            wait_between_messages_sec=_as_int(d.get("wait_between_messages_sec"), 30),
+            quiet_hours_enabled=bool(d.get("quiet_hours_enabled", False)),
+            quiet_hours_start=str(d.get("quiet_hours_start") or "22:00"),
+            quiet_hours_end=str(d.get("quiet_hours_end") or "07:00"),
+            timezone=str(d.get("timezone") or "Asia/Seoul"),
+            low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
         )
 
     async def get_digest(self, group_id: int) -> DigestSettings:

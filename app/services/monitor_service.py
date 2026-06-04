@@ -378,6 +378,45 @@ async def _notify_after_analysis(
     notif = await get_settings_manager().get_notification(group.group_id)
     if not notif.is_sendable:
         return
+
+    # 예약 발송 모드: 즉시 발송하지 않고 보류(틱이 예약 시각에 일괄 발송).
+    if notif.send_mode == "scheduled":
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_NOTIFY,
+            status=STATUS_SKIP,
+            message="예약발송 대기(send_mode=scheduled)",
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
+    # 즉시 발송 + 야간 제한: 보류(틱이 제한 종료 후 보정 발송).
+    if notif.quiet_hours_enabled:
+        from zoneinfo import ZoneInfo
+
+        from app.services.quiet_hours import is_quiet_hours_now
+
+        try:
+            tz = ZoneInfo(notif.timezone)
+        except Exception:
+            tz = ZoneInfo("Asia/Seoul")
+        if is_quiet_hours_now(
+            notif.quiet_hours_enabled,
+            notif.quiet_hours_start,
+            notif.quiet_hours_end,
+            tz=tz,
+        ):
+            await write_job_log(
+                make_session,
+                job_type=JOB_TYPE_NOTIFY,
+                status=STATUS_SKIP,
+                message="야간 보류(quiet hours)",
+                channel_pk=channel_pk,
+                video_pk=video_pk,
+            )
+            return
+
     async with make_session() as sess:
         channel = None
         if channel_pk is not None:
@@ -418,7 +457,9 @@ async def _notify_after_analysis(
     timer = JobTimer()
     try:
         with timer:
-            sent = await notify_video(notif, video, analysis)
+            sent = await notify_video(
+                notif, video, analysis, threshold=notif.low_confidence_threshold
+            )
         async with make_session() as sess:
             async with sess.begin():
                 await sess.execute(

@@ -1,6 +1,7 @@
 export type FieldType =
   | 'string' | 'int' | 'float' | 'textarea' | 'bool'
   | 'select' | 'model_select' | 'chatlist' | 'int_days' | 'int_hours'
+  | 'time' | 'timelist'
 
 export interface FieldDef {
   key: string
@@ -9,6 +10,7 @@ export interface FieldDef {
   secret?: boolean
   options?: string[]
   help?: string
+  showIf?: { key: string; equals: string | boolean }
 }
 
 export interface SettingCategory {
@@ -59,6 +61,15 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'bot_token', label: '텔레그램 봇 토큰', secret: true },
     { key: 'chat_ids', label: 'Chat ID 목록', type: 'chatlist' },
     { key: 'parse_mode', label: 'parse_mode', type: 'select', options: ['HTML', 'MarkdownV2', 'None'], help: '일반적으로 HTML 권장' },
+    { key: 'send_mode', label: '발송 모드', type: 'select', options: ['immediate', 'scheduled'], help: 'immediate=분석 즉시 발송, scheduled=예약 시각에 일괄 발송' },
+    { key: 'scheduled_times', label: '예약 발송 시각', type: 'timelist', help: 'HH:MM, 최대 10개. 각 시각마다 미발송분을 일괄 발송', showIf: { key: 'send_mode', equals: 'scheduled' } },
+    { key: 'scheduled_max_per_run', label: '회당 최대 발송 건수', type: 'int', help: '예약 회차·야간 보정 발송 1회당 발송 상한(1~50)' },
+    { key: 'wait_between_messages_sec', label: '건별 대기(초)', type: 'int', help: '예약·야간 보정 발송 시 건 간 대기(스팸 방지)' },
+    { key: 'quiet_hours_enabled', label: '야간 알림 제한', type: 'bool', help: '지정 시간대에는 발송하지 않고 보류 후 종료 시 자동 발송' },
+    { key: 'quiet_hours_start', label: '제한 시작', type: 'time', showIf: { key: 'quiet_hours_enabled', equals: true } },
+    { key: 'quiet_hours_end', label: '제한 종료', type: 'time', help: '종료가 시작보다 이르면 자정을 넘기는 구간', showIf: { key: 'quiet_hours_enabled', equals: true } },
+    { key: 'timezone', label: '시간대', help: '야간·예약 판정 기준 (예: Asia/Seoul)' },
+    { key: 'low_confidence_threshold', label: '저신뢰도 임계값', type: 'float', help: '0~1. 이 값 미만 분석은 알림 제목에 ⚠️ 표시' },
   ],
   digest: [
     { key: 'enabled', label: '주간 리뷰 자동 생성', type: 'bool' },
