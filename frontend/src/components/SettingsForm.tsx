@@ -29,16 +29,22 @@ export default function SettingsForm({ defs, items, models = [], saving, onSave 
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-5 space-y-5 max-w-2xl">
-      {defs.map((d) => (
-        <Field
-          key={d.key}
-          def={d}
-          value={form[d.key]}
-          isSet={Boolean(itemMap[d.key]?.value)}
-          models={models}
-          onChange={(v) => set(d.key, v)}
-        />
-      ))}
+      {defs.map((d) => {
+        if (d.showIf) {
+          const cur = form[d.showIf.key]
+          if (cur !== d.showIf.equals) return null
+        }
+        return (
+          <Field
+            key={d.key}
+            def={d}
+            value={form[d.key]}
+            isSet={Boolean(itemMap[d.key]?.value)}
+            models={models}
+            onChange={(v) => set(d.key, v)}
+          />
+        )
+      })}
       <div className="pt-2">
         <button
           onClick={handleSave}
@@ -117,6 +123,15 @@ function Field({
         </select>
       ) : def.type === 'chatlist' ? (
         <ChatList value={value as string[]} onChange={onChange} />
+      ) : def.type === 'time' ? (
+        <input
+          type="time"
+          value={value as string}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      ) : def.type === 'timelist' ? (
+        <TimeList value={value as string[]} onChange={onChange} />
       ) : def.type === 'int_days' ? (
         <input type="number" min={0} value={value as string} onChange={(e) => onChange(e.target.value)}
           className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
@@ -135,6 +150,57 @@ function Field({
       {def.type === 'int_days' && <span className="ml-2 text-xs text-gray-400">일</span>}
       {def.type === 'int_hours' && <span className="ml-2 text-xs text-gray-400">시간</span>}
       {help}
+    </div>
+  )
+}
+
+function TimeList({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState('')
+  const [err, setErr] = useState('')
+  const sorted = (arr: string[]) =>
+    [...arr].sort((a, b) => {
+      const m = (t: string) => {
+        const [h, mm] = t.split(':').map(Number)
+        return h * 60 + mm
+      }
+      return m(a) - m(b)
+    })
+  const add = () => {
+    const t = draft.trim()
+    if (!t) return
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(t)) { setErr('HH:MM 형식으로 입력하세요'); return }
+    if (value.includes(t)) { setErr('이미 등록된 시각입니다'); return }
+    if (value.length >= 10) { setErr('최대 10개까지 등록할 수 있습니다'); return }
+    onChange(sorted([...value, t]))
+    setDraft('')
+    setErr('')
+  }
+  const remove = (t: string) => onChange(value.filter((x) => x !== t))
+  return (
+    <div className="space-y-2">
+      {value.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">등록된 예약 시각이 없습니다.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {value.map((t) => (
+            <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full text-sm font-medium text-blue-700">
+              {t}
+              <button type="button" onClick={() => remove(t)} className="text-blue-400 hover:text-red-500">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="time"
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setErr('') }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        />
+        <button type="button" onClick={add} disabled={value.length >= 10} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">추가</button>
+      </div>
+      {err && <p className="text-xs text-red-500">{err}</p>}
     </div>
   )
 }
