@@ -19,9 +19,14 @@ _TELEGRAM_API = "https://api.telegram.org"
 _MAX_LEN = 3900  # 텔레그램 4096자 제한 여유
 
 
-def build_message(video: Video, analysis: VideoAnalysis) -> str:
+def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0) -> str:
     title = analysis.headline or video.title or ""
-    lines = [f"<b>{escape(title)}</b>"]
+    low_conf = (
+        analysis.confidence_score is not None
+        and float(analysis.confidence_score) < float(threshold)
+    )
+    badge = "⚠️ " if low_conf else ""
+    lines = [f"<b>{badge}{escape(title)}</b>"]
     if analysis.one_line:
         lines.append(escape(analysis.one_line))
     if analysis.short_summary_md:
@@ -67,11 +72,12 @@ async def notify_video(
     video: Video,
     analysis: VideoAnalysis,
     client: Optional[httpx.AsyncClient] = None,
+    threshold: float = 0.0,
 ) -> int:
     """그룹의 모든 chat_id에 발송. 성공 건수 반환. 일부 실패해도 나머지는 계속 시도."""
     if not notif.is_sendable:
         return 0
-    text = build_message(video, analysis)
+    text = build_message(video, analysis, threshold)
     own_client = client is None
     cl = client or httpx.AsyncClient(timeout=20.0)
     sent = 0
