@@ -22,6 +22,15 @@ describe('initialValue', () => {
   it('chatlist: JSON 배열 파싱', () => {
     expect(initialValue({ key: 'chat_ids', label: '', type: 'chatlist' }, item('["-100","42"]'))).toEqual(['-100', '42'])
   })
+  it('timelist: JSON 배열 파싱', () => {
+    expect(initialValue({ key: 'scheduled_times', label: '', type: 'timelist' }, item('["09:00","14:00"]'))).toEqual(['09:00', '14:00'])
+  })
+  it('timelist: null이면 빈 배열', () => {
+    expect(initialValue({ key: 'scheduled_times', label: '', type: 'timelist' }, item(null))).toEqual([])
+  })
+  it('time: 문자열 그대로', () => {
+    expect(initialValue({ key: 'quiet_hours_start', label: '', type: 'time' }, item('22:00'))).toBe('22:00')
+  })
 })
 
 describe('toSaveItem', () => {
@@ -44,5 +53,11 @@ describe('toSaveItem', () => {
     expect(toSaveItem({ key: 'p', label: '', type: 'int' }, '5')).toEqual({ key: 'p', value: '5', value_type: 'int', is_secret: false })
     expect(toSaveItem({ key: 'f', label: '', type: 'float' }, '0.3')).toEqual({ key: 'f', value: '0.3', value_type: 'float', is_secret: false })
     expect(toSaveItem({ key: 's', label: '' }, 'hi')).toEqual({ key: 's', value: 'hi', value_type: 'string', is_secret: false })
+  })
+  it('timelist: 배열 → JSON 저장(json)', () => {
+    expect(toSaveItem({ key: 'scheduled_times', label: '', type: 'timelist' }, ['09:00', '14:00'])).toEqual({ key: 'scheduled_times', value: '["09:00","14:00"]', value_type: 'json', is_secret: false })
+  })
+  it('time: 문자열 → string 저장', () => {
+    expect(toSaveItem({ key: 'quiet_hours_start', label: '', type: 'time' }, '22:00')).toEqual({ key: 'quiet_hours_start', value: '22:00', value_type: 'string', is_secret: false })
   })
 })

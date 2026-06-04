@@ -15,6 +15,14 @@ export function initialValue(def: FieldDef, item: SettingItem | undefined): Form
       return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean)
     }
   }
+  if (def.type === 'timelist') {
+    try {
+      const arr = JSON.parse(raw || '[]')
+      return Array.isArray(arr) ? arr.map(String) : []
+    } catch {
+      return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean)
+    }
+  }
   if (def.secret) return ''
   if (def.type === 'int_days') {
     const hours = Number(raw || 0)
@@ -32,6 +40,10 @@ export function toSaveItem(def: FieldDef, value: FormValue): SettingItem {
   if (def.type === 'chatlist') {
     const ids = (value as string[]).map((s) => s.trim()).filter(Boolean)
     return { key: def.key, value: JSON.stringify(ids), value_type: 'json', is_secret: false }
+  }
+  if (def.type === 'timelist') {
+    const times = (value as string[]).map((s) => s.trim()).filter(Boolean)
+    return { key: def.key, value: JSON.stringify(times), value_type: 'json', is_secret: false }
   }
   if (def.type === 'bool') {
     return { key: def.key, value: value ? 'true' : 'false', value_type: 'bool', is_secret: false }
