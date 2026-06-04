@@ -83,3 +83,12 @@ def test_full_smart_truncation_keeps_under_limit():
                         channel_name="C", tags=["t"], detail="full")
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
+
+
+def test_full_truncation_preserves_link_with_html_heavy_body():
+    # HTML 특수문자가 많아 escape 후 폭증하는 본문 + bullets 없음 → 링크 보존 확인
+    heavy = "<&>" * 3000  # escape 시 약 5배로 폭증
+    a = _analysis(full_analysis_md=heavy, bullet_points=[])
+    msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
+    assert len(msg) <= 4096
+    assert "영상 보러가기" in msg

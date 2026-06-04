@@ -156,7 +156,11 @@ def _build_full(video, analysis, threshold: float, channel_name: str, tags) -> s
         return render(body[: len(body) - overflow] + "…", bullets_list)
     if bullets_list:
         return render("", bullets_list[:-1])
-    return _truncate_html(text, _TELEGRAM_MAX_LEN)
+    # 본문·bullets를 모두 비워도 헤더/태그/메타/링크는 보존
+    stripped = render("", [])
+    if len(stripped) <= _TELEGRAM_MAX_LEN:
+        return stripped
+    return _truncate_html(stripped, _TELEGRAM_MAX_LEN)
 
 
 def build_message(video, analysis, threshold: float = 0.0, *,
