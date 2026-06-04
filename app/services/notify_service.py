@@ -31,7 +31,6 @@ from app.services.settings_types import NotificationSettings
 MakeSession = Callable[[], AsyncSession]
 
 _TELEGRAM_API = "https://api.telegram.org"
-_MAX_LEN = 3900  # 텔레그램 4096자 제한 여유
 _TELEGRAM_MAX_LEN = 4096
 
 
@@ -155,9 +154,11 @@ def _build_full(video, analysis, threshold: float, channel_name: str, tags) -> s
     overflow = len(text) - _TELEGRAM_MAX_LEN + 50
     if len(body) > overflow:
         return render(body[: len(body) - overflow] + "…", bullets_list)
-    if bullets_list:
-        return render("", bullets_list[:-1])
-    # 본문·bullets를 모두 비워도 헤더/태그/메타/링크는 보존
+    # 본문을 비우고 bullets를 줄여가며 한도 내로. 그래도 안 되면 본문·bullets 비워 링크 보존.
+    for n in range(len(bullets_list) - 1, -1, -1):
+        candidate = render("", bullets_list[:n])
+        if len(candidate) <= _TELEGRAM_MAX_LEN:
+            return candidate
     stripped = render("", [])
     if len(stripped) <= _TELEGRAM_MAX_LEN:
         return stripped

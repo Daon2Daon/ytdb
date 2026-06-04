@@ -92,3 +92,12 @@ def test_full_truncation_preserves_link_with_html_heavy_body():
     msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
+
+
+def test_full_truncation_many_huge_bullets_under_limit():
+    # 본문은 짧지만 거대한 bullet이 다수 → bullets를 줄여 한도 내 유지 + 링크 보존
+    huge_bullets = ["가" * 500 for _ in range(20)]
+    a = _analysis(full_analysis_md="짧은본문", bullet_points=huge_bullets)
+    msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
+    assert len(msg) <= 4096
+    assert "영상 보러가기" in msg
