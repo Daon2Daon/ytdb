@@ -24,7 +24,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void | Promise
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <form onSubmit={submit} className="bg-white rounded-xl shadow-sm p-6 w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-bold text-gray-900">ytdb 로그인</h1>
+        <h1 className="text-xl font-bold text-gray-900">Youtube Monitor 로그인</h1>
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
         )}

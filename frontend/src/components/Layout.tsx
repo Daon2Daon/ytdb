@@ -38,7 +38,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <span className="font-bold text-gray-800">ytdb</span>
+        <span className="font-bold text-gray-800">Youtube Monitor</span>
         <select
           value={activeSlug}
           onChange={(e) => onSwitchGroup(e.target.value)}
