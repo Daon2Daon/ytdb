@@ -1,0 +1,62 @@
+# Portainer 배포용 스택 (Git 리포에서 빌드)
+#
+# 사용법 (Portainer):
+#   Stacks → Add stack → "Repository" 빌드 방식 선택
+#     - Repository URL  : 이 리포 주소
+#     - Compose path    : portainer-stack.yml
+#   → 아래 "Environment variables" 섹션에 시크릿/접속값 입력 후 Deploy.
+#
+# 전제:
+#   - PostgreSQL이 같은 Docker 네트워크(${DB_NETWORK})에 이미 떠 있음.
+#   - CONTROL_DATABASE_URL의 host는 그 postgres 컨테이너 이름(또는 네트워크 별칭)이어야 함.
+#     예) postgresql+asyncpg://ytdb:secret@postgres:5432/ytdb
+#
+# Portainer 스택 환경변수로 채울 값 (좌측=키, 직접 입력):
+#   CONTROL_DATABASE_URL   (필수)
+#   FERNET_KEY             (필수)  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   SESSION_SECRET         (권장)  python -c "import secrets; print(secrets.token_urlsafe(48))"
+#   AUTH_USERNAME / AUTH_PASSWORD  (프로덕션 로그인 강제)
+#   DEFAULT_TELEGRAM_BOT_TOKEN     (선택)
+#   DB_NETWORK             postgres가 속한 기존 네트워크 이름
+#   HOST_PORT              호스트에 노출할 포트 (기본 8000)
+
+services:
+  ytdb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ytdb:latest
+    container_name: ytdb
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    environment:
+      # --- 필수 ---
+      CONTROL_DATABASE_URL: ${CONTROL_DATABASE_URL}
+      FERNET_KEY: ${FERNET_KEY}
+      # --- 인증/세션 ---
+      AUTH_USERNAME: ${AUTH_USERNAME:-admin}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
+      # --- 스케줄러 ---
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      MASTER_POLL_INTERVAL_MIN: ${MASTER_POLL_INTERVAL_MIN:-12}
+      PENDING_ANALYSIS_INTERVAL_MIN: ${PENDING_ANALYSIS_INTERVAL_MIN:-12}
+      # --- 선택 ---
+      DEFAULT_TELEGRAM_BOT_TOKEN: ${DEFAULT_TELEGRAM_BOT_TOKEN:-}
+    networks:
+      - dbnet
+    healthcheck:
+      # python:slim 이미지엔 curl이 없으므로 표준 라이브러리로 헬스체크
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  # postgres가 이미 속해 있는 기존 네트워크에 합류 (새로 만들지 않음)
+  dbnet:
+    external: true
+    name: ${DB_NETWORK}
