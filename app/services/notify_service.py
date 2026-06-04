@@ -31,6 +31,45 @@ MakeSession = Callable[[], AsyncSession]
 
 _TELEGRAM_API = "https://api.telegram.org"
 _MAX_LEN = 3900  # 텔레그램 4096자 제한 여유
+_TELEGRAM_MAX_LEN = 4096
+
+
+def _to_kst(dt) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M KST")
+    except Exception:
+        return str(dt)
+
+
+def _format_duration(seconds) -> str:
+    if not seconds:
+        return ""
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _format_bullets(bullet_points) -> str:
+    if not isinstance(bullet_points, list):
+        return ""
+    out = []
+    for b in bullet_points:
+        if b is None:
+            continue
+        s = str(b).strip()
+        if s:
+            out.append(f"• {escape(s)}")
+    return "\n".join(out)
+
+
+def _truncate_html(text: str, max_len: int, suffix: str = "...") -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - len(suffix)] + suffix
 
 
 def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0) -> str:
