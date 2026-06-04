@@ -14,6 +14,7 @@ def test_defaults():
     assert n.quiet_hours_end == "07:00"
     assert n.timezone == "Asia/Seoul"
     assert n.low_confidence_threshold == 0.5
+    assert n.message_detail == "full"
 
 
 def test_is_sendable_unchanged():

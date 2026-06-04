@@ -45,6 +45,7 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "quiet_hours_end", "value": "07:00", "value_type": "string"},
         {"key": "timezone", "value": "Asia/Seoul", "value_type": "string"},
         {"key": "low_confidence_threshold", "value": "0.5", "value_type": "float"},
+        {"key": "message_detail", "value": "full", "value_type": "string"},
     ],
     "digest": [
         {"key": "enabled", "value": "false", "value_type": "bool"},
