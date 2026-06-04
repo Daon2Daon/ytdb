@@ -16,7 +16,7 @@ const NAV = [
 ]
 
 export default function Layout() {
-  const { groups, activeSlug } = useGroup()
+  const { groups, activeSlug, activeGroup } = useGroup()
   const { authEnabled, username, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -45,10 +45,13 @@ export default function Layout() {
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
         >
           {groups.map((g) => (
-            <option key={g.slug} value={g.slug}>{g.name} ({g.slug})</option>
+            <option key={g.slug} value={g.slug}>{g.name} ({g.slug}){g.is_active ? '' : ' ⏸'}</option>
           ))}
         </select>
-        <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">이름 수정</button>
+        {activeGroup && !activeGroup.is_active && (
+          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-300">⏸ 일시정지</span>
+        )}
+        <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">그룹 수정</button>
         <button onClick={() => setGroupModal('new')} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ 새 그룹</button>
         {authEnabled && (
           <div className="ml-auto flex items-center gap-2">
