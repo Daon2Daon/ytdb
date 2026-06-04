@@ -15,6 +15,7 @@ from app.control_db import get_sessionmaker
 from app.models.control.group import Group
 from app.services.digest_service import run_digest_tick_once
 from app.services.monitor_service import run_master_poll_once, run_pending_analysis_once
+from app.services.notify_service import run_notify_tick_once
 from app.services.settings_manager import get_settings_manager
 
 _MIN_ANALYSIS_INTERVAL_MIN = 1
@@ -23,6 +24,7 @@ _MAX_ANALYSIS_INTERVAL_MIN = 1440
 JOB_MASTER_POLL = "youtube_master_poll"
 JOB_PENDING_ANALYSIS = "youtube_pending_analysis"
 JOB_DIGEST_TICK = "youtube_digest_tick"
+JOB_NOTIFY_TICK = "youtube_notify_tick"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -105,6 +107,15 @@ def setup_jobs() -> AsyncIOScheduler:
         trigger="interval",
         minutes=1,
         id=JOB_DIGEST_TICK,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_notify_tick_once,
+        trigger="interval",
+        minutes=1,
+        id=JOB_NOTIFY_TICK,
         replace_existing=True,
         max_instances=1,
         coalesce=True,
