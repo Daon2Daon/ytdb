@@ -32,3 +32,31 @@ def test_no_badge_at_or_above_threshold():
 def test_no_badge_when_confidence_none():
     msg = build_message(_video(), _analysis(None), threshold=0.5)
     assert "⚠️" not in msg.split("\n")[0]
+
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.services.notify_service import _matches_scheduled_time
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def test_scheduled_match_exact_minute():
+    now = datetime(2026, 6, 4, 14, 0, tzinfo=KST)
+    assert _matches_scheduled_time(now, ["09:00", "14:00"]) is True
+
+
+def test_scheduled_no_match():
+    now = datetime(2026, 6, 4, 14, 1, tzinfo=KST)
+    assert _matches_scheduled_time(now, ["14:00"]) is False
+
+
+def test_scheduled_empty_list_false():
+    now = datetime(2026, 6, 4, 14, 0, tzinfo=KST)
+    assert _matches_scheduled_time(now, []) is False
+
+
+def test_scheduled_ignores_bad_entries():
+    now = datetime(2026, 6, 4, 14, 0, tzinfo=KST)
+    assert _matches_scheduled_time(now, ["bad", "14:00"]) is True

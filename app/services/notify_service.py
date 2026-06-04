@@ -6,6 +6,7 @@ chat_id가 없거나 비활성이면 발송하지 않는다(분석/데이터만 
 
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 from typing import Optional
 
@@ -45,6 +46,23 @@ def build_message(video: Video, analysis: VideoAnalysis, threshold: float = 0.0)
         lines.append(escape(video.video_url))
     text = "\n".join(lines)
     return text[:_MAX_LEN]
+
+
+def _matches_scheduled_time(now_local: datetime, scheduled_times: list[str]) -> bool:
+    """now_local의 HH:MM이 예약 시각 목록 중 하나와 분 단위로 일치하는지."""
+    cur = f"{now_local.hour:02d}:{now_local.minute:02d}"
+    valid: set[str] = set()
+    for t in scheduled_times:
+        parts = str(t).strip().split(":")
+        if len(parts) != 2:
+            continue
+        try:
+            h, m = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            valid.add(f"{h:02d}:{m:02d}")
+    return cur in valid
 
 
 async def send_telegram(
