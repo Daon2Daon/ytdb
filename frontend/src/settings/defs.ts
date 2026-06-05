@@ -55,6 +55,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'max_concurrent_channels', label: '동시 점검 채널 수', type: 'int' },
     { key: 'pending_analysis_interval_min', label: 'AI 분석 주기 (분)', type: 'int', help: '대기 영상 분석 스케줄 간격(분)' },
     { key: 'max_concurrent_analyses', label: 'AI 동시 요약 수', type: 'int' },
+    { key: 'stats_refresh_days', label: '조회수 갱신 기간(일)', type: 'int', help: '게시 후 N일 이내 영상의 조회수·좋아요를 매일 갱신. 0이면 끔.' },
   ],
   notification: [
     { key: 'enabled', label: '알림 활성화', type: 'bool' },

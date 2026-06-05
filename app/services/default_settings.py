@@ -33,6 +33,7 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "max_concurrent_channels", "value": "5", "value_type": "int"},
         {"key": "pending_analysis_interval_min", "value": "12", "value_type": "int"},
         {"key": "max_concurrent_analyses", "value": "3", "value_type": "int"},
+        {"key": "stats_refresh_days", "value": "30", "value_type": "int"},
     ],
     "notification": [
         {"key": "enabled", "value": "true", "value_type": "bool"},

@@ -77,6 +77,7 @@ class PollingSettings:
     max_concurrent_channels: int = 5
     max_concurrent_analyses: int = 3
     analysis_interval_sec: int = 120
+    stats_refresh_days: int = 30  # 게시 후 N일 이내 영상 stats 갱신. 0이면 비활성.
 
 
 @dataclass
