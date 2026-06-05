@@ -180,6 +180,7 @@ class SettingsManager:
             max_concurrent_channels=_as_int(d.get("max_concurrent_channels"), 5),
             max_concurrent_analyses=_as_int(d.get("max_concurrent_analyses"), 3),
             analysis_interval_sec=_as_int(d.get("analysis_interval_sec"), 120),
+            stats_refresh_days=_as_int(d.get("stats_refresh_days"), 30),
         )
 
     async def get_notification(self, group_id: int) -> NotificationSettings:
