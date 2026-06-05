@@ -37,6 +37,7 @@ export default function Videos() {
   const channelPk = searchParams.get('channel_pk') ? Number(searchParams.get('channel_pk')) : undefined
   const tagFilter = searchParams.get('tag') ?? undefined
   const statusFilter = searchParams.get('status') ?? undefined
+  const notifiedFilter = searchParams.get('notified') ?? undefined
   const PAGE_SIZE = 20
 
   const load = async () => {
@@ -44,7 +45,7 @@ export default function Videos() {
     setError(null)
     try {
       const [r, chs, tgs] = await Promise.all([
-        videoApi(activeSlug).listPaged({ channel_pk: channelPk, tag: tagFilter, status: statusFilter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+        videoApi(activeSlug).listPaged({ channel_pk: channelPk, tag: tagFilter, status: statusFilter, notified: notifiedFilter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
         channelApi(activeSlug).list(),
         tagApi(activeSlug).list(2, 50),
       ])
@@ -59,7 +60,7 @@ export default function Videos() {
     }
   }
 
-  useEffect(() => { load() }, [page, channelPk, tagFilter, statusFilter, activeSlug])
+  useEffect(() => { load() }, [page, channelPk, tagFilter, statusFilter, notifiedFilter, activeSlug])
 
   const handleDelete = async () => {
     if (!deleteTarget) return
@@ -143,7 +144,17 @@ export default function Videos() {
           {tags.map((t) => <option key={t.tag_pk} value={t.name}>{t.name} ({t.video_count})</option>)}
         </select>
 
-        {(channelPk || tagFilter || statusFilter) && (
+        <select
+          value={notifiedFilter ?? ''}
+          onChange={(e) => setFilter('notified', e.target.value || undefined)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">전체 발송</option>
+          <option value="yes">발송 완료</option>
+          <option value="no">미발송</option>
+        </select>
+
+        {(channelPk || tagFilter || statusFilter || notifiedFilter) && (
           <button
             onClick={() => setSearchParams({ page: '1' })}
             className="text-sm text-gray-500 hover:text-red-500 underline"

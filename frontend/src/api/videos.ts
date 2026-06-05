@@ -9,6 +9,7 @@ export function videoApi(slug: string) {
       status?: string
       tag?: string
       channel_pk?: number
+      notified?: string
       limit?: number
       offset?: number
     }): Promise<PaginatedVideos> => {
@@ -16,6 +17,7 @@ export function videoApi(slug: string) {
       if (params.status) q.set('status', params.status)
       if (params.tag) q.set('tag', params.tag)
       if (params.channel_pk != null) q.set('channel_pk', String(params.channel_pk))
+      if (params.notified) q.set('notified', params.notified)
       if (params.limit != null) q.set('limit', String(params.limit))
       if (params.offset != null) q.set('offset', String(params.offset))
       const raw = await c.get<any>(`/videos?${q}`)
