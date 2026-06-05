@@ -275,6 +275,16 @@ def _make_session_factory(engine: AsyncEngine, schema: str) -> MakeSession:
     return lambda: dpm.session_for_group(engine, schema)
 
 
+def _stats_window_cutoff(now: datetime, days: int) -> datetime:
+    """stats 갱신 대상 cutoff: now - days일."""
+    return now - timedelta(days=days)
+
+
+def _build_stats_map(metas) -> dict[str, tuple]:
+    """VideoMeta 리스트 → {video_id: (view_count, like_count)}."""
+    return {m.video_id: (m.view_count, m.like_count) for m in metas if m.video_id}
+
+
 async def _poll_group(group: Group) -> None:
     mgr = get_settings_manager()
     polling = await mgr.get_polling(group.group_id)
