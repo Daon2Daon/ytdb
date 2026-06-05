@@ -6,6 +6,7 @@ from app.services.notify_service import (
     _to_kst,
     _format_duration,
     _format_bullets,
+    _md_to_telegram_html,
     _truncate_html,
 )
 
@@ -58,7 +59,7 @@ def test_full_contains_rich_fields():
                         tags=["반도체", "금리"], detail="full")
     assert "🎬 [증시각도기TV] 신규 영상" in msg
     assert "<b>헤드라인</b>" in msg
-    assert "### 한 줄 요약" in msg
+    assert "<b>한 줄 요약</b>" in msg  # ### → <b> 변환됨
     assert "• 주장1" in msg
     assert "🏷 반도체, 금리" in msg
     assert "⏱ 14:10" in msg
@@ -101,3 +102,51 @@ def test_full_truncation_many_huge_bullets_under_limit():
     msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
+
+
+# ── _md_to_telegram_html ────────────────────────────────────────────────────
+
+def test_md_heading_to_bold():
+    assert _md_to_telegram_html("### 한 줄 요약") == "<b>한 줄 요약</b>"
+    assert _md_to_telegram_html("## 섹션") == "<b>섹션</b>"
+    assert _md_to_telegram_html("# 제목") == "<b>제목</b>"
+
+
+def test_md_bold():
+    assert _md_to_telegram_html("**굵게**") == "<b>굵게</b>"
+
+
+def test_md_italic():
+    assert _md_to_telegram_html("_기울임_") == "<i>기울임</i>"
+
+
+def test_md_code():
+    assert _md_to_telegram_html("`코드`") == "<code>코드</code>"
+
+
+def test_md_html_escape_in_plain():
+    # 평문의 & < > 는 이스케이프, 태그 내부는 이미 이스케이프됨
+    assert "&amp;" in _md_to_telegram_html("A & B")
+    assert "&lt;" in _md_to_telegram_html("A < B")
+
+
+def test_md_preserves_blank_lines():
+    text = "줄1\n\n줄2"
+    result = _md_to_telegram_html(text)
+    assert "\n\n" in result
+
+
+def test_md_full_message_has_bold_sections():
+    body = "### 한 줄 요약\n본문\n\n### 주요 주장과 근거\n- 주장1"
+    result = _md_to_telegram_html(body)
+    assert result.startswith("<b>한 줄 요약</b>")
+    assert "<b>주요 주장과 근거</b>" in result
+    assert "본문" in result
+
+
+def test_build_message_full_body_has_bold():
+    from types import SimpleNamespace
+    v = _video(published_at=None, duration_seconds=None)
+    a = _analysis(full_analysis_md="### 결론\n금리 위험 높음")
+    msg = build_message(v, a, channel_name="C", tags=[], detail="full")
+    assert "<b>결론</b>" in msg

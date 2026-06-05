@@ -7,6 +7,7 @@ chat_id가 없거나 비활성이면 발송하지 않는다(분석/데이터만 
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from html import escape
 from typing import Callable, Optional
@@ -32,6 +33,58 @@ MakeSession = Callable[[], AsyncSession]
 
 _TELEGRAM_API = "https://api.telegram.org"
 _TELEGRAM_MAX_LEN = 4096
+
+# 마크다운 → 텔레그램 HTML 변환 시 처리되지 않는 나머지 문자 이스케이프용 패턴
+_HTML_CHARS = re.compile(r"[&<>]")
+_HTML_MAP = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
+
+
+def _escape_plain(text: str) -> str:
+    """마크다운 변환 후 남은 평문 부분의 HTML 특수문자만 이스케이프."""
+    return _HTML_CHARS.sub(lambda m: _HTML_MAP[m.group()], text)
+
+
+def _md_to_telegram_html(text: str) -> str:
+    """full_analysis_md의 마크다운을 텔레그램 HTML로 변환.
+
+    지원: ### ~ # 제목 → <b>, **굵게** → <b>, _기울임_ → <i>, `코드` → <code>.
+    나머지 &, <, > 는 이스케이프. 빈 줄·줄바꿈은 그대로 보존.
+    """
+    if not text:
+        return ""
+    lines = []
+    for line in text.split("\n"):
+        # ### 제목 / ## 제목 / # 제목 → <b>제목</b>
+        m = re.match(r"^#{1,3}\s+(.*)", line)
+        if m:
+            lines.append(f"<b>{_escape_plain(m.group(1).strip())}</b>")
+            continue
+        # **굵게** → <b>굵게</b>  (중첩 방지: non-greedy)
+        line = re.sub(
+            r"\*\*(.+?)\*\*",
+            lambda x: f"<b>{_escape_plain(x.group(1))}</b>",
+            line,
+        )
+        # _기울임_ → <i>기울임</i>
+        line = re.sub(
+            r"(?<!\w)_(.+?)_(?!\w)",
+            lambda x: f"<i>{_escape_plain(x.group(1))}</i>",
+            line,
+        )
+        # `코드` → <code>코드</code>
+        line = re.sub(
+            r"`(.+?)`",
+            lambda x: f"<code>{_escape_plain(x.group(1))}</code>",
+            line,
+        )
+        # 나머지 라인의 평문 부분 이스케이프
+        # (이미 삽입된 <b>/<i>/<code> 태그를 건드리지 않으려면 태그 분리 필요)
+        parts = re.split(r"(<[^>]+>)", line)
+        line = "".join(
+            p if p.startswith("<") else _escape_plain(p) for p in parts
+        )
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _to_kst(dt) -> str:
@@ -111,7 +164,7 @@ def _render_full(*, low_conf, channel_name, headline, body, bullets_list, tags, 
         lines.append(f"<b>{escape(headline)}</b>")
         lines.append("")
     if body:
-        lines.append(escape(body))
+        lines.append(_md_to_telegram_html(body))
         lines.append("")
     bullets = _format_bullets(bullets_list)
     if bullets:
