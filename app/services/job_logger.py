@@ -18,6 +18,7 @@ JOB_TYPE_CHANNEL_POLL = "channel_poll"
 JOB_TYPE_VIDEO_ANALYZE = "video_analyze"
 JOB_TYPE_GATEWAY_HEALTH = "gateway_health"
 JOB_TYPE_NOTIFY = "notify"
+JOB_TYPE_STATS = "stats"
 
 STATUS_SUCCESS = "success"
 STATUS_FAIL = "fail"
