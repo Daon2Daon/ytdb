@@ -149,7 +149,7 @@ export default function Videos() {
           onChange={(e) => setFilter('notified', e.target.value || undefined)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="">전체 발송</option>
+          <option value="">전체</option>
           <option value="yes">발송 완료</option>
           <option value="no">미발송</option>
         </select>
