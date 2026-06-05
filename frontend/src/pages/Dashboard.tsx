@@ -107,7 +107,11 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {recent.map((v) => (
-              <div key={v.video_pk} className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <Link
+                key={v.video_pk}
+                to={`/g/${activeSlug}/videos/${v.video_pk}`}
+                className="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md hover:ring-2 hover:ring-blue-200 transition-all"
+              >
                 {v.thumbnail_url ? (
                   <img src={v.thumbnail_url} alt={v.title} className="w-full aspect-video object-cover" />
                 ) : (
@@ -121,7 +125,7 @@ export default function Dashboard() {
                     <span className="text-xs text-gray-400">{dayjs(v.published_at).format('MM/DD HH:mm')}</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
