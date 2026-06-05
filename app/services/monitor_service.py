@@ -30,6 +30,7 @@ from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manag
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
     JOB_TYPE_NOTIFY,
+    JOB_TYPE_STATS,
     JOB_TYPE_VIDEO_ANALYZE,
     STATUS_FAIL,
     STATUS_SKIP,
@@ -602,6 +603,84 @@ async def run_pending_analysis_once() -> None:
             await _analyze_group(group)
         except Exception as e:
             print(f"[{group.slug}] 분석 그룹 처리 오류: {e}")
+
+
+async def run_stats_refresh_once() -> None:
+    """게시 후 N일 이내 영상의 view_count·like_count를 YouTube API로 갱신한다.
+
+    그룹별 polling.stats_refresh_days(0이면 비활성)에 따라 윈도우 내 영상의
+    video_id를 모아 get_video_details로 fresh stats를 받아 제자리 UPDATE한다.
+    """
+    mgr = get_settings_manager()
+    groups = await _active_groups()
+    for group in groups:
+        try:
+            polling = await mgr.get_polling(group.group_id)
+            if int(polling.stats_refresh_days or 0) <= 0:
+                continue
+            if not polling.youtube_api_key:
+                continue
+            try:
+                await dpm.ensure_schema(group)
+                engine = await dpm.get_engine_for_group(group)
+            except DBNotConfiguredError:
+                continue
+
+            make_session = _make_session_factory(engine, group.schema_name)
+            cutoff = _stats_window_cutoff(
+                datetime.now(timezone.utc), int(polling.stats_refresh_days)
+            )
+
+            async with make_session() as sess:
+                rows = (
+                    await sess.execute(
+                        select(Video.video_pk, Video.video_id).where(
+                            Video.published_at >= cutoff
+                        )
+                    )
+                ).all()
+            if not rows:
+                continue
+            id_to_pk = {vid: pk for (pk, vid) in rows if vid}
+            if not id_to_pk:
+                continue
+
+            api_client = YouTubeAPIClient(polling)
+            timer = JobTimer()
+            updated = 0
+            try:
+                with timer:
+                    try:
+                        metas = await api_client.get_video_details(list(id_to_pk.keys()))
+                    except YouTubeQuotaExceededError as exc:
+                        print(f"[{group.slug}] stats 갱신: quota 초과 — {exc}")
+                        continue
+                    stats_map = _build_stats_map(metas)
+                    async with make_session() as sess:
+                        async with sess.begin():
+                            for video_id, (vc, lc) in stats_map.items():
+                                pk = id_to_pk.get(video_id)
+                                if pk is None:
+                                    continue
+                                await sess.execute(
+                                    update(Video)
+                                    .where(Video.video_pk == pk)
+                                    .values(view_count=vc, like_count=lc)
+                                )
+                                updated += 1
+            finally:
+                await api_client.aclose()
+                await write_job_log(
+                    make_session,
+                    job_type=JOB_TYPE_STATS,
+                    status=STATUS_SUCCESS,
+                    message=f"stats 갱신: {updated}/{len(id_to_pk)}건",
+                    duration_ms=timer.elapsed_ms,
+                )
+        except DBNotConfiguredError:
+            continue
+        except Exception as e:
+            print(f"[{group.slug}] stats 갱신 실패: {e}")
 
 
 async def poll_group(group: Group) -> None:
