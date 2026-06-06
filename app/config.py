@@ -32,5 +32,8 @@ class Settings(BaseSettings):
     # https 배포 시 True(Secure 쿠키). 현재 http(Tailscale) 배포면 False.
     SESSION_HTTPS_ONLY: bool = False
 
+    # 공유 링크 생성용 외부 공개 베이스 URL (예: https://ytdb.example.com). 끝 슬래시 없이.
+    PUBLIC_BASE_URL: str = ""
+
 
 settings = Settings()
