@@ -486,3 +486,38 @@ def _should_stamp_on_save(*, before_sendable: bool, after_sendable: bool) -> boo
 def _needs_baseline_backfill(*, sendable: bool, baseline: object | None) -> bool:
     """기동 업그레이드 보정: 이미 sendable인데 기준선이 비어 있으면 True."""
     return sendable and baseline is None
+
+
+async def backfill_notify_baselines() -> int:
+    """기동 보정: sendable인데 기준선이 빈 활성 그룹에 now()를 스탬프한다.
+
+    업그레이드 직후 기존 backlog가 한꺼번에 발송되는 것을 막는다.
+    반환: 스탬프한 그룹 수.
+    """
+    from app.control_db import get_sessionmaker
+    from app.models.control.group import Group
+    from app.services.settings_manager import get_settings_manager
+
+    sf = get_sessionmaker()
+    mgr = get_settings_manager()
+    async with sf() as session:
+        groups = list(
+            (await session.execute(select(Group).where(Group.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
+
+    stamped = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for group in groups:
+        notif = await mgr.get_notification(group.group_id)
+        if _needs_baseline_backfill(
+            sendable=notif.is_sendable, baseline=notif.notify_baseline_at
+        ):
+            await mgr.set_values(
+                group.group_id,
+                "notification",
+                [{"key": "notify_baseline_at", "value": now_iso, "value_type": "string"}],
+            )
+            stamped += 1
+    return stamped
