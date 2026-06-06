@@ -47,6 +47,7 @@ export function toVideoDetail(raw: Record<string, any>): VideoDetail {
     full_analysis_md: a?.full_analysis_md ?? null,
     bullet_points: a?.bullet_points ?? null,
     key_points: a?.key_points ?? null,
+    analysis_sections: a?.analysis_sections ?? null,
     insights: a?.insights ?? null,
     entities: a?.entities ?? null,
     sentiment: a?.sentiment ?? null,
