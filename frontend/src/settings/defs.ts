@@ -64,6 +64,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'parse_mode', label: 'parse_mode', type: 'select', options: ['HTML', 'MarkdownV2', 'None'], help: '일반적으로 HTML 권장' },
     { key: 'send_mode', label: '발송 모드', type: 'select', options: ['immediate', 'scheduled'], help: 'immediate=분석 즉시 발송, scheduled=예약 시각에 일괄 발송' },
     { key: 'scheduled_times', label: '예약 발송 시각', type: 'timelist', help: 'HH:MM, 최대 10개. 각 시각마다 미발송분을 일괄 발송', showIf: { key: 'send_mode', equals: 'scheduled' } },
+    { key: 'dispatch_scope', label: '발송 범위', type: 'select', options: ['after_activation', 'all'], help: 'after_activation=활성화 이후 게시분만, all=과거 분석분 포함 전체를 오래된 순으로 순차 발송', showIf: { key: 'send_mode', equals: 'scheduled' } },
     { key: 'scheduled_max_per_run', label: '회당 최대 발송 건수', type: 'int', help: '예약 회차·야간 보정 발송 1회당 발송 상한(1~50)' },
     { key: 'wait_between_messages_sec', label: '건별 대기(초)', type: 'int', help: '예약·야간 보정 발송 시 건 간 대기(스팸 방지)' },
     { key: 'quiet_hours_enabled', label: '야간 알림 제한', type: 'bool', help: '지정 시간대에는 발송하지 않고 보류 후 종료 시 자동 발송' },
