@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.control.group import Group
@@ -9,6 +11,7 @@ from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
+from app.services.notify_service import _should_stamp_on_save
 from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
 
@@ -49,11 +52,29 @@ async def put_settings(
 ) -> list[dict]:
     _check_category(category)
     mgr = get_settings_manager()
+
+    before_sendable = False
+    if category == "notification":
+        before_sendable = (await mgr.get_notification(group.group_id)).is_sendable
+
     await mgr.set_values(
         group.group_id,
         category,
         [item.model_dump() for item in payload.items],
     )
+
+    if category == "notification":
+        after = await mgr.get_notification(group.group_id)
+        if _should_stamp_on_save(
+            before_sendable=before_sendable, after_sendable=after.is_sendable
+        ):
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await mgr.set_values(
+                group.group_id,
+                "notification",
+                [{"key": "notify_baseline_at", "value": now_iso, "value_type": "string"}],
+            )
+
     if category == "polling" and app_settings.SCHEDULER_ENABLED:
         await apply_pending_analysis_schedule()
     return await mgr.list_for_api(group.group_id, category)

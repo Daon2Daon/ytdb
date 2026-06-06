@@ -8,6 +8,8 @@ app.groups.schema_name에서 오므로 여기에는 포함하지 않는다.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional
 
 
 @dataclass
@@ -35,6 +37,9 @@ class NotificationSettings:
     # 표시
     low_confidence_threshold: float = 0.5
     message_detail: str = "full"  # full | compact
+    # 발송 기준선: 이 시각 이후 게시(published_at)된 영상만 자동 발송.
+    # None이면(sendable인데도) 자동 발송 보류(안전측). 기존 backlog flood 방지.
+    notify_baseline_at: Optional[datetime] = None
 
     @property
     def is_sendable(self) -> bool:

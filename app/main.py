@@ -27,6 +27,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_control_schema()
+    from app.services.notify_service import backfill_notify_baselines
+
+    try:
+        await backfill_notify_baselines()
+    except Exception as e:
+        print(f"[backfill] 발송 기준선 보정 실패(기동 계속): {e}")
     if app_settings.SCHEDULER_ENABLED:
         start_scheduler()
         await apply_pending_analysis_schedule()

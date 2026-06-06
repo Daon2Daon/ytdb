@@ -327,7 +327,10 @@ async def notify_pending_batch(
     각 성공 건은 notified_at을 기록한다. 배치 종료 후 job_log 1건 기록.
     반환: 성공 발송 건수.
     """
-    from app.services.monitor_service import _passes_notify_baseline
+    from app.services.monitor_service import (
+        _passes_group_baseline,
+        _passes_notify_baseline,
+    )
 
     max_per = max(1, min(50, int(max_per)))
 
@@ -348,6 +351,7 @@ async def notify_pending_batch(
         (v, a, ch)
         for (v, a, ch) in rows
         if _passes_notify_baseline(ch.notify_from, v.published_at)
+        and _passes_group_baseline(notif.notify_baseline_at, v.published_at)
     ]
     if not candidates:
         return 0
@@ -472,3 +476,48 @@ async def run_notify_tick_once() -> None:
             continue
         except Exception as e:
             print(f"[{group.slug}] notify tick 실패: {e}")
+
+
+def _should_stamp_on_save(*, before_sendable: bool, after_sendable: bool) -> bool:
+    """알림 저장 시 발송 기준선을 (재)스탬프할지. false→true 전환에서만 True."""
+    return (not before_sendable) and after_sendable
+
+
+def _needs_baseline_backfill(*, sendable: bool, baseline: object | None) -> bool:
+    """기동 업그레이드 보정: 이미 sendable인데 기준선이 비어 있으면 True."""
+    return sendable and baseline is None
+
+
+async def backfill_notify_baselines() -> int:
+    """기동 보정: sendable인데 기준선이 빈 활성 그룹에 now()를 스탬프한다.
+
+    업그레이드 직후 기존 backlog가 한꺼번에 발송되는 것을 막는다.
+    반환: 스탬프한 그룹 수.
+    """
+    from app.control_db import get_sessionmaker
+    from app.models.control.group import Group
+    from app.services.settings_manager import get_settings_manager
+
+    sf = get_sessionmaker()
+    mgr = get_settings_manager()
+    async with sf() as session:
+        groups = list(
+            (await session.execute(select(Group).where(Group.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
+
+    stamped = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for group in groups:
+        notif = await mgr.get_notification(group.group_id)
+        if _needs_baseline_backfill(
+            sendable=notif.is_sendable, baseline=notif.notify_baseline_at
+        ):
+            await mgr.set_values(
+                group.group_id,
+                "notification",
+                [{"key": "notify_baseline_at", "value": now_iso, "value_type": "string"}],
+            )
+            stamped += 1
+    return stamped

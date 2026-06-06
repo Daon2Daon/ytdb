@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -40,6 +41,22 @@ def _as_int(v: Any, default: int) -> int:
         return int(v)
     except (TypeError, ValueError):
         return default
+
+
+def _as_dt(v: Any) -> datetime | None:
+    """UTC ISO 문자열을 tz-aware datetime으로. 빈 값/파싱 실패는 None.
+
+    naive datetime은 UTC로 간주한다.
+    """
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+    try:
+        dt = datetime.fromisoformat(str(v))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class SettingsSecretError(RuntimeError):
@@ -216,6 +233,7 @@ class SettingsManager:
             timezone=str(d.get("timezone") or "Asia/Seoul"),
             low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
             message_detail=str(d.get("message_detail") or "full"),
+            notify_baseline_at=_as_dt(d.get("notify_baseline_at")),
         )
 
     async def get_digest(self, group_id: int) -> DigestSettings:
