@@ -488,6 +488,15 @@ def _needs_baseline_backfill(*, sendable: bool, baseline: object | None) -> bool
     return sendable and baseline is None
 
 
+def _should_apply_group_baseline(send_mode: str, dispatch_scope: str) -> bool:
+    """그룹 발송 기준선(notify_baseline_at) 게이트를 적용할지.
+
+    scheduled + all 조합에서만 게이트를 끈다(backlog 포함). 그 외(immediate,
+    scheduled+after_activation)는 모두 게이트를 적용해 현행 동작을 유지한다.
+    """
+    return not (send_mode == "scheduled" and dispatch_scope == "all")
+
+
 async def backfill_notify_baselines() -> int:
     """기동 보정: sendable인데 기준선이 빈 활성 그룹에 now()를 스탬프한다.
 
