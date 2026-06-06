@@ -16,6 +16,7 @@ class AnalysisOut(BaseModel):
     short_summary_md: str
     bullet_points: Optional[Any]
     full_analysis_md: Optional[str]
+    analysis_sections: Optional[Any] = None
     key_points: Optional[Any]
     insights: Optional[Any]
     entities: Optional[Any]
