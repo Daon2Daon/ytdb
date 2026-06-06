@@ -87,6 +87,27 @@ def _md_to_telegram_html(text: str) -> str:
     return "\n".join(lines)
 
 
+def _sections_to_telegram_html(sections) -> str:
+    """AnalysisView 섹션들을 텔레그램 HTML로 렌더.
+
+    구조화 섹션: <b>제목</b> 다음 줄부터 '• 문장'을 줄바꿈으로 나열.
+    레거시 섹션(markdown): 기존 _md_to_telegram_html 경로 사용.
+    """
+    blocks = []
+    for s in sections:
+        if s.markdown:
+            blocks.append(_md_to_telegram_html(s.markdown))
+            continue
+        lines = []
+        if s.title:
+            lines.append(f"<b>{_escape_plain(s.title)}</b>")
+        for b in s.bullets:
+            lines.append(f"• {_md_to_telegram_html(b)}")
+        if lines:
+            blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
 def _to_kst(dt) -> str:
     try:
         from zoneinfo import ZoneInfo
