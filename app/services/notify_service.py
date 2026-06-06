@@ -185,7 +185,7 @@ def _render_full(*, low_conf, channel_name, headline, body, bullets_list, tags, 
         lines.append(f"<b>{escape(headline)}</b>")
         lines.append("")
     if body:
-        lines.append(_md_to_telegram_html(body))
+        lines.append(body)
         lines.append("")
     bullets = _format_bullets(bullets_list)
     if bullets:
@@ -207,7 +207,13 @@ def _build_full(video, analysis, threshold: float, channel_name: str, tags) -> s
         and float(analysis.confidence_score) < float(threshold)
     )
     headline = analysis.headline or video.title or ""
-    body = analysis.full_analysis_md or analysis.short_summary_md or ""
+    from app.services.analysis_view import build_sections
+
+    sections = build_sections(
+        getattr(analysis, "analysis_sections", None),
+        getattr(analysis, "full_analysis_md", None),
+    )
+    body = _sections_to_telegram_html(sections) if sections else (analysis.short_summary_md or "")
     bullets_list = analysis.bullet_points if isinstance(analysis.bullet_points, list) else []
     meta_parts = []
     if video.published_at:
