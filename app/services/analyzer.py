@@ -24,6 +24,7 @@ from app.models.pg.video_analysis import VideoAnalysis
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import AIGatewaySettings
+from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
 PROMPT_VERSION = "v3.0"
 
@@ -199,6 +200,11 @@ class AnalysisPipeline:
         self, session: AsyncSession, video_pk: int, result: AnalysisPipelineResult
     ) -> None:
         data = result.data
+        await session.execute(
+            update(Video)
+            .where(Video.video_pk == video_pk, Video.share_token.is_(None))
+            .values(share_token=generate_share_token(), share_visibility=DEFAULT_VISIBILITY)
+        )
         stmt = pg_insert(VideoAnalysis).values(
             video_pk=video_pk,
             one_line=data.get("one_line", ""),
