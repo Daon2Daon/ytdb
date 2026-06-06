@@ -24,8 +24,9 @@ from app.models.pg.video_analysis import VideoAnalysis
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import AIGatewaySettings
+from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
-PROMPT_VERSION = "v3.0"
+PROMPT_VERSION = "v4.0"
 
 DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석해줘.
 
@@ -42,7 +43,11 @@ DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석
 
 ## 분석 요청 항목
 - 한 줄 요약, 헤드라인(이모지+키워드 40자 이내), 짧은 요약(800자 이내), 주요 내용(5~10개),
-  전체 분석(마크다운), 타임스탬프 포인트, 인사이트(3~5개), 등장 인물/기업/지표,
+  전체 분석(analysis_sections): 섹션 배열로 작성. 각 섹션은 {key, title, bullets[]} 구조.
+  key는 영문 스네이크케이스(예: overview, main_points, conclusion).
+  title은 한국어 섹션 제목. bullets는 한 문장씩 담은 문자열 배열.
+  bullets 항목에는 기호(•, -, 번호)와 줄바꿈(\n)을 넣지 말 것. 강조는 **굵게**만 허용.
+  타임스탬프 포인트, 인사이트(3~5개), 등장 인물/기업/지표,
   감성(bullish/bearish/neutral/mixed), 태그(5~10개, 한국어 정규화), 신뢰도(0.0~1.0).
 
 ## 출력 형식
@@ -53,7 +58,7 @@ DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석
   "headline": "string",
   "short_summary_md": "string",
   "bullet_points": ["string"],
-  "full_analysis_md": "string",
+  "analysis_sections": [{"key": "string", "title": "string", "bullets": ["string"]}],
   "key_points": [{"timestamp":"hh:mm:ss","point":"string"}],
   "insights": ["string"],
   "entities": [{"type":"person|company|ticker|metric","name":"string"}],
@@ -199,6 +204,11 @@ class AnalysisPipeline:
         self, session: AsyncSession, video_pk: int, result: AnalysisPipelineResult
     ) -> None:
         data = result.data
+        await session.execute(
+            update(Video)
+            .where(Video.video_pk == video_pk, Video.share_token.is_(None))
+            .values(share_token=generate_share_token(), share_visibility=DEFAULT_VISIBILITY)
+        )
         stmt = pg_insert(VideoAnalysis).values(
             video_pk=video_pk,
             one_line=data.get("one_line", ""),
@@ -206,6 +216,7 @@ class AnalysisPipeline:
             short_summary_md=data.get("short_summary_md", ""),
             bullet_points=data.get("bullet_points"),
             full_analysis_md=data.get("full_analysis_md"),
+            analysis_sections=data.get("analysis_sections"),
             key_points=data.get("key_points"),
             insights=data.get("insights"),
             entities=data.get("entities"),
@@ -226,6 +237,7 @@ class AnalysisPipeline:
                     "short_summary_md",
                     "bullet_points",
                     "full_analysis_md",
+                    "analysis_sections",
                     "key_points",
                     "insights",
                     "entities",

@@ -49,6 +49,7 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "message_detail", "value": "full", "value_type": "string"},
         {"key": "notify_baseline_at", "value": "", "value_type": "string"},
         {"key": "dispatch_scope", "value": "after_activation", "value_type": "string"},
+        {"key": "include_share_link", "value": "true", "value_type": "bool"},
     ],
     "digest": [
         {"key": "enabled", "value": "false", "value_type": "bool"},

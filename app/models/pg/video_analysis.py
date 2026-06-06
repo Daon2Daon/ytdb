@@ -31,6 +31,8 @@ class VideoAnalysis(PgBase):
     # 상세 분석
     full_analysis_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 구조화 분석 본문: [{key, title, bullets[]}]. full_analysis_md를 대체.
+    analysis_sections: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     key_points: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     insights: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     entities: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)

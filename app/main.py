@@ -16,7 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings as app_settings
 from app.control_db import ensure_control_schema
-from app.routers import actions, auth, channels, digests, groups, health, logs, settings, stats, tags, videos
+from app.routers import actions, auth, channels, digests, groups, health, logs, settings, share, stats, tags, videos
 from app.routers.auth import require_auth
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
@@ -60,6 +60,7 @@ async def db_not_configured_handler(_request: Request, exc: DBNotConfiguredError
 
 # 인증 라우터는 무인증(로그인/상태 확인). 나머지 데이터 라우터는 require_auth로 보호.
 app.include_router(auth.router)
+app.include_router(share.router)  # 공개 공유 페이지(무인증)
 
 _protected = [Depends(require_auth)]
 app.include_router(groups.router, dependencies=_protected)
@@ -117,6 +118,7 @@ async def spa_fallback(full_path: str) -> Response:
         or full_path.startswith("static")
         or full_path == "health"
         or full_path.startswith("legacy")
+        or full_path.startswith("v/")
     ):
         raise HTTPException(status_code=404)
     return _serve_react()

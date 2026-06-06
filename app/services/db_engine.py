@@ -174,6 +174,9 @@ class DataPlaneEngineManager:
                 # (create_all은 기존 테이블에 컬럼을 추가하지 않으므로 명시 ALTER)
                 additive_columns = [
                     ("channels", "notify_from", "timestamptz"),
+                    ("video_analysis", "analysis_sections", "jsonb"),
+                    ("videos", "share_token", "text"),
+                    ("videos", "share_visibility", "text"),
                 ]
                 for tbl, col, coltype in additive_columns:
                     await conn.execute(
@@ -182,6 +185,15 @@ class DataPlaneEngineManager:
                             f'ADD COLUMN IF NOT EXISTS "{col}" {coltype}'
                         )
                     )
+
+                await conn.execute(
+                    text(
+                        f'CREATE UNIQUE INDEX IF NOT EXISTS '
+                        f'"ux_{group.schema_name}_videos_share_token" '
+                        f'ON "{group.schema_name}"."videos" (share_token) '
+                        f'WHERE share_token IS NOT NULL'
+                    )
+                )
             self._initialized.add(key)
 
     async def dispose_current_loop(self) -> None:

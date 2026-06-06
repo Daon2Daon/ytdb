@@ -77,6 +77,12 @@ export interface KeyPoint {
   point?: string
 }
 
+export interface AnalysisSection {
+  key: string
+  title: string
+  bullets: string[]
+}
+
 export interface VideoDetail {
   video_pk: number
   video_id: string
@@ -100,6 +106,7 @@ export interface VideoDetail {
   full_analysis_md: string | null
   bullet_points: string[] | null
   key_points: KeyPoint[] | null
+  analysis_sections: AnalysisSection[] | null
   insights: string[] | null
   entities: unknown[] | null
   sentiment: string | null

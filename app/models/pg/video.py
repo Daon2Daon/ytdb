@@ -39,6 +39,9 @@ class Video(PgBase):
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 미등록 채널의 즉시 분석 시 원래 채널명 보존
     source_channel_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 공유 페이지 토큰/접근모드
+    share_token: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
+    share_visibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
