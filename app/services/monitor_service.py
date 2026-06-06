@@ -375,6 +375,19 @@ def _passes_notify_baseline(notify_from: Optional[datetime], published_at: datet
     return published_at >= notify_from
 
 
+def _passes_group_baseline(
+    baseline: Optional[datetime], published_at: datetime
+) -> bool:
+    """그룹 발송 기준선 게이트. baseline 이후 게시된 영상만 자동 발송.
+
+    채널용과 달리 baseline이 None이면 보류(False)한다. sendable인데 기준선이
+    비어 있으면(트리거 누락 등) 과거 backlog가 한꺼번에 나가는 것을 막는다.
+    """
+    if baseline is None:
+        return False
+    return published_at >= baseline
+
+
 async def _notify_after_analysis(
     group: Group,
     make_session: MakeSession,
