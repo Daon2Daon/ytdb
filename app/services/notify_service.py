@@ -327,7 +327,10 @@ async def notify_pending_batch(
     각 성공 건은 notified_at을 기록한다. 배치 종료 후 job_log 1건 기록.
     반환: 성공 발송 건수.
     """
-    from app.services.monitor_service import _passes_notify_baseline
+    from app.services.monitor_service import (
+        _passes_group_baseline,
+        _passes_notify_baseline,
+    )
 
     max_per = max(1, min(50, int(max_per)))
 
@@ -348,6 +351,7 @@ async def notify_pending_batch(
         (v, a, ch)
         for (v, a, ch) in rows
         if _passes_notify_baseline(ch.notify_from, v.published_at)
+        and _passes_group_baseline(notif.notify_baseline_at, v.published_at)
     ]
     if not candidates:
         return 0
