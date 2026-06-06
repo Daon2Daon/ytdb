@@ -31,8 +31,8 @@ async def lifespan(app: FastAPI):
 
     try:
         await backfill_notify_baselines()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[backfill] 발송 기준선 보정 실패(기동 계속): {e}")
     if app_settings.SCHEDULER_ENABLED:
         start_scheduler()
         await apply_pending_analysis_schedule()
