@@ -465,6 +465,18 @@ async def _notify_after_analysis(
         )
         return
 
+    # 그룹 발송 기준선 게이트: 발송 활성화 이전 게시분(backlog)은 자동 발송 안 함.
+    if not _passes_group_baseline(notif.notify_baseline_at, video.published_at):
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_NOTIFY,
+            status=STATUS_SKIP,
+            message="그룹 baseline 이전(자동발송 보류)",
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
     timer = JobTimer()
     try:
         with timer:
