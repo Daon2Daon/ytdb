@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import dayjs from 'dayjs'
 import { videoApi } from '../api/videos'
 import { promptApi } from '../api/prompts'
@@ -251,11 +252,34 @@ export default function VideoDetail() {
           )}
 
           {/* 분석 결과 */}
-          {video.full_analysis_md ? (
+          {video.analysis_sections && video.analysis_sections.length > 0 ? (
+            <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5">
+              <h2 className="font-semibold text-gray-800 mb-4">상세 분석</h2>
+              <div className="space-y-5">
+                {video.analysis_sections.map((sec) => (
+                  <section key={sec.key}>
+                    {sec.title && (
+                      <h3 className="font-semibold text-gray-800 mb-2">{sec.title}</h3>
+                    )}
+                    <ul className="space-y-1.5">
+                      {sec.bullets.map((b, i) => (
+                        <li key={i} className="flex gap-2 text-sm text-gray-700">
+                          <span className="text-blue-400 shrink-0">•</span>
+                          <article className="prose prose-sm max-w-none min-w-0 break-words">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{b}</ReactMarkdown>
+                          </article>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            </div>
+          ) : video.full_analysis_md ? (
             <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5">
               <h2 className="font-semibold text-gray-800 mb-4">상세 분석</h2>
               <article className="prose prose-sm max-w-none text-gray-700 break-words overflow-x-auto">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{video.full_analysis_md}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{video.full_analysis_md}</ReactMarkdown>
               </article>
             </div>
           ) : video.analysis_status === 'pending' || video.analysis_status === 'processing' ? (
