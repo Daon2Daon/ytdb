@@ -476,3 +476,13 @@ async def run_notify_tick_once() -> None:
             continue
         except Exception as e:
             print(f"[{group.slug}] notify tick 실패: {e}")
+
+
+def _should_stamp_on_save(*, before_sendable: bool, after_sendable: bool) -> bool:
+    """알림 저장 시 발송 기준선을 (재)스탬프할지. false→true 전환에서만 True."""
+    return (not before_sendable) and after_sendable
+
+
+def _needs_baseline_backfill(*, sendable: bool, baseline: object | None) -> bool:
+    """기동 업그레이드 보정: 이미 sendable인데 기준선이 비어 있으면 True."""
+    return sendable and baseline is None
