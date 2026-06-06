@@ -174,6 +174,7 @@ class DataPlaneEngineManager:
                 # (create_all은 기존 테이블에 컬럼을 추가하지 않으므로 명시 ALTER)
                 additive_columns = [
                     ("channels", "notify_from", "timestamptz"),
+                    ("video_analysis", "analysis_sections", "jsonb"),
                 ]
                 for tbl, col, coltype in additive_columns:
                     await conn.execute(
