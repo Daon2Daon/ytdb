@@ -59,6 +59,12 @@ def _as_dt(v: Any) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _normalize_dispatch_scope(v: Any) -> str:
+    """dispatch_scope 정규화. 유효값만 통과, 그 외는 안전측 기본값."""
+    s = str(v or "").strip()
+    return s if s in ("after_activation", "all") else "after_activation"
+
+
 class SettingsSecretError(RuntimeError):
     """시크릿 복호화 실패 또는 Fernet 키 부재."""
 
@@ -234,6 +240,7 @@ class SettingsManager:
             low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
             message_detail=str(d.get("message_detail") or "full"),
             notify_baseline_at=_as_dt(d.get("notify_baseline_at")),
+            dispatch_scope=_normalize_dispatch_scope(d.get("dispatch_scope")),
         )
 
     async def get_digest(self, group_id: int) -> DigestSettings:

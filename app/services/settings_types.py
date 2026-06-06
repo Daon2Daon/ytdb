@@ -40,6 +40,9 @@ class NotificationSettings:
     # 발송 기준선: 이 시각 이후 게시(published_at)된 영상만 자동 발송.
     # None이면(sendable인데도) 자동 발송 보류(안전측). 기존 backlog flood 방지.
     notify_baseline_at: Optional[datetime] = None
+    # 발송 범위: scheduled 모드에서만 적용.
+    # after_activation=활성화 이후 게시분만, all=과거 분석분 포함 전체 순차 발송.
+    dispatch_scope: str = "after_activation"  # after_activation | all
 
     @property
     def is_sendable(self) -> bool:
