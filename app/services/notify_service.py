@@ -347,11 +347,15 @@ async def notify_pending_batch(
             )
         ).all()
 
+    apply_group = _should_apply_group_baseline(notif.send_mode, notif.dispatch_scope)
     candidates = [
         (v, a, ch)
         for (v, a, ch) in rows
         if _passes_notify_baseline(ch.notify_from, v.published_at)
-        and _passes_group_baseline(notif.notify_baseline_at, v.published_at)
+        and (
+            not apply_group
+            or _passes_group_baseline(notif.notify_baseline_at, v.published_at)
+        )
     ]
     if not candidates:
         return 0
