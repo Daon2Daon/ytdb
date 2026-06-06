@@ -29,7 +29,10 @@ async def lifespan(app: FastAPI):
     await ensure_control_schema()
     from app.services.notify_service import backfill_notify_baselines
 
-    await backfill_notify_baselines()
+    try:
+        await backfill_notify_baselines()
+    except Exception:
+        pass
     if app_settings.SCHEDULER_ENABLED:
         start_scheduler()
         await apply_pending_analysis_schedule()
