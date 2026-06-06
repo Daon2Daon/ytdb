@@ -53,3 +53,15 @@ def test_build_full_falls_back_to_legacy_md():
     video, analysis = _mk(full_analysis_md="### 옛제목\n옛본문")
     out = _build_full(video, analysis, 0.0, "채널", [])
     assert "<b>옛제목</b>" in out
+
+
+def test_build_compact_appends_share_link(monkeypatch):
+    import app.config as cfg
+    monkeypatch.setattr(cfg.settings, "PUBLIC_BASE_URL", "https://example.com")
+    video, analysis = _mk(analysis_sections=[{"key": "k", "title": "t", "bullets": ["a임"]}])
+    video.share_token = "tok123"
+    analysis.sentiment = None
+    import app.services.notify_service as ns
+    out = ns._build_compact(video, analysis, 0.0, group_slug="eco", include_share_link=True)
+    assert "자세히 보기" in out
+    assert "https://example.com/v/eco/tok123" in out
