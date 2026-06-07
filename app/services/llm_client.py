@@ -1,8 +1,8 @@
 """litellm Gateway 클라이언트 (그룹별 AIGatewaySettings로 생성).
 
-- 경로 A (Gemini native passthrough): POST {base_url}/gemini/v1beta/models/{model}:generateContent?key=...
-- 경로 B (OpenAI 호환):              POST {base_url}/v1/chat/completions
-- 모델 목록:                         GET  {base_url}/v1/models
+- Gemini native passthrough: POST {base_url}/gemini/v1beta/models/{model}:generateContent?key=...
+- OpenAI 호환 chat:          POST {base_url}/v1/chat/completions  (다이제스트 생성용)
+- 모델 목록:                 GET  {base_url}/v1/models
 """
 
 from __future__ import annotations
@@ -168,7 +168,7 @@ class LiteLLMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> ChatResult:
-        """경로 B: OpenAI 호환 chat completions."""
+        """OpenAI 호환 chat completions (다이제스트 생성에 사용)."""
         if not self.api_key:
             raise LiteLLMError("AI Gateway api_key가 비어 있습니다.")
         body: Dict[str, Any] = {"model": model, "messages": list(messages)}

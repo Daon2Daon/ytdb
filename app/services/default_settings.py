@@ -19,7 +19,6 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
     "ai_gateway": [
         {"key": "base_url", "value": "http://litellm:4000", "value_type": "string"},
         {"key": "primary_model", "value": "gemini/gemini-2.5-flash", "value_type": "string"},
-        {"key": "fallback_model", "value": "gemini/gemini-2.5-flash", "value_type": "string"},
         {"key": "temperature", "value": "0.3", "value_type": "float"},
         {"key": "max_tokens", "value": "8192", "value_type": "int"},
     ],

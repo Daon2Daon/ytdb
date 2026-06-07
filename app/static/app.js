@@ -438,15 +438,9 @@ const SETTING_DEFS = {
     { key: "api_key", label: "API 키", secret: true, help: "litellm 게이트웨이 인증 키" },
     {
       key: "primary_model",
-      label: "기본 모델 (경로 A)",
+      label: "기본 모델",
       type: "model_select",
-      help: "영상 분석 1차 호출 모델. 아래 목록에서 스크롤로 선택 가능",
-    },
-    {
-      key: "fallback_model",
-      label: "폴백 모델 (경로 B)",
-      type: "model_select",
-      help: "기본 모델 실패 시 재시도에 사용할 모델",
+      help: "영상 분석 호출 모델. 아래 목록에서 스크롤로 선택 가능",
     },
     {
       key: "temperature",

@@ -3,8 +3,7 @@
 그룹의 AI agent 설정과 프롬프트를 주입받아 LLM을 호출하고, 결과를
 그룹 데이터 평면 세션(schema_translate_map 바인딩)에 저장한다.
 
-경로 A: primary_model로 Gemini native (fileData)
-경로 B: fallback_model로 OpenAI 호환 엔드포인트 폴백
+primary_model로 Gemini native passthrough (fileData) 호출.
 """
 
 from __future__ import annotations

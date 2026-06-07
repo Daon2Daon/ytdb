@@ -174,7 +174,6 @@ class SettingsManager:
             base_url=str(d.get("base_url") or "http://litellm:4000"),
             api_key=str(d.get("api_key") or ""),
             primary_model=str(d.get("primary_model") or "gemini/gemini-2.5-flash"),
-            fallback_model=str(d.get("fallback_model") or "gemini/gemini-2.5-flash"),
             tagging_model=str(d.get("tagging_model") or "gemini/gemini-2.5-flash"),
             digest_model=str(d.get("digest_model") or ""),
             temperature=_as_float(d.get("temperature"), 0.3),

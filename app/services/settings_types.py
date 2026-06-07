@@ -57,7 +57,6 @@ class AIGatewaySettings:
     base_url: str = "http://litellm:4000"
     api_key: str = ""
     primary_model: str = "gemini/gemini-2.5-flash"
-    fallback_model: str = "gemini/gemini-2.5-flash"
     tagging_model: str = "gemini/gemini-2.5-flash"
     digest_model: str = ""
     temperature: float = 0.3
