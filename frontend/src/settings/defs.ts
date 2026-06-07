@@ -73,6 +73,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'timezone', label: '시간대', help: '야간·예약 판정 기준 (예: Asia/Seoul)' },
     { key: 'low_confidence_threshold', label: '저신뢰도 임계값', type: 'float', help: '0~1. 이 값 미만 분석은 알림 제목에 ⚠️ 표시' },
     { key: 'message_detail', label: '메시지 상세도', type: 'select', options: ['full', 'compact'], help: 'full=전체 분석·핵심주장·태그 포함, compact=한줄+짧은요약' },
+    { key: 'include_share_link', label: '웹 공유 링크 첨부', type: 'bool', help: '텔레그램 메시지에 웹 매거진 페이지 링크를 함께 발송합니다. PUBLIC_BASE_URL 설정 필요.' },
   ],
   digest: [
     { key: 'enabled', label: '주간 리뷰 자동 생성', type: 'bool' },
