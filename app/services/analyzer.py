@@ -177,38 +177,7 @@ class AnalysisPipeline:
                 raw_text=result.raw_text,
             )
         except (LiteLLMError, AnalysisValidationError) as e:
-            print(f"경로 A 실패 (video_pk={video_pk}): {e}")
-
-        # 경로 B: OpenAI 호환 폴백
-        # 영상 URL을 프롬프트에 명시해 환각 방지.
-        # 경로 B는 영상 콘텐츠에 직접 접근 불가 — URL만 참고 가능하므로
-        # confidence_score 0.3 이하 + '⚠️추정' 강제를 모델에게 명시한다.
-        _path_b_notice = (
-            f"\n\n## ⚠️ 주의 (경로 B 폴백)\n"
-            f"영상 URL: {video_url}\n"
-            f"이 경로는 영상 콘텐츠(영상·음성)에 직접 접근할 수 없습니다. "
-            f"URL과 채널명 외에 영상 내용을 확인할 수 없으므로, "
-            f"반드시 confidence_score를 0.3 이하로 설정하고 "
-            f"모든 본문 텍스트에 '⚠️추정'을 명시해야 합니다."
-        )
-        try:
-            chat = await self._llm.chat(
-                model=self._ai.fallback_model,
-                messages=[{"role": "user", "content": prompt + _path_b_notice}],
-                temperature=self._ai.temperature,
-                max_tokens=self._ai.max_tokens,
-            )
-            data = json.loads(_strip_code_fence(chat.content))
-            _validate(data)
-            return AnalysisPipelineResult(
-                data=data,
-                route="B",
-                model_name=self._ai.fallback_model,
-                gateway_url=self._ai.base_url,
-                raw_text=chat.content,
-            )
-        except Exception as e:
-            raise AnalysisFailedError(f"경로 A·B 모두 실패 (video_pk={video_pk}): {e}") from e
+            raise AnalysisFailedError(f"경로 A 실패 (video_pk={video_pk}): {e}") from e
 
     async def save_to_db(
         self, session: AsyncSession, video_pk: int, result: AnalysisPipelineResult
