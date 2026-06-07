@@ -579,6 +579,7 @@ async def _analyze_group(group: Group) -> None:
                         video_url=video.video_url,
                         channel_name=channel.channel_name if channel else "",
                         published_at_str=video.published_at.isoformat(),
+                        duration_seconds=video.duration_seconds,
                     )
         await write_job_log(
             make_session,
@@ -816,6 +817,7 @@ async def analyze_specific_video(group: Group, video_pk: int, custom_prompt: Opt
                         video_url=video.video_url,
                         channel_name=channel.channel_name if channel else "",
                         published_at_str=video.published_at.isoformat(),
+                        duration_seconds=video.duration_seconds,
                     )
         await write_job_log(
             make_session,

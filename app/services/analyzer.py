@@ -77,6 +77,19 @@ REQUIRED_FIELDS = {
 }
 
 
+# Gemini fileData는 기본 1fps로 영상을 샘플링한다. 긴 영상은 프레임 토큰이
+# 입력 한도(약 100만 토큰)를 넘어 INVALID_ARGUMENT(400)로 거부된다.
+# 샘플 프레임 수가 이 상한을 넘지 않도록 fps를 길이에 맞춰 낮춘다.
+_MAX_VIDEO_FRAMES = 1500
+
+
+def _fps_for_duration(duration_seconds: Optional[int]) -> Optional[float]:
+    """영상 길이에 맞춘 샘플링 fps. 짧으면 None(기본 1fps), 길면 낮춘 값."""
+    if not duration_seconds or duration_seconds <= _MAX_VIDEO_FRAMES:
+        return None
+    return round(_MAX_VIDEO_FRAMES / duration_seconds, 3)
+
+
 def _coerce_confidence(v: Any) -> Optional[float]:
     """신뢰도 값을 관대하게 변환한다. 0~1 범위의 숫자만 채택, 그 외/잘못된 값은 None."""
     try:
@@ -155,7 +168,12 @@ class AnalysisPipeline:
         )
 
     async def run(
-        self, video_pk: int, video_url: str, channel_name: str, published_at_str: str
+        self,
+        video_pk: int,
+        video_url: str,
+        channel_name: str,
+        published_at_str: str,
+        duration_seconds: Optional[int] = None,
     ) -> AnalysisPipelineResult:
         prompt = self._render(channel_name, published_at_str)
 
@@ -167,6 +185,7 @@ class AnalysisPipeline:
                 prompt=prompt,
                 temperature=self._ai.temperature,
                 max_output_tokens=self._ai.max_tokens,
+                fps=_fps_for_duration(duration_seconds),
             )
             _validate(result.data)
             return AnalysisPipelineResult(
@@ -177,7 +196,9 @@ class AnalysisPipeline:
                 raw_text=result.raw_text,
             )
         except (LiteLLMError, AnalysisValidationError) as e:
-            raise AnalysisFailedError(f"경로 A 실패 (video_pk={video_pk}): {e}") from e
+            raise AnalysisFailedError(
+                f"경로 A 실패 (video_pk={video_pk}, url={video_url}, model={self._ai.primary_model}): {e}"
+            ) from e
 
     async def save_to_db(
         self, session: AsyncSession, video_pk: int, result: AnalysisPipelineResult
@@ -282,14 +303,22 @@ class AnalysisPipeline:
             )
 
     async def run_and_save(
-        self, session: AsyncSession, video_pk: int, video_url: str, channel_name: str, published_at_str: str
+        self,
+        session: AsyncSession,
+        video_pk: int,
+        video_url: str,
+        channel_name: str,
+        published_at_str: str,
+        duration_seconds: Optional[int] = None,
     ) -> AnalysisPipelineResult:
         await session.execute(
             update(Video).where(Video.video_pk == video_pk).values(analysis_status="processing")
         )
         await session.flush()
         try:
-            result = await self.run(video_pk, video_url, channel_name, published_at_str)
+            result = await self.run(
+                video_pk, video_url, channel_name, published_at_str, duration_seconds
+            )
             await self.save_to_db(session, video_pk, result)
             return result
         except Exception as e:

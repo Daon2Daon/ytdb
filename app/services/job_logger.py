@@ -21,8 +21,8 @@ JOB_TYPE_NOTIFY = "notify"
 JOB_TYPE_STATS = "stats"
 
 STATUS_SUCCESS = "success"
-STATUS_FAIL = "fail"
-STATUS_SKIP = "skip"
+STATUS_FAIL = "failed"
+STATUS_SKIP = "skipped"
 
 MakeSession = Callable[[], AsyncSession]
 

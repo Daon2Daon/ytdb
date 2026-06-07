@@ -114,8 +114,14 @@ class LiteLLMClient:
         prompt: str,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        fps: float | None = None,
     ) -> AnalyzerResult:
-        """경로 A: Gemini native passthrough (fileData.fileUri 멀티모달)."""
+        """경로 A: Gemini native passthrough (fileData.fileUri 멀티모달).
+
+        fps: 영상 프레임 샘플링 속도(초당 프레임). 긴 영상은 기본 1fps로는
+        입력 토큰 한도를 초과해 INVALID_ARGUMENT(400)가 나므로, 호출 측에서
+        길이에 맞춰 낮춘 값을 전달한다. None이면 모델 기본값(1fps)을 쓴다.
+        """
         if not self.api_key:
             raise LiteLLMError("AI Gateway api_key가 비어 있습니다.")
         model_id = model.split("/")[-1] if "/" in model else model
@@ -125,15 +131,27 @@ class LiteLLMClient:
             gen_cfg["temperature"] = temperature
         if max_output_tokens is not None:
             gen_cfg["maxOutputTokens"] = max_output_tokens
+        file_part: Dict[str, Any] = {"fileData": {"fileUri": video_url}}
+        if fps is not None:
+            file_part["videoMetadata"] = {"fps": fps}
         body = {
-            "contents": [
-                {"role": "user", "parts": [{"fileData": {"fileUri": video_url}}, {"text": prompt}]}
-            ],
+            "contents": [{"role": "user", "parts": [file_part, {"text": prompt}]}],
             "generationConfig": gen_cfg,
         }
         resp = await self._client.post(url, params={"key": self.api_key}, json=body)
         if resp.status_code != 200:
-            raise LiteLLMError(f"Gemini native 분석 실패: {resp.status_code} - {resp.text}")
+            # Gateway가 Gemini 오류를 OpenAI 형식으로 래핑하는 경우 내부 메시지를 추출한다.
+            detail = resp.text
+            try:
+                outer = resp.json()
+                inner_msg = (outer.get("error") or {}).get("message") or ""
+                inner_parsed = json.loads(inner_msg) if inner_msg.strip().startswith("{") else None
+                if inner_parsed:
+                    inner_err = (inner_parsed.get("error") or {})
+                    detail = f"{inner_err.get('status', '')} {inner_err.get('message', '')}".strip() or detail
+            except Exception:
+                pass
+            raise LiteLLMError(f"Gemini native 분석 실패: {resp.status_code} - {detail}")
         raw_text = _pick_text_from_gemini(resp.json())
         if not raw_text:
             raise LiteLLMError("Gemini 응답에서 텍스트를 찾지 못했습니다.")
