@@ -74,7 +74,6 @@ DEFAULT_ANALYSIS_PROMPT: str = """다음 유튜브 영상을 한국어로 분석
 REQUIRED_FIELDS = {
     "one_line",
     "short_summary_md",
-    "full_analysis_md",
 }
 
 
