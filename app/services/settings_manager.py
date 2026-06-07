@@ -239,6 +239,7 @@ class SettingsManager:
             timezone=str(d.get("timezone") or "Asia/Seoul"),
             low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
             message_detail=str(d.get("message_detail") or "full"),
+            include_share_link=bool(d.get("include_share_link", True)),
             notify_baseline_at=_as_dt(d.get("notify_baseline_at")),
             dispatch_scope=_normalize_dispatch_scope(d.get("dispatch_scope")),
         )
