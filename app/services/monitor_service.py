@@ -501,7 +501,7 @@ async def _notify_after_analysis(
             sent = await notify_video(
                 notif, video, analysis, threshold=notif.low_confidence_threshold,
                 channel_name=getattr(channel, "channel_name", "") or "",
-                tags=tags, template=None,
+                tags=tags, template=notif.message_template,
                 group_slug=group.slug,
             )
         async with make_session() as sess:

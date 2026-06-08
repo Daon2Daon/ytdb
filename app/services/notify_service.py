@@ -492,7 +492,7 @@ async def notify_pending_batch(
                         ok = await notify_video(
                             notif, video, analysis, client, threshold,
                             channel_name=getattr(channel, "channel_name", "") or "",
-                            tags=tags, template=None,
+                            tags=tags, template=notif.message_template,
                             group_slug=group_slug,
                         )
                         if ok:

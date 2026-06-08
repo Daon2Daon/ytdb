@@ -65,6 +65,19 @@ def _normalize_dispatch_scope(v: Any) -> str:
     return s if s in ("after_activation", "all") else "after_activation"
 
 
+def _detail_to_template(detail) -> dict:
+    """레거시 message_detail 문자열을 프리셋으로 변환."""
+    from app.services.settings_types import PRESET_COMPACT, PRESET_FULL
+    return dict(PRESET_COMPACT) if str(detail or "").strip() == "compact" else dict(PRESET_FULL)
+
+
+def _parse_message_template(d: dict) -> dict:
+    raw = d.get("message_template")
+    if isinstance(raw, dict) and "fields" in raw:
+        return raw
+    return _detail_to_template(d.get("message_detail"))
+
+
 class SettingsSecretError(RuntimeError):
     """시크릿 복호화 실패 또는 Fernet 키 부재."""
 
@@ -237,8 +250,7 @@ class SettingsManager:
             quiet_hours_end=str(d.get("quiet_hours_end") or "07:00"),
             timezone=str(d.get("timezone") or "Asia/Seoul"),
             low_confidence_threshold=_as_float(d.get("low_confidence_threshold"), 0.5),
-            message_detail=str(d.get("message_detail") or "full"),
-            include_share_link=bool(d.get("include_share_link", True)),
+            message_template=_parse_message_template(d),
             notify_baseline_at=_as_dt(d.get("notify_baseline_at")),
             dispatch_scope=_normalize_dispatch_scope(d.get("dispatch_scope")),
         )

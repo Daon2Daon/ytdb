@@ -347,7 +347,7 @@ async def notify_video_now(
         sent = await notify_video(
             notif, video, analysis,
             channel_name=getattr(video, "source_channel_name", "") or "",
-            tags=tags, template=None,
+            tags=tags, template=notif.message_template,
             group_slug=group.slug,
         )
     except Exception as e:  # noqa: BLE001

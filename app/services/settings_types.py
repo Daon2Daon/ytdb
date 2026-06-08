@@ -48,8 +48,7 @@ class NotificationSettings:
     timezone: str = "Asia/Seoul"
     # 표시
     low_confidence_threshold: float = 0.5
-    message_detail: str = "full"  # full | compact
-    include_share_link: bool = True
+    message_template: dict = field(default_factory=lambda: dict(PRESET_FULL))
     # 발송 기준선: 이 시각 이후 게시(published_at)된 영상만 자동 발송.
     # None이면(sendable인데도) 자동 발송 보류(안전측). 기존 backlog flood 방지.
     notify_baseline_at: Optional[datetime] = None
