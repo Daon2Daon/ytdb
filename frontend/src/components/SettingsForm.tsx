@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { FieldDef } from '../settings/defs'
 import { initialValue, toSaveItem, type FormValue } from '../settings/convert'
 import type { SettingItem } from '../api/settings'
+import TemplateBuilder, { type MessageTemplate } from './TemplateBuilder'
 
 interface Props {
   defs: FieldDef[]
@@ -132,6 +133,11 @@ function Field({
         />
       ) : def.type === 'timelist' ? (
         <TimeList value={value as string[]} onChange={onChange} />
+      ) : def.type === 'template_builder' ? (
+        <TemplateBuilder
+          value={value as MessageTemplate}
+          onChange={onChange}
+        />
       ) : def.type === 'int_days' ? (
         <input type="number" min={0} value={value as string} onChange={(e) => onChange(e.target.value)}
           className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm" />

@@ -1,7 +1,7 @@
 import type { FieldDef } from './defs'
 import type { SettingItem } from '../api/settings'
 
-export type FormValue = string | boolean | string[]
+export type FormValue = string | boolean | string[] | object
 
 /** 로드된 SettingItem → 폼 초기값(표시 단위로 환산). */
 export function initialValue(def: FieldDef, item: SettingItem | undefined): FormValue {
@@ -21,6 +21,14 @@ export function initialValue(def: FieldDef, item: SettingItem | undefined): Form
       return Array.isArray(arr) ? arr.map(String) : []
     } catch {
       return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean)
+    }
+  }
+  if (def.type === 'template_builder') {
+    try {
+      const parsed = JSON.parse(raw || '{}')
+      return (parsed && Array.isArray(parsed.fields)) ? parsed : { fields: [] }
+    } catch {
+      return { fields: [] }
     }
   }
   if (def.secret) return ''
@@ -44,6 +52,9 @@ export function toSaveItem(def: FieldDef, value: FormValue): SettingItem {
   if (def.type === 'timelist') {
     const times = (value as string[]).map((s) => s.trim()).filter(Boolean)
     return { key: def.key, value: JSON.stringify(times), value_type: 'json', is_secret: false }
+  }
+  if (def.type === 'template_builder') {
+    return { key: def.key, value: JSON.stringify(value), value_type: 'json', is_secret: false }
   }
   if (def.type === 'bool') {
     return { key: def.key, value: value ? 'true' : 'false', value_type: 'bool', is_secret: false }
