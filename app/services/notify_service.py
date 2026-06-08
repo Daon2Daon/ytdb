@@ -492,9 +492,8 @@ async def notify_pending_batch(
                         ok = await notify_video(
                             notif, video, analysis, client, threshold,
                             channel_name=getattr(channel, "channel_name", "") or "",
-                            tags=tags, detail=notif.message_detail,
+                            tags=tags, template=None,
                             group_slug=group_slug,
-                            include_share_link=notif.include_share_link,
                         )
                         if ok:
                             async with make_session() as sess:

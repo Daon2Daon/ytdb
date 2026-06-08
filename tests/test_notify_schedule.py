@@ -21,21 +21,21 @@ def test_badge_added_below_threshold():
     v = SimpleNamespace(title="제목", video_url="https://youtu.be/x",
                         published_at=None, duration_seconds=None)
     a = _analysis(0.3)
-    msg = build_message(v, a, threshold=0.5, detail="full")
+    msg = build_message(v, a, threshold=0.5)
     assert msg.startswith("⚠️ <b>[저신뢰도 분석]</b>")
 
 
 def test_no_badge_at_or_above_threshold():
     v = SimpleNamespace(title="제목", video_url="https://youtu.be/x",
                         published_at=None, duration_seconds=None)
-    msg = build_message(v, _analysis(0.7), threshold=0.5, detail="full")
+    msg = build_message(v, _analysis(0.7), threshold=0.5)
     assert "저신뢰도 분석" not in msg
 
 
 def test_no_badge_when_confidence_none():
     v = SimpleNamespace(title="제목", video_url="https://youtu.be/x",
                         published_at=None, duration_seconds=None)
-    msg = build_message(v, _analysis(None), threshold=0.5, detail="full")
+    msg = build_message(v, _analysis(None), threshold=0.5)
     assert "저신뢰도 분석" not in msg
 
 
