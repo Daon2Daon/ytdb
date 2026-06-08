@@ -272,6 +272,9 @@ FIELD_RENDERERS: dict[str, Callable] = {
 }
 
 
+_ANCHOR_FIELDS = frozenset({"video_url", "share_link"})
+
+
 def build_from_template(
     video,
     analysis,
@@ -287,133 +290,52 @@ def build_from_template(
         and float(analysis.confidence_score) < float(threshold)
     )
     ctx: dict = {"channel_name": channel_name, "tags": tags or [], "group_slug": group_slug}
-    parts: list[str] = []
+    body_parts: list[str] = []
+    anchor_parts: list[str] = []
     if low_conf:
-        parts.append("⚠️ <b>[저신뢰도 분석]</b>")
+        body_parts.append("⚠️ <b>[저신뢰도 분석]</b>")
     for field_key in template.get("fields", []):
         renderer = FIELD_RENDERERS.get(field_key)
         if renderer:
             rendered = renderer(video, analysis, ctx)
             if rendered:
-                parts.append(rendered)
-    return _truncate_html("\n\n".join(parts), _TELEGRAM_MAX_LEN)
+                if field_key in _ANCHOR_FIELDS:
+                    anchor_parts.append(rendered)
+                else:
+                    body_parts.append(rendered)
+
+    anchor_str = "\n\n".join(anchor_parts)
+    # Budget for body: total limit minus anchor and separator
+    separator = "\n\n" if (body_parts and anchor_parts) else ""
+    anchor_overhead = len(separator) + len(anchor_str) if anchor_parts else 0
+    body_budget = _TELEGRAM_MAX_LEN - anchor_overhead
+
+    body_str = "\n\n".join(body_parts)
+    if len(body_str) > body_budget:
+        body_str = _truncate_html(body_str, body_budget)
+
+    if body_str and anchor_str:
+        return body_str + "\n\n" + anchor_str
+    return body_str or anchor_str
 
 
-def _build_compact(video, analysis, threshold: float, *, group_slug: str = "", include_share_link: bool = False) -> str:
-    title = analysis.headline or video.title or ""
-    low_conf = (
-        analysis.confidence_score is not None
-        and float(analysis.confidence_score) < float(threshold)
+
+def build_message(
+    video,
+    analysis,
+    threshold: float = 0.0,
+    *,
+    channel_name: str = "",
+    tags=None,
+    template: dict | None = None,
+    group_slug: str = "",
+) -> str:
+    from app.services.settings_types import PRESET_FULL
+    return build_from_template(
+        video, analysis, template or PRESET_FULL,
+        channel_name=channel_name, tags=tags or [],
+        threshold=threshold, group_slug=group_slug,
     )
-    badge = "⚠️ " if low_conf else ""
-    lines = [f"<b>{badge}{escape(title)}</b>"]
-    if analysis.one_line:
-        lines.append(escape(analysis.one_line))
-    if analysis.short_summary_md:
-        lines.append("")
-        lines.append(escape(analysis.short_summary_md))
-    meta = []
-    if analysis.sentiment:
-        meta.append(f"감성: {escape(analysis.sentiment)}")
-    if analysis.confidence_score is not None:
-        meta.append(f"신뢰도: {analysis.confidence_score:.2f}")
-    if meta:
-        lines.append("")
-        lines.append(" | ".join(meta))
-    if video.video_url:
-        lines.append("")
-        lines.append(escape(video.video_url))
-    if include_share_link:
-        share_url = _build_share_url(group_slug, video)
-        if share_url:
-            lines.append("")
-            lines.append(f'📖 <a href="{escape(share_url, quote=True)}">자세히 보기</a>')
-    return "\n".join(lines)[:_TELEGRAM_MAX_LEN]
-
-
-def _render_full(*, low_conf, channel_name, headline, body, bullets_list, tags, meta_parts, url, share_url: str = "") -> str:
-    lines = []
-    if low_conf:
-        lines.append("⚠️ <b>[저신뢰도 분석]</b>")
-        lines.append("")
-    if channel_name:
-        lines.append(f"<b>🎬 [{escape(channel_name)}] 신규 영상</b>")
-        lines.append("")
-    if headline:
-        lines.append(f"<b>{escape(headline)}</b>")
-        lines.append("")
-    if body:
-        lines.append(body)
-        lines.append("")
-    bullets = _format_bullets(bullets_list)
-    if bullets:
-        lines.append(bullets)
-        lines.append("")
-    if tags:
-        lines.append("🏷 " + ", ".join(escape(t) for t in tags))
-    if meta_parts:
-        lines.append("  ·  ".join(meta_parts))
-    lines.append("")
-    if url:
-        lines.append(f'🔗 <a href="{escape(url, quote=True)}">영상 보러가기</a>')
-    if share_url:
-        lines.append(f'📖 <a href="{escape(share_url, quote=True)}">웹에서 자세히 보기</a>')
-    return "\n".join(lines)
-
-
-def _build_full(video, analysis, threshold: float, channel_name: str, tags, *, group_slug: str = "", include_share_link: bool = False) -> str:
-    low_conf = (
-        analysis.confidence_score is not None
-        and float(analysis.confidence_score) < float(threshold)
-    )
-    headline = analysis.headline or video.title or ""
-    from app.services.analysis_view import build_sections
-
-    sections = build_sections(
-        getattr(analysis, "analysis_sections", None),
-        getattr(analysis, "full_analysis_md", None),
-    )
-    body = _sections_to_telegram_html(sections) if sections else (analysis.short_summary_md or "")
-    bullets_list = analysis.bullet_points if isinstance(analysis.bullet_points, list) else []
-    meta_parts = []
-    if video.published_at:
-        meta_parts.append(f"📅 {_to_kst(video.published_at)}")
-    dur = _format_duration(video.duration_seconds)
-    if dur:
-        meta_parts.append(f"⏱ {dur}")
-
-    _share_url = _build_share_url(group_slug, video) if include_share_link else ""
-
-    def render(b, bl):
-        return _render_full(
-            low_conf=low_conf, channel_name=channel_name, headline=headline,
-            body=b, bullets_list=bl, tags=tags, meta_parts=meta_parts, url=video.video_url,
-            share_url=_share_url,
-        )
-
-    text = render(body, bullets_list)
-    if len(text) <= _TELEGRAM_MAX_LEN:
-        return text
-    overflow = len(text) - _TELEGRAM_MAX_LEN + 50
-    if len(body) > overflow:
-        return render(body[: len(body) - overflow] + "…", bullets_list)
-    # 본문을 비우고 bullets를 줄여가며 한도 내로. 그래도 안 되면 본문·bullets 비워 링크 보존.
-    for n in range(len(bullets_list) - 1, -1, -1):
-        candidate = render("", bullets_list[:n])
-        if len(candidate) <= _TELEGRAM_MAX_LEN:
-            return candidate
-    stripped = render("", [])
-    if len(stripped) <= _TELEGRAM_MAX_LEN:
-        return stripped
-    return _truncate_html(stripped, _TELEGRAM_MAX_LEN)
-
-
-def build_message(video, analysis, threshold: float = 0.0, *,
-                  channel_name: str = "", tags=None, detail: str = "full",
-                  group_slug: str = "", include_share_link: bool = False) -> str:
-    if detail == "compact":
-        return _build_compact(video, analysis, threshold, group_slug=group_slug, include_share_link=include_share_link)
-    return _build_full(video, analysis, threshold, channel_name, tags or [], group_slug=group_slug, include_share_link=include_share_link)
 
 
 def _matches_scheduled_time(now_local: datetime, scheduled_times: list[str]) -> bool:
@@ -462,16 +384,17 @@ async def notify_video(
     *,
     channel_name: str = "",
     tags=None,
-    detail: str = "full",
+    template: dict | None = None,
     group_slug: str = "",
-    include_share_link: bool = True,
 ) -> int:
     """그룹의 모든 chat_id에 발송. 성공 건수 반환. 일부 실패해도 나머지는 계속 시도."""
     if not notif.is_sendable:
         return 0
-    text = build_message(video, analysis, threshold,
-                         channel_name=channel_name, tags=tags or [], detail=detail,
-                         group_slug=group_slug, include_share_link=include_share_link)
+    text = build_message(
+        video, analysis, threshold,
+        channel_name=channel_name, tags=tags or [],
+        template=template, group_slug=group_slug,
+    )
     own_client = client is None
     cl = client or httpx.AsyncClient(timeout=20.0)
     sent = 0

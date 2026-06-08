@@ -55,8 +55,9 @@ def _analysis(conf=0.9, **kw):
 
 
 def test_full_contains_rich_fields():
+    from app.services.settings_types import PRESET_FULL
     msg = build_message(_video(), _analysis(), channel_name="증시각도기TV",
-                        tags=["반도체", "금리"], detail="full")
+                        tags=["반도체", "금리"], template=PRESET_FULL)
     assert "🎬 [증시각도기TV] 신규 영상" in msg
     assert "<b>헤드라인</b>" in msg
     assert "<b>한 줄 요약</b>" in msg  # ### → <b> 변환됨
@@ -67,39 +68,44 @@ def test_full_contains_rich_fields():
 
 
 def test_full_low_confidence_badge_top():
-    msg = build_message(_video(), _analysis(conf=0.3), threshold=0.5, detail="full")
+    from app.services.settings_types import PRESET_FULL
+    msg = build_message(_video(), _analysis(conf=0.3), threshold=0.5, template=PRESET_FULL)
     assert msg.startswith("⚠️ <b>[저신뢰도 분석]</b>")
 
 
 def test_compact_backward_compatible():
-    msg = build_message(_video(), _analysis(), detail="compact")
+    from app.services.settings_types import PRESET_COMPACT
+    msg = build_message(_video(), _analysis(), template=PRESET_COMPACT)
     assert msg.startswith("<b>헤드라인</b>")
     assert "🎬" not in msg
     assert "신뢰도" in msg
 
 
 def test_full_smart_truncation_keeps_under_limit():
+    from app.services.settings_types import PRESET_FULL
     big = "가" * 6000
     msg = build_message(_video(), _analysis(full_analysis_md=big),
-                        channel_name="C", tags=["t"], detail="full")
+                        channel_name="C", tags=["t"], template=PRESET_FULL)
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
 
 
 def test_full_truncation_preserves_link_with_html_heavy_body():
+    from app.services.settings_types import PRESET_FULL
     # HTML 특수문자가 많아 escape 후 폭증하는 본문 + bullets 없음 → 링크 보존 확인
     heavy = "<&>" * 3000  # escape 시 약 5배로 폭증
     a = _analysis(full_analysis_md=heavy, bullet_points=[])
-    msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
+    msg = build_message(_video(), a, channel_name="C", tags=["t"], template=PRESET_FULL)
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
 
 
 def test_full_truncation_many_huge_bullets_under_limit():
+    from app.services.settings_types import PRESET_FULL
     # 본문은 짧지만 거대한 bullet이 다수 → bullets를 줄여 한도 내 유지 + 링크 보존
     huge_bullets = ["가" * 500 for _ in range(20)]
     a = _analysis(full_analysis_md="짧은본문", bullet_points=huge_bullets)
-    msg = build_message(_video(), a, channel_name="C", tags=["t"], detail="full")
+    msg = build_message(_video(), a, channel_name="C", tags=["t"], template=PRESET_FULL)
     assert len(msg) <= 4096
     assert "영상 보러가기" in msg
 
@@ -145,10 +151,11 @@ def test_md_full_message_has_bold_sections():
 
 
 def test_build_message_full_body_has_bold():
+    from app.services.settings_types import PRESET_FULL
     from types import SimpleNamespace
     v = _video(published_at=None, duration_seconds=None)
     a = _analysis(full_analysis_md="### 결론\n금리 위험 높음")
-    msg = build_message(v, a, channel_name="C", tags=[], detail="full")
+    msg = build_message(v, a, channel_name="C", tags=[], template=PRESET_FULL)
     assert "<b>결론</b>" in msg
 
 
