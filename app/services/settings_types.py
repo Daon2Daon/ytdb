@@ -12,6 +12,18 @@ from datetime import datetime
 from typing import Optional
 
 
+PRESET_FULL: dict = {"fields": [
+    "channel_name", "headline", "analysis_sections", "bullet_points",
+    "tags", "published_at", "duration", "video_url", "share_link",
+]}
+
+PRESET_COMPACT: dict = {"fields": [
+    "headline", "one_line", "short_summary_md",
+    "sentiment", "confidence_score",
+    "video_url", "share_link",
+]}
+
+
 @dataclass
 class NotificationSettings:
     """그룹별 텔레그램 알림 설정.

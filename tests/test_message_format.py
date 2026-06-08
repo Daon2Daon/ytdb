@@ -150,3 +150,59 @@ def test_build_message_full_body_has_bold():
     a = _analysis(full_analysis_md="### 결론\n금리 위험 높음")
     msg = build_message(v, a, channel_name="C", tags=[], detail="full")
     assert "<b>결론</b>" in msg
+
+
+# ── build_from_template ────────────────────────────────────────────────────
+
+from app.services.settings_types import PRESET_FULL, PRESET_COMPACT
+from app.services.notify_service import build_from_template
+
+
+def test_build_from_template_preset_full_contains_key_fields():
+    v = _video()
+    a = _analysis()
+    msg = build_from_template(v, a, PRESET_FULL, channel_name="테스트채널", tags=["반도체"])
+    assert "🎬 [테스트채널] 신규 영상" in msg
+    assert "<b>헤드라인</b>" in msg
+    assert "• 주장1" in msg
+    assert "🏷 반도체" in msg
+    assert "영상 보러가기" in msg
+
+
+def test_build_from_template_preset_compact_no_bullets():
+    v = _video()
+    a = _analysis()
+    msg = build_from_template(v, a, PRESET_COMPACT)
+    assert "• 주장1" not in msg
+    assert "🎬" not in msg
+    assert "짧은요약" in msg
+
+
+def test_build_from_template_custom_order():
+    v = _video()
+    a = _analysis()
+    template = {"fields": ["one_line", "headline"]}
+    msg = build_from_template(v, a, template)
+    assert msg.index("한줄") < msg.index("헤드라인")
+
+
+def test_build_from_template_low_conf_always_first():
+    v = _video()
+    a = _analysis(conf=0.3)
+    msg = build_from_template(v, a, PRESET_FULL, threshold=0.5)
+    assert msg.startswith("⚠️ <b>[저신뢰도 분석]</b>")
+
+
+def test_build_from_template_unknown_field_skipped():
+    v = _video()
+    a = _analysis()
+    template = {"fields": ["headline", "nonexistent_field"]}
+    msg = build_from_template(v, a, template)
+    assert "<b>헤드라인</b>" in msg
+
+
+def test_build_from_template_under_max_len():
+    v = _video()
+    a = _analysis(full_analysis_md="가" * 6000)
+    msg = build_from_template(v, a, PRESET_FULL, channel_name="C", tags=["t"])
+    assert len(msg) <= 4096

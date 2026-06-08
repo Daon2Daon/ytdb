@@ -155,6 +155,150 @@ def _truncate_html(text: str, max_len: int, suffix: str = "...") -> str:
     return text[: max_len - len(suffix)] + suffix
 
 
+# ── 필드별 렌더러 ──────────────────────────────────────────────────────────
+
+def _render_headline(video, analysis, ctx: dict) -> str:
+    title = analysis.headline or getattr(video, "title", "") or ""
+    return f"<b>{escape(title)}</b>" if title else ""
+
+
+def _render_one_line(video, analysis, ctx: dict) -> str:
+    val = getattr(analysis, "one_line", None)
+    return escape(val) if val else ""
+
+
+def _render_short_summary(video, analysis, ctx: dict) -> str:
+    val = getattr(analysis, "short_summary_md", None)
+    return escape(val) if val else ""
+
+
+def _render_analysis_sections(video, analysis, ctx: dict) -> str:
+    from app.services.analysis_view import build_sections
+    sections = build_sections(
+        getattr(analysis, "analysis_sections", None),
+        getattr(analysis, "full_analysis_md", None),
+    )
+    if sections:
+        return _sections_to_telegram_html(sections)
+    return escape(getattr(analysis, "short_summary_md", "") or "")
+
+
+def _render_bullets(video, analysis, ctx: dict) -> str:
+    bp = analysis.bullet_points if isinstance(analysis.bullet_points, list) else []
+    return _format_bullets(bp)
+
+
+def _render_key_points(video, analysis, ctx: dict) -> str:
+    kp = getattr(analysis, "key_points", None)
+    return _format_bullets(kp) if isinstance(kp, list) else ""
+
+
+def _render_insights(video, analysis, ctx: dict) -> str:
+    ins = getattr(analysis, "insights", None)
+    if isinstance(ins, list):
+        return _format_bullets(ins)
+    if isinstance(ins, str) and ins:
+        return escape(ins)
+    return ""
+
+
+def _render_entities(video, analysis, ctx: dict) -> str:
+    ent = getattr(analysis, "entities", None)
+    if not isinstance(ent, list) or not ent:
+        return ""
+    return "🔖 " + ", ".join(escape(str(e)) for e in ent if e)
+
+
+def _render_sentiment(video, analysis, ctx: dict) -> str:
+    s = getattr(analysis, "sentiment", None)
+    return f"감성: {escape(s)}" if s else ""
+
+
+def _render_confidence(video, analysis, ctx: dict) -> str:
+    c = getattr(analysis, "confidence_score", None)
+    if c is None:
+        return ""
+    return f"신뢰도: {float(c):.2f}"
+
+
+def _render_channel_name(video, analysis, ctx: dict) -> str:
+    name = ctx.get("channel_name") or ""
+    return f"<b>🎬 [{escape(name)}] 신규 영상</b>" if name else ""
+
+
+def _render_published_at(video, analysis, ctx: dict) -> str:
+    dt = getattr(video, "published_at", None)
+    return f"📅 {_to_kst(dt)}" if dt else ""
+
+
+def _render_duration(video, analysis, ctx: dict) -> str:
+    dur = _format_duration(getattr(video, "duration_seconds", None))
+    return f"⏱ {dur}" if dur else ""
+
+
+def _render_tags(video, analysis, ctx: dict) -> str:
+    tags = ctx.get("tags") or []
+    return "🏷 " + ", ".join(escape(t) for t in tags) if tags else ""
+
+
+def _render_video_url(video, analysis, ctx: dict) -> str:
+    url = getattr(video, "video_url", None)
+    return f'🔗 <a href="{escape(url, quote=True)}">영상 보러가기</a>' if url else ""
+
+
+def _render_share_link(video, analysis, ctx: dict) -> str:
+    group_slug = ctx.get("group_slug") or ""
+    share_url = _build_share_url(group_slug, video)
+    return f'📖 <a href="{escape(share_url, quote=True)}">웹에서 자세히 보기</a>' if share_url else ""
+
+
+FIELD_RENDERERS: dict[str, Callable] = {
+    "headline":          _render_headline,
+    "one_line":          _render_one_line,
+    "short_summary_md":  _render_short_summary,
+    "analysis_sections": _render_analysis_sections,
+    "bullet_points":     _render_bullets,
+    "key_points":        _render_key_points,
+    "insights":          _render_insights,
+    "entities":          _render_entities,
+    "sentiment":         _render_sentiment,
+    "confidence_score":  _render_confidence,
+    "channel_name":      _render_channel_name,
+    "published_at":      _render_published_at,
+    "duration":          _render_duration,
+    "tags":              _render_tags,
+    "video_url":         _render_video_url,
+    "share_link":        _render_share_link,
+}
+
+
+def build_from_template(
+    video,
+    analysis,
+    template: dict,
+    *,
+    channel_name: str = "",
+    tags: list | None = None,
+    threshold: float = 0.0,
+    group_slug: str = "",
+) -> str:
+    low_conf = (
+        analysis.confidence_score is not None
+        and float(analysis.confidence_score) < float(threshold)
+    )
+    ctx: dict = {"channel_name": channel_name, "tags": tags or [], "group_slug": group_slug}
+    parts: list[str] = []
+    if low_conf:
+        parts.append("⚠️ <b>[저신뢰도 분석]</b>")
+    for field_key in template.get("fields", []):
+        renderer = FIELD_RENDERERS.get(field_key)
+        if renderer:
+            rendered = renderer(video, analysis, ctx)
+            if rendered:
+                parts.append(rendered)
+    return _truncate_html("\n\n".join(parts), _TELEGRAM_MAX_LEN)
+
+
 def _build_compact(video, analysis, threshold: float, *, group_slug: str = "", include_share_link: bool = False) -> str:
     title = analysis.headline or video.title or ""
     low_conf = (
