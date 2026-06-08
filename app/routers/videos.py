@@ -347,9 +347,8 @@ async def notify_video_now(
         sent = await notify_video(
             notif, video, analysis,
             channel_name=getattr(video, "source_channel_name", "") or "",
-            tags=tags, detail=notif.message_detail,
+            tags=tags, template=None,
             group_slug=group.slug,
-            include_share_link=notif.include_share_link,
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"발송 실패: {e}") from e
