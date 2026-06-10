@@ -17,7 +17,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.pg.tag import Tag, VideoTag
+from app.models.pg.tag import ALLOWED_TAG_TYPES, DEFAULT_TAG_TYPE, Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.llm_client import LiteLLMClient, LiteLLMError
@@ -268,7 +268,11 @@ class AnalysisPipeline:
             name = (t.get("name") or "").strip()
             if not name:
                 continue
-            tag_type = t.get("type") or "topic"
+            # LLM이 허용 외 type(예: company, event)을 반환하면 CHECK 위반으로
+            # 트랜잭션이 깨지므로 화이트리스트로 정규화하고 미허용 값은 기본값 폴백.
+            tag_type = (t.get("type") or DEFAULT_TAG_TYPE).strip().lower()
+            if tag_type not in ALLOWED_TAG_TYPES:
+                tag_type = DEFAULT_TAG_TYPE
             weight = t.get("weight")
             ins = (
                 pg_insert(Tag)

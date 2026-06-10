@@ -23,8 +23,8 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   { key: 'ai_gateway', label: 'AI Gateway' },
   { key: 'polling', label: 'Monitoring' },
   { key: 'notification', label: 'Notification' },
-  { key: 'prompts', label: 'Prompts' },
   { key: 'digest', label: 'Digest' },
+  { key: 'prompts', label: 'Prompts' },
 ]
 
 export const SETTING_DEFS: Record<string, FieldDef[]> = {

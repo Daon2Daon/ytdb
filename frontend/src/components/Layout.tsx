@@ -7,11 +7,11 @@ import { NewGroupModal, EditGroupModal } from './GroupModals'
 
 const NAV = [
   { sub: '', label: '대시보드', icon: '🏠', end: true },
-  { sub: 'channels', label: '채널 관리', icon: '📺' },
   { sub: 'videos', label: '영상 목록', icon: '🎬' },
-  { sub: 'instant-analyze', label: '영상 분석', icon: '🔍' },
-  { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
   { sub: 'digests', label: '주간 리뷰', icon: '📊' },
+  { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
+  { sub: 'instant-analyze', label: '영상 분석', icon: '🔍' },
+  { sub: 'channels', label: '채널 관리', icon: '📺' },
   { sub: 'logs', label: 'Logs', icon: '📋' },
 ]
 

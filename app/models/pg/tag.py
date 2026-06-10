@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.pg.base import SCHEMA_TOKEN, PgBase
 
+# DB CHECK 제약(tags_tag_type_check)과 일치해야 함. 이 외 값은 INSERT 시 위반.
+ALLOWED_TAG_TYPES = frozenset({"topic", "ticker", "person", "sector"})
+DEFAULT_TAG_TYPE = "topic"
+
 
 class Tag(PgBase):
     __tablename__ = "tags"
