@@ -269,6 +269,7 @@ class SettingsManager:
             timezone=str(d.get("timezone") or "Asia/Seoul"),
             telegram_enabled=bool(d.get("telegram_enabled", False)),
             category=str(d.get("category") or ""),
+            share_link_enabled=bool(d.get("share_link_enabled", True)),
         )
 
     async def list_for_api(self, group_id: int, category: str) -> list[dict[str, Any]]:

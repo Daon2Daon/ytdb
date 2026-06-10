@@ -126,3 +126,4 @@ class DigestSettings:
     timezone: str = "Asia/Seoul"
     telegram_enabled: bool = False
     category: str = ""
+    share_link_enabled: bool = True

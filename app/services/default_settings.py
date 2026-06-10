@@ -58,6 +58,7 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "schedule_time", "value": "20:00", "value_type": "string"},
         {"key": "timezone", "value": "Asia/Seoul", "value_type": "string"},
         {"key": "telegram_enabled", "value": "false", "value_type": "bool"},
+        {"key": "share_link_enabled", "value": "true", "value_type": "bool"},
     ],
     "prompts": [
         {"key": "analysis_prompt", "value": DEFAULT_ANALYSIS_PROMPT, "value_type": "string"},
