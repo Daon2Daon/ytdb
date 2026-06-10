@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from html import escape
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -327,6 +328,31 @@ def _fallback_generated(aggregate: DigestAggregate, period_start: datetime, peri
         telegram_summary=summary[:900],
         model_name="fallback",
     )
+
+
+def _build_digest_share_url(slug: str, share_token: Optional[str]) -> str:
+    from app.config import settings as app_settings
+
+    base = (app_settings.PUBLIC_BASE_URL or "").rstrip("/")
+    if not base or not slug or not share_token:
+        return ""
+    return f"{base}/d/{slug}/{share_token}"
+
+
+def build_digest_telegram_text(
+    *,
+    headline: str,
+    telegram_summary: str,
+    slug: str,
+    share_token: Optional[str],
+    share_link_enabled: bool,
+) -> str:
+    text = f"<b>{headline}</b>\n\n{telegram_summary}"
+    if share_link_enabled:
+        url = _build_digest_share_url(slug, share_token)
+        if url:
+            text += f'\n\n📖 <a href="{escape(url, quote=True)}">웹에서 자세히 보기</a>'
+    return text
 
 
 async def _send_digest_telegram(group_id: int, headline: str, telegram_summary: str) -> None:
