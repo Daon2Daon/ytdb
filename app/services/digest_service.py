@@ -23,6 +23,7 @@ from app.services.llm_client import LiteLLMClient
 from app.services.notify_service import send_telegram
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import DigestSettings
+from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
@@ -355,11 +356,25 @@ def build_digest_telegram_text(
     return text
 
 
-async def _send_digest_telegram(group_id: int, headline: str, telegram_summary: str) -> None:
+async def _send_digest_telegram(
+    group_id: int,
+    headline: str,
+    telegram_summary: str,
+    *,
+    slug: str,
+    share_token: Optional[str],
+    share_link_enabled: bool,
+) -> None:
     notif = await get_settings_manager().get_notification(group_id)
     if not notif.is_sendable:
         return
-    text = f"<b>{headline}</b>\n\n{telegram_summary}"
+    text = build_digest_telegram_text(
+        headline=headline,
+        telegram_summary=telegram_summary,
+        slug=slug,
+        share_token=share_token,
+        share_link_enabled=share_link_enabled,
+    )
     import httpx
 
     async with httpx.AsyncClient(timeout=20.0) as client:
@@ -423,6 +438,8 @@ async def generate_digest_for_group(
             top_tags=agg.top_tags,
             top_channels=agg.top_channels,
             model_name=generated.model_name,
+            share_token=generate_share_token(),
+            share_visibility=DEFAULT_VISIBILITY,
             status=status,
             error=error,
         )
@@ -463,7 +480,14 @@ async def run_digest_tick_once() -> None:
                 continue
             digest = await generate_digest_for_group(group, cfg, save=True)
             if cfg.telegram_enabled and digest.telegram_summary:
-                await _send_digest_telegram(group.group_id, digest.headline or "주간 리뷰", digest.telegram_summary)
+                await _send_digest_telegram(
+                    group.group_id,
+                    digest.headline or "주간 리뷰",
+                    digest.telegram_summary,
+                    slug=group.slug,
+                    share_token=digest.share_token,
+                    share_link_enabled=cfg.share_link_enabled,
+                )
         except DBNotConfiguredError:
             continue
         except Exception as e:
