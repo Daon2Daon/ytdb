@@ -81,6 +81,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'schedule_time', label: '실행 시각(HH:MM)' },
     { key: 'timezone', label: '시간대' },
     { key: 'telegram_enabled', label: '다이제스트 텔레그램 발송', type: 'bool' },
+    { key: 'share_link_enabled', label: '웹에서 자세히 보기 링크 첨부', type: 'bool' },
     { key: 'category', label: '카테고리 필터(선택)' },
   ],
 }
