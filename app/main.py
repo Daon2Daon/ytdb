@@ -119,6 +119,7 @@ async def spa_fallback(full_path: str) -> Response:
         or full_path == "health"
         or full_path.startswith("legacy")
         or full_path.startswith("v/")
+        or full_path.startswith("d/")
     ):
         raise HTTPException(status_code=404)
     return _serve_react()

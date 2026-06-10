@@ -30,3 +30,9 @@ def test_client_route_falls_back_to_spa():
     """클라이언트 라우팅 경로(/g/...)는 catch-all로 index.html에 폴백(404 아님)."""
     resp = client.get("/g/some-group/videos")
     assert resp.status_code in (200, 503)
+
+
+def test_digest_share_misroute_is_404_not_spa():
+    """2-세그먼트 미매칭(/d/onlyone)은 SPA로 흡수되지 않고 404."""
+    resp = client.get("/d/onlyone")
+    assert resp.status_code == 404
