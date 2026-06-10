@@ -26,6 +26,8 @@ class Digest(PgBase):
     )
 
     category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    share_token: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
+    share_visibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     video_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     headline: Mapped[str | None] = mapped_column(Text, nullable=True)

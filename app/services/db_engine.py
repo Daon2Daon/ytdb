@@ -177,6 +177,8 @@ class DataPlaneEngineManager:
                     ("video_analysis", "analysis_sections", "jsonb"),
                     ("videos", "share_token", "text"),
                     ("videos", "share_visibility", "text"),
+                    ("digests", "share_token", "text"),
+                    ("digests", "share_visibility", "text"),
                 ]
                 for tbl, col, coltype in additive_columns:
                     await conn.execute(
@@ -191,6 +193,14 @@ class DataPlaneEngineManager:
                         f'CREATE UNIQUE INDEX IF NOT EXISTS '
                         f'"ux_{group.schema_name}_videos_share_token" '
                         f'ON "{group.schema_name}"."videos" (share_token) '
+                        f'WHERE share_token IS NOT NULL'
+                    )
+                )
+                await conn.execute(
+                    text(
+                        f'CREATE UNIQUE INDEX IF NOT EXISTS '
+                        f'"ux_{group.schema_name}_digests_share_token" '
+                        f'ON "{group.schema_name}"."digests" (share_token) '
                         f'WHERE share_token IS NOT NULL'
                     )
                 )
