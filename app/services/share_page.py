@@ -74,6 +74,52 @@ def _render_sections(sections: List[Section]) -> str:
     return "\n".join(blocks)
 
 
+def render_digest_share_html(
+    *,
+    headline: Optional[str],
+    summary_md: Optional[str],
+    period_label: str,
+    video_count: int,
+    category: Optional[str],
+    canonical_url: str,
+) -> str:
+    og_title = headline or "주간 리뷰"
+    og_desc = (summary_md or "").strip().replace("\n", " ")[:160]
+    metas = [
+        _meta("og:title", og_title),
+        _meta("og:description", og_desc),
+        _meta("og:type", "article"),
+        _meta("og:url", canonical_url),
+    ]
+    cat = f" · {escape(category)}" if category else ""
+    meta_line = f"{escape(period_label)} · 분석 영상 {video_count}건{cat}"
+    body = _render_markdown_min(summary_md or "")
+    return f"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(og_title)}</title>
+{chr(10).join(metas)}
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; max-width: 720px;
+         margin: 0 auto; padding: 1.5rem; color: #1f2937; line-height: 1.7; }}
+  h1 {{ font-size: 1.5rem; }}
+  h2 {{ font-size: 1.15rem; margin-top: 1.8rem; }}
+  h3 {{ font-size: 1.02rem; margin-top: 1.2rem; }}
+  ul {{ padding-left: 1.2rem; }}
+  li {{ margin: .3rem 0; }}
+  .meta {{ color: #9ca3af; font-size: .85rem; }}
+</style>
+</head>
+<body>
+<h1>{escape(headline or "주간 리뷰")}</h1>
+<p class="meta">{meta_line}</p>
+{body}
+</body>
+</html>"""
+
+
 def render_share_html(
     *,
     title: str,

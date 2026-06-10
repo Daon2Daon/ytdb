@@ -55,3 +55,37 @@ def test_markdown_min_escapes_html():
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert "&lt;b&gt;x&lt;/b&gt;" in html
+
+
+from app.services.share_page import render_digest_share_html
+
+
+def test_render_digest_includes_og_and_body():
+    html = render_digest_share_html(
+        headline="이번 주 핵심임",
+        summary_md="## 주요 내용\n- 첫째 줄임\n- 둘째 줄임",
+        period_label="2026-06-01 ~ 2026-06-08",
+        video_count=12,
+        category="경제",
+        canonical_url="https://h/d/eco/tok123",
+    )
+    assert '<meta property="og:title" content="이번 주 핵심임"' in html
+    assert '<meta property="og:type" content="article"' in html
+    assert '<meta property="og:url" content="https://h/d/eco/tok123"' in html
+    assert "<h2>주요 내용</h2>" in html
+    assert "<li>첫째 줄임</li>" in html
+    assert "2026-06-01 ~ 2026-06-08" in html
+    assert "12" in html
+
+
+def test_render_digest_escapes_html_in_headline():
+    html = render_digest_share_html(
+        headline="<script>",
+        summary_md="본문임",
+        period_label="",
+        video_count=0,
+        category=None,
+        canonical_url="https://h/d/x/y",
+    )
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
