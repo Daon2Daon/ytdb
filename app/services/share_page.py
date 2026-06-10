@@ -9,7 +9,53 @@ from __future__ import annotations
 from html import escape
 from typing import List, Optional
 
+import re
+
 from app.services.analysis_view import Section
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline(text: str) -> str:
+    """이스케이프 후 인라인 **굵게**만 <strong>으로 변환."""
+    safe = escape(text)
+    return _BOLD_RE.sub(r"<strong>\1</strong>", safe)
+
+
+def _render_markdown_min(md: str) -> str:
+    """의존성 없는 최소 마크다운 → HTML.
+
+    지원: ## / ### 헤딩, - / • 불릿(ul로 묶음), **굵게**, 일반 문단.
+    그 외 문법은 일반 텍스트로 남긴다. 모든 입력은 이스케이프한다.
+    """
+    lines = (md or "").replace("\r\n", "\n").split("\n")
+    out: List[str] = []
+    bullets: List[str] = []
+
+    def flush_bullets() -> None:
+        if bullets:
+            out.append("<ul>" + "".join(f"<li>{b}</li>" for b in bullets) + "</ul>")
+            bullets.clear()
+
+    for raw in lines:
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            flush_bullets()
+            continue
+        if stripped.startswith("### "):
+            flush_bullets()
+            out.append(f"<h3>{_inline(stripped[4:].strip())}</h3>")
+        elif stripped.startswith("## "):
+            flush_bullets()
+            out.append(f"<h2>{_inline(stripped[3:].strip())}</h2>")
+        elif stripped.startswith("- ") or stripped.startswith("• "):
+            bullets.append(_inline(stripped[2:].strip()))
+        else:
+            flush_bullets()
+            out.append(f"<p>{_inline(stripped)}</p>")
+    flush_bullets()
+    return "\n".join(out)
 
 
 def _meta(prop: str, content: str) -> str:
