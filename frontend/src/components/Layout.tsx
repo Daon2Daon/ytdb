@@ -37,24 +37,37 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <span className="font-bold text-gray-800">Youtube Monitor</span>
-        <select
-          value={activeSlug}
-          onChange={(e) => onSwitchGroup(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-        >
-          {groups.map((g) => (
-            <option key={g.slug} value={g.slug}>{g.name} ({g.slug}){g.is_active ? '' : ' ⏸'}</option>
-          ))}
-        </select>
-        {activeGroup && !activeGroup.is_active && (
-          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-300">⏸ 일시정지</span>
-        )}
-        <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">그룹 수정</button>
-        <button onClick={() => setGroupModal('new')} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ 새 그룹</button>
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        {/* 1행(모바일): 타이틀 + 계정 / 데스크톱에서는 sm:contents로 펼쳐져 단일 행에 합류 */}
+        <div className="flex items-center justify-between gap-3 sm:contents">
+          <span className="font-bold text-gray-800 whitespace-nowrap">Youtube Monitor</span>
+          {authEnabled && (
+            <div className="flex items-center gap-2 sm:hidden">
+              {username && <span className="text-xs text-gray-400">{username}</span>}
+              <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
+            </div>
+          )}
+        </div>
+        {/* 2행(모바일): 그룹 선택/수정/추가 */}
+        <div className="flex flex-wrap items-center gap-2 sm:contents">
+          <select
+            value={activeSlug}
+            onChange={(e) => onSwitchGroup(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm min-w-0"
+          >
+            {groups.map((g) => (
+              <option key={g.slug} value={g.slug}>{g.name} ({g.slug}){g.is_active ? '' : ' ⏸'}</option>
+            ))}
+          </select>
+          {activeGroup && !activeGroup.is_active && (
+            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-300 whitespace-nowrap">⏸ 일시정지</span>
+          )}
+          <button onClick={() => setGroupModal('edit')} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 whitespace-nowrap">그룹 수정</button>
+          <button onClick={() => setGroupModal('new')} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap">+ 새 그룹</button>
+        </div>
+        {/* 계정(데스크톱 전용): 오른쪽 끝 정렬 */}
         {authEnabled && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto hidden sm:flex items-center gap-2">
             {username && <span className="text-xs text-gray-400">{username}</span>}
             <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
           </div>
