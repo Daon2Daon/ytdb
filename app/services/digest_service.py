@@ -28,7 +28,7 @@ from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 # 사용 가능한 placeholder: {category} {period_label} {video_count}
-#                          {sentiment_summary} {top_tags} {videos_block}
+#                          {sentiment_summary} {top_tags} {top_channels} {videos_block}
 DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
 
 ## 집계 정보
@@ -275,6 +275,7 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
             video_count=aggregate.video_count,
             sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
             top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
+            top_channels=", ".join(f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
             videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
         )
     except (KeyError, IndexError, ValueError):
