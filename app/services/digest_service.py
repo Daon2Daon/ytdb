@@ -28,7 +28,8 @@ from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 # 사용 가능한 placeholder: {category} {period_label} {video_count}
-#                          {sentiment_summary} {top_tags} {top_channels} {videos_block}
+#                          {sentiment_summary} {top_tags} {top_channels}
+#                          {top_viewed} {previous_digest} {videos_block}
 DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
 
 ## 집계 정보
@@ -78,6 +79,9 @@ class VideoBrief:
     bullet_points: Optional[Any] = None
     insights: Optional[Any] = None
     entities: Optional[Any] = None
+    view_count: Optional[int] = None
+    published_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
 
 
 def split_category_tokens(raw: Optional[str]) -> list[str]:
@@ -115,13 +119,48 @@ def _sentiment_summary_text(breakdown: dict) -> str:
     return ", ".join(parts) if parts else "데이터 없음"
 
 
+def _fmt_views(n: Optional[int]) -> str:
+    if not n or n <= 0:
+        return ""
+    if n >= 10000:
+        return f"{n / 10000:.1f}만"
+    if n >= 1000:
+        return f"{n / 1000:.1f}천"
+    return str(n)
+
+
+def _video_meta_suffix(v: "VideoBrief") -> str:
+    parts: list[str] = []
+    views = _fmt_views(v.view_count)
+    if views:
+        parts.append(f"조회 {views}")
+    if v.published_at:
+        parts.append(f"{v.published_at.month}/{v.published_at.day}")
+    return f" · {' · '.join(parts)}" if parts else ""
+
+
+def _build_top_viewed_block(videos: list["VideoBrief"], limit: int = 6) -> str:
+    ranked = sorted(
+        (v for v in videos if v.view_count and v.view_count > 0),
+        key=lambda v: v.view_count or 0,
+        reverse=True,
+    )[:limit]
+    if not ranked:
+        return "데이터 없음"
+    lines: list[str] = []
+    for v in ranked:
+        head = (v.headline or v.one_line or v.title or "").strip()
+        lines.append(f"- [{v.channel_name}] {head}{_video_meta_suffix(v)}")
+    return "\n".join(lines)
+
+
 def _build_videos_block(videos: list["VideoBrief"], total: int) -> str:
     lines: list[str] = []
     shown = videos[:_MAX_VIDEOS_IN_PROMPT]
     for v in shown:
         head = (v.headline or v.one_line or v.title or "").strip()
         senti = _SENTIMENT_KO.get(v.sentiment or "unknown", v.sentiment or "미상")
-        lines.append(f"- [{v.channel_name}] {head} (논조: {senti})")
+        lines.append(f"- [{v.channel_name}] {head} (논조: {senti}){_video_meta_suffix(v)}")
         if v.one_line and v.one_line.strip() and v.one_line.strip() != head:
             lines.append(f"  {v.one_line.strip()}")
         bullets = v.bullet_points if isinstance(v.bullet_points, list) else []
@@ -170,6 +209,43 @@ def _period_label(period_start: datetime, period_end: datetime) -> str:
     return f"{period_start.date()} ~ {period_end.date()}"
 
 
+def _format_previous_digest(prev: Optional["Digest"]) -> str:
+    """직전 리포트를 프롬프트용 압축 컨텍스트로. 추세 비교에 사용."""
+    if prev is None:
+        return "없음 (직전 리포트 없음 — 추세 비교 생략)"
+    parts: list[str] = []
+    if prev.headline:
+        parts.append(f"직전 헤드라인: {prev.headline.strip()}")
+    if prev.telegram_summary:
+        parts.append(prev.telegram_summary.strip())
+    text = "\n".join(parts).strip()
+    return text or "없음 (직전 리포트 내용 없음)"
+
+
+async def _fetch_previous_digest(
+    session: AsyncSession,
+    *,
+    weeks: int,
+    category: Optional[str],
+    before: datetime,
+) -> Optional["Digest"]:
+    """현재 기간 직전의 동일 카테고리·주기 리포트 1건."""
+    return (
+        await session.execute(
+            select(Digest)
+            .where(
+                Digest.period_type == "weekly",
+                Digest.period_weeks == weeks,
+                Digest.category == (category or None),
+                Digest.period_end <= before,
+                Digest.status.in_(["done", "fallback"]),
+            )
+            .order_by(Digest.period_end.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 def _render_payload(agg: DigestAggregate, start: datetime, end: datetime, category: str) -> str:
     payload = {
         "period_start": start.isoformat(),
@@ -200,6 +276,9 @@ async def aggregate_period(
                 VideoAnalysis.bullet_points,
                 VideoAnalysis.insights,
                 VideoAnalysis.entities,
+                Video.view_count,
+                Video.published_at,
+                Video.duration_seconds,
                 Channel.channel_name,
                 Channel.category,
             )
@@ -231,6 +310,8 @@ async def aggregate_period(
             channel_name=cname, headline=r.headline, one_line=r.one_line, title=r.title,
             sentiment=r.sentiment, bullet_points=r.bullet_points,
             insights=r.insights, entities=r.entities,
+            view_count=r.view_count, published_at=r.published_at,
+            duration_seconds=r.duration_seconds,
         ))
 
     top_channels = [
@@ -261,7 +342,7 @@ async def aggregate_period(
     )
 
 
-async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_start: datetime, period_end: datetime, category: str = "") -> DigestGenerated:
+async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_start: datetime, period_end: datetime, category: str = "", previous_digest: str = "없음") -> DigestGenerated:
     mgr = get_settings_manager()
     ai = await mgr.get_ai_gateway(group_id)
     prompts = await mgr.get_prompts(group_id)
@@ -276,6 +357,8 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
             sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
             top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
             top_channels=", ".join(f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
+            top_viewed=_build_top_viewed_block(aggregate.videos),
+            previous_digest=previous_digest,
             videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
         )
     except (KeyError, IndexError, ValueError):
@@ -416,10 +499,14 @@ async def generate_digest_for_group(
                 return existing
 
         agg = await aggregate_period(session, period_start, period_end, cat)
+        prev = await _fetch_previous_digest(session, weeks=weeks, category=cat or None, before=period_start)
+        previous_digest = _format_previous_digest(prev)
         status = "done"
         error = None
         try:
-            generated = await synthesize_with_llm(group.group_id, agg, period_start, period_end, cat)
+            generated = await synthesize_with_llm(
+                group.group_id, agg, period_start, period_end, cat, previous_digest=previous_digest
+            )
         except Exception as e:
             generated = _fallback_generated(agg, period_start, period_end)
             status = "fallback"
