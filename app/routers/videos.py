@@ -32,6 +32,7 @@ from app.services.monitor_service import analyze_specific_video
 from app.services.notify_service import notify_video
 from app.services.settings_manager import get_settings_manager
 from app.services.youtube_api import YouTubeAPIClient, YouTubeAPIError
+from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 
 router = APIRouter(prefix="/api/groups/{slug}/videos", tags=["videos"])
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -50,6 +51,10 @@ class VideoNotifyResponse(BaseModel):
     success: bool
     message: str
     notified_at: Optional[datetime] = None
+
+
+class NotifyPreviewResponse(BaseModel):
+    text: str
 
 
 def _extract_video_id(raw: str) -> str | None:
@@ -74,26 +79,6 @@ def _extract_video_id(raw: str) -> str | None:
     if path.startswith("/embed/"):
         return path.split("/embed/")[1].split("?")[0] or None
     return None
-
-
-def _parse_iso(dt_str: str | None) -> datetime:
-    if not dt_str:
-        return datetime.now(timezone.utc)
-    try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    except Exception:
-        return datetime.now(timezone.utc)
-
-
-def _parse_duration(iso_duration: str | None) -> int | None:
-    if not iso_duration:
-        return None
-    try:
-        import isodate
-
-        return int(isodate.parse_duration(iso_duration).total_seconds())
-    except Exception:
-        return None
 
 
 async def _ensure_instant_channel(session, default_interval_min: int) -> Channel:
@@ -125,6 +110,22 @@ def _page_number(limit: int, offset: int) -> int:
     return offset // limit + 1
 
 
+async def _resolve_channel_name(session, video) -> str:
+    """발송 메시지 헤더용 채널명.
+
+    추가(instant) 영상은 가상 채널명("Instant Analyze") 대신 실제 채널명이 담긴
+    source_channel_name을 우선 쓰고, 모니터링 영상은 source가 비어 있으므로 실제
+    채널명으로 폴백한다.
+    """
+    name = getattr(video, "source_channel_name", "") or ""
+    if not name and video.channel_pk is not None:
+        channel = (
+            await session.execute(select(Channel).where(Channel.channel_pk == video.channel_pk))
+        ).scalar_one_or_none()
+        name = getattr(channel, "channel_name", "") or ""
+    return name
+
+
 @router.get("", response_model=list[VideoListItem] | PaginatedVideos)
 async def list_videos(
     group: Group = Depends(get_group_or_404),
@@ -136,47 +137,44 @@ async def list_videos(
     offset: int = Query(0, ge=0),
     paged: bool = Query(False, description="true면 {items,total,page,page_size} 반환"),
 ):
+    # 본 쿼리와 count 쿼리에 동일하게 적용할 필터를 한 번만 정의한다.
+    conditions = []
+    if status:
+        conditions.append(Video.analysis_status == status)
+    if channel_pk is not None:
+        conditions.append(Video.channel_pk == channel_pk)
+    if notified == "yes":
+        conditions.append(Video.notified_at.is_not(None))
+    elif notified == "no":
+        conditions.append(Video.notified_at.is_(None))
+
+    def _apply_tag_join(q):
+        return (
+            q.join(VideoTag, VideoTag.video_pk == Video.video_pk)
+            .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
+            .where(Tag.name == tag)
+        )
+
     async with dpm.group_session(group) as session:
+        stmt = select(Video, VideoAnalysis.headline, VideoAnalysis.one_line).outerjoin(
+            VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk
+        )
+        if tag:
+            stmt = _apply_tag_join(stmt)
         stmt = (
-            select(Video, VideoAnalysis.headline, VideoAnalysis.one_line)
-            .outerjoin(VideoAnalysis, VideoAnalysis.video_pk == Video.video_pk)
+            stmt.where(*conditions)
             .order_by(Video.published_at.desc(), Video.video_pk.desc())
             .limit(limit)
             .offset(offset)
         )
-        if status:
-            stmt = stmt.where(Video.analysis_status == status)
-        if channel_pk is not None:
-            stmt = stmt.where(Video.channel_pk == channel_pk)
-        if notified == "yes":
-            stmt = stmt.where(Video.notified_at.is_not(None))
-        elif notified == "no":
-            stmt = stmt.where(Video.notified_at.is_(None))
-        if tag:
-            stmt = (
-                stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
-                .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
-                .where(Tag.name == tag)
-            )
         rows = (await session.execute(stmt)).all()
 
         total = None
         if paged:
             count_stmt = select(func.count()).select_from(Video)
-            if status:
-                count_stmt = count_stmt.where(Video.analysis_status == status)
-            if channel_pk is not None:
-                count_stmt = count_stmt.where(Video.channel_pk == channel_pk)
-            if notified == "yes":
-                count_stmt = count_stmt.where(Video.notified_at.is_not(None))
-            elif notified == "no":
-                count_stmt = count_stmt.where(Video.notified_at.is_(None))
             if tag:
-                count_stmt = (
-                    count_stmt.join(VideoTag, VideoTag.video_pk == Video.video_pk)
-                    .join(Tag, Tag.tag_pk == VideoTag.tag_pk)
-                    .where(Tag.name == tag)
-                )
+                count_stmt = _apply_tag_join(count_stmt)
+            count_stmt = count_stmt.where(*conditions)
             total = (await session.execute(count_stmt)).scalar_one()
 
     items: list[VideoListItem] = []
@@ -335,6 +333,7 @@ async def notify_video_now(
                 message="이미 발송된 영상입니다. 재발송하려면 force=true로 요청하세요.",
                 notified_at=video.notified_at,
             )
+        channel_name = await _resolve_channel_name(session, video)
 
     # 네트워크 발송은 트랜잭션 밖에서 수행한다(읽기 세션은 위에서 이미 닫힘).
     from app.services.notify_service import _fetch_video_tags
@@ -346,7 +345,7 @@ async def notify_video_now(
     try:
         sent = await notify_video(
             notif, video, analysis,
-            channel_name=getattr(video, "source_channel_name", "") or "",
+            channel_name=channel_name,
             tags=tags, template=notif.message_template,
             group_slug=group.slug,
         )
@@ -362,6 +361,45 @@ async def notify_video_now(
                 update(Video).where(Video.video_pk == video_pk).values(notified_at=now)
             )
     return VideoNotifyResponse(success=True, message=f"{sent}개 대상에 발송했습니다.", notified_at=now)
+
+
+@router.get("/{video_pk}/notify-preview", response_model=NotifyPreviewResponse)
+async def notify_preview(
+    video_pk: int, group: Group = Depends(get_group_or_404)
+) -> NotifyPreviewResponse:
+    """현재 그룹의 메시지 템플릿으로 실제 발송될 텔레그램 본문(HTML)을 그대로 렌더한다.
+
+    실발송 경로(build_message)와 동일한 빌더·렌더러를 사용하므로 미리보기와 실발송이
+    일치한다. 분석 결과가 없으면 빈 문자열을 반환한다.
+    """
+    from app.services.notify_service import _fetch_video_tags, build_message
+
+    notif = await get_settings_manager().get_notification(group.group_id)
+    async with dpm.group_session(group) as session:
+        video = (
+            await session.execute(select(Video).where(Video.video_pk == video_pk))
+        ).scalar_one_or_none()
+        if video is None:
+            raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+        analysis = (
+            await session.execute(select(VideoAnalysis).where(VideoAnalysis.video_pk == video_pk))
+        ).scalar_one_or_none()
+        channel_name = await _resolve_channel_name(session, video)
+
+    if analysis is None:
+        return NotifyPreviewResponse(text="")
+
+    make_session = lambda: dpm.group_session(group)
+    try:
+        tags = await _fetch_video_tags(make_session, video_pk)
+    except Exception:
+        tags = []
+    text = build_message(
+        video, analysis, notif.low_confidence_threshold,
+        channel_name=channel_name, tags=tags,
+        template=notif.message_template, group_slug=group.slug,
+    )
+    return NotifyPreviewResponse(text=text)
 
 
 @router.post("/instant", response_model=InstantAnalyzeResponse, status_code=202)
@@ -427,8 +465,8 @@ async def instant_analyze_video(
                     title=vm.title or vm.video_id,
                     description=vm.description,
                     thumbnail_url=vm.thumbnail_url,
-                    published_at=_parse_iso(vm.published_at),
-                    duration_seconds=_parse_duration(vm.duration),
+                    published_at=parse_iso_datetime(vm.published_at),
+                    duration_seconds=parse_duration_seconds(vm.duration),
                     view_count=vm.view_count,
                     like_count=vm.like_count,
                     sequence_in_channel=None,

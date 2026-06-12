@@ -11,6 +11,7 @@ import { useGroup } from '../group/useGroup'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 import StatusBadge from '../components/StatusBadge'
+import ConfirmModal from '../components/ConfirmModal'
 
 function ConfidenceBar({ score }: { score: number }) {
   const pct = Math.round(score * 100)
@@ -39,6 +40,7 @@ export default function VideoDetail() {
   const [promptOpen, setPromptOpen] = useState(false)
   const [customPrompt, setCustomPrompt] = useState('')
   const [promptLoaded, setPromptLoaded] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -84,6 +86,21 @@ export default function VideoDetail() {
   useEffect(() => { load() }, [videoPk])
 
   useEffect(() => stopPolling, [])
+
+  // 분석 완료 시, 실제 발송 본문(그룹 템플릿 기준)을 백엔드에서 그대로 받아 미리본다.
+  // 재분석·발송으로 상태가 바뀌면 다시 받아 미리보기와 실발송을 일치시킨다.
+  useEffect(() => {
+    if (!videoPk || video?.analysis_status !== 'done') {
+      setPreviewHtml(null)
+      return
+    }
+    let cancelled = false
+    videoApi(activeSlug)
+      .notifyPreview(Number(videoPk))
+      .then((r) => { if (!cancelled) setPreviewHtml(r.text || null) })
+      .catch(() => { if (!cancelled) setPreviewHtml(null) })
+    return () => { cancelled = true }
+  }, [videoPk, activeSlug, video?.analysis_status, video?.notified_at])
 
   const handleDelete = async () => {
     if (!videoPk) return
@@ -360,52 +377,32 @@ export default function VideoDetail() {
           </div>
         )}
 
-        {/* Telegram 알림 미리보기 (실제 발송 본문과 동일: headline + one_line + short_summary_md) */}
-        {(video.headline || video.one_line || video.short_summary_md) && (
+        {/* Telegram 알림 미리보기 — 실제 발송 본문과 동일(그룹 메시지 템플릿 기준).
+            백엔드 build_message가 렌더한 텔레그램 HTML(b/i/code/a 한정, 동적 내용은
+            모두 이스케이프됨)을 그대로 표시한다. */}
+        {previewHtml && (
           <div className="bg-gray-800 rounded-xl p-4 text-gray-100 text-xs space-y-2 break-words">
             <p className="text-gray-400 uppercase tracking-wide">Telegram 알림 미리보기</p>
-            <p className="font-bold">🎬 [{video.source_channel_name || '모니터 채널'}] 신규 영상</p>
-            {video.headline && <p className="font-semibold">{video.headline}</p>}
-            {video.one_line && <p className="text-gray-300">{video.one_line}</p>}
-            {video.short_summary_md && (
-              <div className="text-gray-200 whitespace-pre-wrap font-sans max-h-48 overflow-y-auto border border-gray-600 rounded-lg p-2">
-                {video.short_summary_md}
-              </div>
-            )}
-            {video.tags.length > 0 && <p className="text-blue-300">🏷 {video.tags.slice(0, 8).join(', ')}</p>}
+            <div
+              className="telegram-preview text-gray-100 whitespace-pre-wrap font-sans leading-relaxed max-h-80 overflow-y-auto border border-gray-600 rounded-lg p-3"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
             {video.notified_at && <p className="text-green-400">✅ 발송됨: {dayjs(video.notified_at).format('MM/DD HH:mm')}</p>}
           </div>
         )}
       </div>
 
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-4">
-            <h3 className="font-bold text-gray-900">영상 삭제 확인</h3>
-            <p className="text-sm text-gray-600">
-              이 영상과 연관된 분석·태그 데이터가 삭제됩니다. 계속하시겠습니까?
-            </p>
-            <p className="text-sm font-medium text-gray-800 line-clamp-3">{video.title}</p>
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirm(false)}
-                disabled={deleting}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleting ? '삭제 중...' : '삭제'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="영상 삭제 확인"
+          message="이 영상과 연관된 분석·태그 데이터가 삭제됩니다. 계속하시겠습니까?"
+          detail={video.title}
+          confirmLabel="삭제"
+          busy={deleting}
+          busyLabel="삭제 중..."
+          onConfirm={handleDelete}
+          onClose={() => setDeleteConfirm(false)}
+        />
       )}
     </div>
   )

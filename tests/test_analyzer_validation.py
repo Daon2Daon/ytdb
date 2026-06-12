@@ -2,7 +2,11 @@
 
 sentiment/confidence_score는 더 이상 필수가 아니며, 경제 enum도 강제하지 않는다.
 그룹 성격에 따라 sentiment가 없거나 자유 값('trendy' 등)이어도 분석이 실패하지 않는다.
-핵심 3개(one_line/short_summary_md/full_analysis_md)만 필수.
+핵심 2개(one_line/short_summary_md)만 필수.
+
+full_analysis_md는 레거시 필드로 더 이상 필수가 아니다. 현재 본문은 구조화
+analysis_sections로 관리하며, LLM 프롬프트도 full_analysis_md를 요청하지 않는다.
+(레거시 행은 build_sections 폴백이 처리한다.)
 """
 
 import pytest
@@ -16,7 +20,6 @@ from app.services.analyzer import (
 ESSENTIAL = {
     "one_line": "한 줄",
     "short_summary_md": "요약",
-    "full_analysis_md": "## 분석",
 }
 
 

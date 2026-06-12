@@ -11,6 +11,7 @@ import ErrorBanner from '../components/ErrorBanner'
 import StatusBadge from '../components/StatusBadge'
 import NotifyBadge from '../components/NotifyBadge'
 import Pagination from '../components/Pagination'
+import ConfirmModal from '../components/ConfirmModal'
 
 function formatDuration(sec: number | null) {
   if (!sec) return ''
@@ -40,19 +41,14 @@ export default function Videos() {
   const notifiedFilter = searchParams.get('notified') ?? undefined
   const PAGE_SIZE = 20
 
+  // 영상 목록은 필터·페이지·그룹 변경 시마다 다시 받는다.
   const load = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [r, chs, tgs] = await Promise.all([
-        videoApi(activeSlug).listPaged({ channel_pk: channelPk, tag: tagFilter, status: statusFilter, notified: notifiedFilter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-        channelApi(activeSlug).list(),
-        tagApi(activeSlug).list(2, 50),
-      ])
+      const r = await videoApi(activeSlug).listPaged({ channel_pk: channelPk, tag: tagFilter, status: statusFilter, notified: notifiedFilter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE })
       setVideos(r.items)
       setTotal(r.total)
-      setChannels(chs)
-      setTags(tgs)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -61,6 +57,19 @@ export default function Videos() {
   }
 
   useEffect(() => { load() }, [page, channelPk, tagFilter, statusFilter, notifiedFilter, activeSlug])
+
+  // 필터 셀렉트용 채널·태그 목록은 그룹이 바뀔 때만 받으면 충분하다(페이지 이동마다 X).
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([channelApi(activeSlug).list(), tagApi(activeSlug).list(2, 50)])
+      .then(([chs, tgs]) => {
+        if (cancelled) return
+        setChannels(chs)
+        setTags(tgs)
+      })
+      .catch(() => { /* 필터 보조 목록 실패는 본문 로딩을 막지 않는다 */ })
+    return () => { cancelled = true }
+  }, [activeSlug])
 
   const handleDelete = async () => {
     if (!deleteTarget) return
@@ -141,6 +150,10 @@ export default function Videos() {
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">전체 태그</option>
+          {/* 태그 클라우드에서 상위 50개 밖 태그로 진입해도 셀렉트가 비지 않도록 보강 */}
+          {tagFilter && !tags.some((t) => t.name === tagFilter) && (
+            <option value={tagFilter}>{tagFilter}</option>
+          )}
           {tags.map((t) => <option key={t.tag_pk} value={t.name}>{t.name} ({t.video_count})</option>)}
         </select>
 
@@ -242,33 +255,16 @@ export default function Videos() {
       }} />
 
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-4">
-            <h3 className="font-bold text-gray-900">영상 삭제 확인</h3>
-            <p className="text-sm text-gray-600">
-              아래 영상과 연관된 분석·태그 데이터가 삭제됩니다. 계속하시겠습니까?
-            </p>
-            <p className="text-sm font-medium text-gray-800 line-clamp-3">{deleteTarget.title}</p>
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                disabled={deleting}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleting ? '삭제 중...' : '삭제'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="영상 삭제 확인"
+          message="아래 영상과 연관된 분석·태그 데이터가 삭제됩니다. 계속하시겠습니까?"
+          detail={deleteTarget.title}
+          confirmLabel="삭제"
+          busy={deleting}
+          busyLabel="삭제 중..."
+          onConfirm={handleDelete}
+          onClose={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   )

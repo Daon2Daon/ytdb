@@ -41,6 +41,7 @@ from app.services.job_logger import (
 from app.services.notify_service import notify_video
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
+from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 from app.services.youtube_api import (
     PlaylistItemMeta,
     YouTubeAPIClient,
@@ -52,26 +53,6 @@ FAILED_RETRY_MAX = 3
 FAILED_RETRY_WAIT_MINUTES = 30
 
 MakeSession = Callable[[], AsyncSession]
-
-
-def _parse_iso(dt_str: str | None) -> datetime:
-    if not dt_str:
-        return datetime.now(timezone.utc)
-    try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    except Exception:
-        return datetime.now(timezone.utc)
-
-
-def _parse_duration(iso_duration: str | None) -> int | None:
-    if not iso_duration:
-        return None
-    try:
-        import isodate
-
-        return int(isodate.parse_duration(iso_duration).total_seconds())
-    except Exception:
-        return None
 
 
 # ── 그룹 스코프 단위 작업 ──────────────────────────────────────────────────────
@@ -129,7 +110,7 @@ class MonitorService:
             return []
 
         metas = await api_client.get_video_details(new_ids)
-        metas = [v for v in metas if _parse_iso(v.published_at) >= cutoff]
+        metas = [v for v in metas if parse_iso_datetime(v.published_at) >= cutoff]
         if not metas:
             await self._update_last_checked(session, channel, now, items[0].video_id)
             return []
@@ -146,8 +127,8 @@ class MonitorService:
                     title=vm.title,
                     description=vm.description,
                     thumbnail_url=vm.thumbnail_url,
-                    published_at=_parse_iso(vm.published_at),
-                    duration_seconds=_parse_duration(vm.duration),
+                    published_at=parse_iso_datetime(vm.published_at),
+                    duration_seconds=parse_duration_seconds(vm.duration),
                     view_count=vm.view_count,
                     like_count=vm.like_count,
                     sequence_in_channel=seq_start + idx,
@@ -533,27 +514,22 @@ async def _notify_after_analysis(
         )
 
 
-async def _analyze_group(group: Group) -> None:
-    mgr = get_settings_manager()
-    polling = await mgr.get_polling(group.group_id)
-    try:
-        await dpm.ensure_schema(group)
-        engine = await dpm.get_engine_for_group(group)
-    except DBNotConfiguredError:
-        return
+async def _run_analysis(
+    group: Group,
+    make_session: MakeSession,
+    video_pk: int,
+    *,
+    custom_prompt: Optional[str] = None,
+    label: str = "분석",
+) -> None:
+    """단일 영상 분석 실행 + 성공/실패 로깅 + 커밋 후 알림.
 
-    make_session = _make_session_factory(engine, group.schema_name)
-
-    async with make_session() as sess:
-        async with sess.begin():
-            await reset_stale_processing_videos(sess, STALE_PROCESSING_RESET_MINUTES)
-            await reset_eligible_failed_videos(sess)
-            claimed = await claim_pending_video_pks(sess, 1)
-    if not claimed:
-        return
-
-    video_pk = claimed[0]
-    pipeline = await build_analysis_pipeline(group.group_id)
+    스케줄 분석(_analyze_group)과 즉시 분석(analyze_specific_video) 공용 경로.
+    실패 시 메인 트랜잭션이 롤백되므로 별도 세션으로 failed 상태/재시도를 기록한다.
+    """
+    pipeline = await build_analysis_pipeline(
+        group.group_id, analysis_prompt_override=custom_prompt
+    )
     timer = JobTimer()
     title: Optional[str] = None
     channel_pk: Optional[int] = None
@@ -584,15 +560,14 @@ async def _analyze_group(group: Group) -> None:
             make_session,
             job_type=JOB_TYPE_VIDEO_ANALYZE,
             status=STATUS_SUCCESS,
-            message=f"분석 완료 - {title}" if title else "분석 완료",
+            message=f"{label} 완료 - {title}" if title else f"{label} 완료",
             duration_ms=timer.elapsed_ms,
             channel_pk=channel_pk,
             video_pk=video_pk,
         )
         await _notify_after_analysis(group, make_session, video_pk, channel_pk)
     except Exception as e:
-        print(f"[{group.slug}] 분석 실패 (video_pk={video_pk}): {e}")
-        # 메인 트랜잭션이 롤백되므로 별도 세션으로 실패 상태/재시도 횟수를 기록한다.
+        print(f"[{group.slug}] {label} 실패 (video_pk={video_pk}): {e}")
         try:
             async with make_session() as fs:
                 async with fs.begin():
@@ -606,7 +581,7 @@ async def _analyze_group(group: Group) -> None:
                         )
                     )
         except Exception as upd:
-            print(f"[{group.slug}] 실패 상태 기록 오류 (video_pk={video_pk}): {upd}")
+            print(f"[{group.slug}] {label} 실패 상태 기록 오류 (video_pk={video_pk}): {upd}")
         await write_job_log(
             make_session,
             job_type=JOB_TYPE_VIDEO_ANALYZE,
@@ -617,7 +592,27 @@ async def _analyze_group(group: Group) -> None:
             video_pk=video_pk,
         )
     finally:
-        await pipeline._llm.aclose()
+        await pipeline.aclose()
+
+
+async def _analyze_group(group: Group) -> None:
+    try:
+        await dpm.ensure_schema(group)
+        engine = await dpm.get_engine_for_group(group)
+    except DBNotConfiguredError:
+        return
+
+    make_session = _make_session_factory(engine, group.schema_name)
+
+    async with make_session() as sess:
+        async with sess.begin():
+            await reset_stale_processing_videos(sess, STALE_PROCESSING_RESET_MINUTES)
+            await reset_eligible_failed_videos(sess)
+            claimed = await claim_pending_video_pks(sess, 1)
+    if not claimed:
+        return
+
+    await _run_analysis(group, make_session, claimed[0])
 
 
 async def run_pending_analysis_once() -> None:
@@ -675,33 +670,42 @@ async def run_stats_refresh_once() -> None:
             api_client = YouTubeAPIClient(polling)
             timer = JobTimer()
             updated = 0
+            status = STATUS_SUCCESS
+            message = ""
             try:
                 with timer:
                     try:
                         metas = await api_client.get_video_details(list(id_to_pk.keys()))
                     except YouTubeQuotaExceededError as exc:
                         print(f"[{group.slug}] stats 갱신: quota 초과 — {exc}")
-                        continue
-                    stats_map = _build_stats_map(metas)
-                    async with make_session() as sess:
-                        async with sess.begin():
-                            for video_id, (vc, lc) in stats_map.items():
-                                pk = id_to_pk.get(video_id)
-                                if pk is None:
-                                    continue
-                                await sess.execute(
-                                    update(Video)
-                                    .where(Video.video_pk == pk)
-                                    .values(view_count=vc, like_count=lc)
-                                )
-                                updated += 1
+                        status = STATUS_SKIP
+                        message = f"쿼터 초과: {exc}"
+                    else:
+                        stats_map = _build_stats_map(metas)
+                        async with make_session() as sess:
+                            async with sess.begin():
+                                for video_id, (vc, lc) in stats_map.items():
+                                    pk = id_to_pk.get(video_id)
+                                    if pk is None:
+                                        continue
+                                    await sess.execute(
+                                        update(Video)
+                                        .where(Video.video_pk == pk)
+                                        .values(view_count=vc, like_count=lc)
+                                    )
+                                    updated += 1
+                        message = f"stats 갱신: {updated}/{len(id_to_pk)}건"
+            except Exception as exc:
+                status = STATUS_FAIL
+                message = f"stats 갱신 실패: {exc}"
+                print(f"[{group.slug}] stats 갱신 실패: {exc}")
             finally:
                 await api_client.aclose()
                 await write_job_log(
                     make_session,
                     job_type=JOB_TYPE_STATS,
-                    status=STATUS_SUCCESS,
-                    message=f"stats 갱신: {updated}/{len(id_to_pk)}건",
+                    status=status,
+                    message=message,
                     duration_ms=timer.elapsed_ms,
                 )
         except DBNotConfiguredError:
@@ -791,67 +795,6 @@ async def analyze_specific_video(group: Group, video_pk: int, custom_prompt: Opt
         return
 
     make_session = _make_session_factory(engine, group.schema_name)
-    pipeline = await build_analysis_pipeline(group.group_id, analysis_prompt_override=custom_prompt)
-    timer = JobTimer()
-    title: Optional[str] = None
-    channel_pk: Optional[int] = None
-    try:
-        with timer:
-            async with make_session() as sess:
-                async with sess.begin():
-                    video = (
-                        await sess.execute(select(Video).where(Video.video_pk == video_pk))
-                    ).scalar_one_or_none()
-                    if not video:
-                        return
-                    title, channel_pk = video.title, video.channel_pk
-                    channel = (
-                        await sess.execute(
-                            select(Channel).where(Channel.channel_pk == video.channel_pk)
-                        )
-                    ).scalar_one_or_none()
-                    await pipeline.run_and_save(
-                        session=sess,
-                        video_pk=video_pk,
-                        video_url=video.video_url,
-                        channel_name=channel.channel_name if channel else "",
-                        published_at_str=video.published_at.isoformat(),
-                        duration_seconds=video.duration_seconds,
-                    )
-        await write_job_log(
-            make_session,
-            job_type=JOB_TYPE_VIDEO_ANALYZE,
-            status=STATUS_SUCCESS,
-            message=f"즉시 분석 완료 - {title}" if title else "즉시 분석 완료",
-            duration_ms=timer.elapsed_ms,
-            channel_pk=channel_pk,
-            video_pk=video_pk,
-        )
-        await _notify_after_analysis(group, make_session, video_pk, channel_pk)
-    except Exception as e:
-        print(f"[{group.slug}] 즉시 분석 실패 (video_pk={video_pk}): {e}")
-        try:
-            async with make_session() as fs:
-                async with fs.begin():
-                    await fs.execute(
-                        update(Video)
-                        .where(Video.video_pk == video_pk)
-                        .values(
-                            analysis_status="failed",
-                            analysis_error=str(e)[:500],
-                            retry_count=Video.retry_count + 1,
-                        )
-                    )
-        except Exception as upd:
-            print(f"[{group.slug}] 즉시 분석 실패 상태 기록 오류 (video_pk={video_pk}): {upd}")
-        await write_job_log(
-            make_session,
-            job_type=JOB_TYPE_VIDEO_ANALYZE,
-            status=STATUS_FAIL,
-            message=str(e),
-            duration_ms=timer.elapsed_ms,
-            channel_pk=channel_pk,
-            video_pk=video_pk,
-        )
-    finally:
-        await pipeline._llm.aclose()
+    await _run_analysis(
+        group, make_session, video_pk, custom_prompt=custom_prompt, label="즉시 분석"
+    )

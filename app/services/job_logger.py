@@ -19,6 +19,7 @@ JOB_TYPE_VIDEO_ANALYZE = "video_analyze"
 JOB_TYPE_GATEWAY_HEALTH = "gateway_health"
 JOB_TYPE_NOTIFY = "notify"
 JOB_TYPE_STATS = "stats"
+JOB_TYPE_DIGEST = "digest"
 
 STATUS_SUCCESS = "success"
 STATUS_FAIL = "failed"

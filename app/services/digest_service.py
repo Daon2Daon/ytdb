@@ -19,6 +19,14 @@ from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.job_logger import (
+    JOB_TYPE_DIGEST,
+    STATUS_FAIL,
+    STATUS_SKIP,
+    STATUS_SUCCESS,
+    JobTimer,
+    write_job_log,
+)
 from app.services.llm_client import LiteLLMClient
 from app.services.notify_service import send_telegram
 from app.services.settings_manager import get_settings_manager
@@ -199,10 +207,15 @@ class DigestGenerated:
     model_name: str
 
 
-def _period(now_utc: datetime, weeks: int) -> tuple[datetime, datetime]:
-    end = now_utc.replace(second=0, microsecond=0)
-    start = now_utc - timedelta(days=7 * max(1, weeks))
-    return start.replace(second=0, microsecond=0), end
+def _period(as_of: datetime, weeks: int) -> tuple[datetime, datetime]:
+    """집계 기간 [start, end). end는 기준 시각(as_of)을 분 단위로 절삭한 값.
+
+    스케줄 발송에서는 as_of로 '발생 시각'을 넘겨 매 틱마다 동일한 경계가 나오게 해
+    중복 생성(dedup)이 안정적으로 동작하도록 한다.
+    """
+    end = as_of.replace(second=0, microsecond=0)
+    start = end - timedelta(days=7 * max(1, weeks))
+    return start, end
 
 
 def _period_label(period_start: datetime, period_end: datetime) -> str:
@@ -472,6 +485,7 @@ async def generate_digest_for_group(
     period_weeks: Optional[int] = None,
     category: Optional[str] = None,
     save: bool = True,
+    as_of: Optional[datetime] = None,
 ) -> Digest:
     await dpm.ensure_schema(group)
     engine = await dpm.get_engine_for_group(group)
@@ -479,8 +493,8 @@ async def generate_digest_for_group(
 
     weeks = max(1, int(period_weeks or digest_cfg.period_weeks or 1))
     cat = (category if category is not None else digest_cfg.category).strip()
-    now = datetime.now(timezone.utc)
-    period_start, period_end = _period(now, weeks)
+    anchor = as_of or datetime.now(timezone.utc)
+    period_start, period_end = _period(anchor, weeks)
 
     async with make_session() as session:
         if save:
@@ -538,18 +552,63 @@ async def generate_digest_for_group(
         return digest
 
 
-def _is_due_now(now_local: datetime, cfg: DigestSettings) -> bool:
-    idx = _DAY_INDEX.get(cfg.schedule_day, 6)
-    if now_local.weekday() != idx:
-        return False
+def _most_recent_occurrence(
+    now_local: datetime, schedule_day: str, schedule_time: str
+) -> Optional[datetime]:
+    """now_local(로컬 tz aware) 기준 (요일, HH:MM) 스케줄의 가장 최근 발생 시각.
+
+    이번 주 발생 시각이 아직 미래면 지난주로 보정한다. 형식 오류면 None.
+    매 틱마다 '정확히 그 분'에 맞아야 하는 _is_due_now와 달리, 발생 시각을
+    결정적으로 계산해 한 번이라도 늦거나 재시작으로 분을 놓쳐도 따라잡을 수 있다.
+    """
+    idx = _DAY_INDEX.get(schedule_day, 6)
     try:
-        hh, mm = cfg.schedule_time.split(":")
-        return now_local.hour == int(hh) and now_local.minute == int(mm)
-    except Exception:
-        return False
+        hh_str, mm_str = schedule_time.split(":")
+        hh, mm = int(hh_str), int(mm_str)
+    except (ValueError, AttributeError):
+        return None
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return None
+    days_since = (now_local.weekday() - idx) % 7
+    occ = (now_local - timedelta(days=days_since)).replace(
+        hour=hh, minute=mm, second=0, microsecond=0
+    )
+    if occ > now_local:
+        occ -= timedelta(days=7)
+    return occ
+
+
+async def _digest_exists_for_period(
+    session: AsyncSession,
+    *,
+    weeks: int,
+    period_start: datetime,
+    period_end: datetime,
+    category: Optional[str],
+) -> bool:
+    found = (
+        await session.execute(
+            select(Digest.digest_pk).where(
+                Digest.period_type == "weekly",
+                Digest.period_weeks == weeks,
+                Digest.period_start == period_start,
+                Digest.period_end == period_end,
+                Digest.category == (category or None),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return found is not None
 
 
 async def run_digest_tick_once() -> None:
+    """매 1분 호출. 활성 그룹별로 '가장 최근 스케줄 발생분'이 아직 없으면 생성·발송한다.
+
+    분 단위 정확 일치가 아닌 '발생 시각 이후 미생성' 기준이라, 틱이 밀리거나 그 분에
+    앱이 재시작 중이어도 해당 주 리뷰를 건너뛰지 않는다(따라잡기). 발생분당 1회만 생성.
+    """
+    from zoneinfo import ZoneInfo
+
     sf = get_sessionmaker()
     mgr = get_settings_manager()
     async with sf() as session:
@@ -561,21 +620,71 @@ async def run_digest_tick_once() -> None:
             cfg = await mgr.get_digest(group.group_id)
             if not cfg.enabled:
                 continue
-            from zoneinfo import ZoneInfo
-
-            now_local = datetime.now(ZoneInfo(cfg.timezone))
-            if not _is_due_now(now_local, cfg):
+            try:
+                tz = ZoneInfo(cfg.timezone)
+            except Exception:
+                tz = ZoneInfo("Asia/Seoul")
+            now_local = datetime.now(tz)
+            occ_local = _most_recent_occurrence(now_local, cfg.schedule_day, cfg.schedule_time)
+            if occ_local is None:
                 continue
-            digest = await generate_digest_for_group(group, cfg, save=True)
-            if cfg.telegram_enabled and digest.telegram_summary:
-                await _send_digest_telegram(
-                    group.group_id,
-                    digest.headline or "주간 리뷰",
-                    digest.telegram_summary,
-                    slug=group.slug,
-                    share_token=digest.share_token,
-                    share_link_enabled=cfg.share_link_enabled,
+            # 발생 후 1주 이내만 따라잡기(앱이 오래 꺼져 있었더라도 폭주 없이 최근분 한 건만).
+            if now_local - occ_local > timedelta(days=7):
+                continue
+
+            weeks = max(1, int(cfg.period_weeks or 1))
+            cat = (cfg.category or "").strip()
+            occ_utc = occ_local.astimezone(timezone.utc)
+            period_start, period_end = _period(occ_utc, weeks)
+
+            await dpm.ensure_schema(group)
+            engine = await dpm.get_engine_for_group(group)
+            make_session = lambda: dpm.session_for_group(engine, group.schema_name)
+
+            async with make_session() as session:
+                if await _digest_exists_for_period(
+                    session,
+                    weeks=weeks,
+                    period_start=period_start,
+                    period_end=period_end,
+                    category=cat or None,
+                ):
+                    continue  # 이번 발생분은 이미 생성됨 → 재생성·재발송 안 함
+
+            timer = JobTimer()
+            try:
+                with timer:
+                    digest = await generate_digest_for_group(
+                        group, cfg, period_weeks=weeks, category=cat, save=True, as_of=occ_utc
+                    )
+                    if cfg.telegram_enabled and digest.telegram_summary:
+                        await _send_digest_telegram(
+                            group.group_id,
+                            digest.headline or "주간 리뷰",
+                            digest.telegram_summary,
+                            slug=group.slug,
+                            share_token=digest.share_token,
+                            share_link_enabled=cfg.share_link_enabled,
+                        )
+                await write_job_log(
+                    make_session,
+                    job_type=JOB_TYPE_DIGEST,
+                    status=STATUS_SUCCESS if digest.status != "fallback" else STATUS_SKIP,
+                    message=(
+                        f"주간 리뷰 생성 — {digest.headline} (영상 {digest.video_count}건)"
+                        + (f" / LLM 실패 폴백: {digest.error}" if digest.status == "fallback" else "")
+                    ),
+                    duration_ms=timer.elapsed_ms,
                 )
+            except Exception as e:
+                await write_job_log(
+                    make_session,
+                    job_type=JOB_TYPE_DIGEST,
+                    status=STATUS_FAIL,
+                    message=f"주간 리뷰 생성 실패: {e}",
+                    duration_ms=timer.elapsed_ms,
+                )
+                print(f"[{group.slug}] digest tick 실패: {e}")
         except DBNotConfiguredError:
             continue
         except Exception as e:

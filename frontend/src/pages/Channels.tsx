@@ -5,6 +5,7 @@ import type { Channel } from '../api/types'
 import { useGroup } from '../group/useGroup'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
+import ConfirmModal from '../components/ConfirmModal'
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -355,19 +356,18 @@ export default function Channels() {
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-bold text-gray-900">채널 삭제 확인</h3>
-            <p className="text-sm text-gray-600">
+        <ConfirmModal
+          title="채널 삭제 확인"
+          message={
+            <>
               <strong>{deleteTarget.channel_name}</strong> 채널과 연관된 모든 영상, 분석 데이터가
               삭제됩니다. 계속하시겠습니까?
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">취소</button>
-              <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">삭제</button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          confirmLabel="삭제"
+          onConfirm={handleDelete}
+          onClose={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   )

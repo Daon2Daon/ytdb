@@ -19,12 +19,12 @@ export interface SettingCategory {
 }
 
 export const SETTING_CATEGORIES: SettingCategory[] = [
-  { key: 'database', label: 'Database' },
-  { key: 'ai_gateway', label: 'AI Gateway' },
-  { key: 'polling', label: 'Monitoring' },
-  { key: 'notification', label: 'Notification' },
-  { key: 'digest', label: 'Digest' },
-  { key: 'prompts', label: 'Prompts' },
+  { key: 'database', label: '데이터베이스' },
+  { key: 'ai_gateway', label: 'AI 게이트웨이' },
+  { key: 'polling', label: '모니터링' },
+  { key: 'notification', label: '알림' },
+  { key: 'digest', label: '주간 리뷰' },
+  { key: 'prompts', label: '프롬프트' },
 ]
 
 export const SETTING_DEFS: Record<string, FieldDef[]> = {

@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from zoneinfo import ZoneInfo
+
 from app.services.digest_service import (
     VideoBrief,
     split_category_tokens,
@@ -9,6 +11,7 @@ from app.services.digest_service import (
     _build_videos_block,
     _build_top_viewed_block,
     _fmt_views,
+    _most_recent_occurrence,
     _sentiment_summary_text,
 )
 
@@ -84,6 +87,37 @@ def test_build_top_viewed_block_empty():
                    sentiment=None, view_count=None),
     ]
     assert _build_top_viewed_block(briefs) == "데이터 없음"
+
+
+def test_most_recent_occurrence_same_day_after_time():
+    kst = ZoneInfo("Asia/Seoul")
+    # 일요일 10:00, 스케줄 일요일 09:00 → 같은 날 09:00
+    now = datetime(2026, 6, 14, 10, 0, tzinfo=kst)  # 2026-06-14 is Sunday
+    occ = _most_recent_occurrence(now, "sun", "09:00")
+    assert occ == datetime(2026, 6, 14, 9, 0, tzinfo=kst)
+
+
+def test_most_recent_occurrence_same_day_before_time():
+    kst = ZoneInfo("Asia/Seoul")
+    # 일요일 08:00, 스케줄 일요일 09:00(아직 미래) → 지난 일요일
+    now = datetime(2026, 6, 14, 8, 0, tzinfo=kst)
+    occ = _most_recent_occurrence(now, "sun", "09:00")
+    assert occ == datetime(2026, 6, 7, 9, 0, tzinfo=kst)
+
+
+def test_most_recent_occurrence_mid_week():
+    kst = ZoneInfo("Asia/Seoul")
+    # 수요일 12:00, 스케줄 일요일 09:00 → 직전 일요일
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=kst)  # 2026-06-10 is Wednesday
+    occ = _most_recent_occurrence(now, "sun", "09:00")
+    assert occ == datetime(2026, 6, 7, 9, 0, tzinfo=kst)
+
+
+def test_most_recent_occurrence_bad_time():
+    kst = ZoneInfo("Asia/Seoul")
+    now = datetime(2026, 6, 14, 10, 0, tzinfo=kst)
+    assert _most_recent_occurrence(now, "sun", "9시") is None
+    assert _most_recent_occurrence(now, "sun", "25:00") is None
 
 
 def test_build_videos_block_remaining():

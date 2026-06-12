@@ -6,31 +6,37 @@ import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 import Pagination from '../components/Pagination'
 
+const JOB_TYPE_LABELS: Record<string, string> = {
+  channel_poll: '채널 모니터링',
+  video_analyze: '영상 분석',
+  notify: '텔레그램 알림',
+  digest: '주간 리뷰',
+  stats: '조회수 갱신',
+  gateway_health: '게이트웨이 헬스',
+}
+
 const JOB_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: '전체' },
-  { value: 'channel_poll', label: '채널 모니터링' },
-  { value: 'video_analyze', label: '영상 분석' },
-  { value: 'notify', label: '텔레그램 알림' },
-  { value: 'gateway_health', label: '게이트웨이 헬스' },
+  ...Object.entries(JOB_TYPE_LABELS).map(([value, label]) => ({ value, label })),
 ]
 
 function formatJobTypeLabel(jobType: string): string {
-  const map: Record<string, string> = {
-    channel_poll: '채널 모니터링',
-    video_analyze: '영상 분석',
-    notify: '텔레그램 알림',
-    gateway_health: '게이트웨이 헬스',
-  }
-  return map[jobType] ?? jobType
+  return JOB_TYPE_LABELS[jobType] ?? jobType
 }
 
-const STATUS_VALUES = ['', 'success', 'skip', 'fail']
+// 백엔드 status 원본값(job_logger): success / failed / skipped
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '전체' },
+  { value: 'success', label: '성공' },
+  { value: 'skipped', label: '건너뜀' },
+  { value: 'failed', label: '실패' },
+]
 
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, string> = {
     success: 'bg-green-100 text-green-800',
-    fail: 'bg-red-100 text-red-800',
-    skip: 'bg-yellow-100 text-yellow-800',
+    failed: 'bg-red-100 text-red-800',
+    skipped: 'bg-yellow-100 text-yellow-800',
     running: 'bg-blue-100 text-blue-800',
   }
   const cls = variants[status.toLowerCase()] ?? 'bg-gray-100 text-gray-700'
@@ -113,15 +119,15 @@ export default function Jobs() {
   // 요약 배지 계산
   const summary = {
     success: items.filter(i => i.status.toLowerCase() === 'success').length,
-    fail: items.filter(i => i.status.toLowerCase() === 'fail').length,
-    skip: items.filter(i => i.status.toLowerCase() === 'skip').length,
+    fail: items.filter(i => i.status.toLowerCase() === 'failed').length,
+    skip: items.filter(i => i.status.toLowerCase() === 'skipped').length,
   }
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Logs</h1>
+          <h1 className="text-2xl font-bold text-gray-900">작업 로그</h1>
           <p className="text-sm text-gray-500 mt-0.5">YouTube 모니터링 작업 실행 내역</p>
         </div>
         <div className="flex items-center gap-3">
@@ -184,8 +190,8 @@ export default function Jobs() {
             onChange={e => setStatus(e.target.value)}
             className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
           >
-            {STATUS_VALUES.map(s => (
-              <option key={s} value={s}>{s || '전체'}</option>
+            {STATUS_OPTIONS.map(s => (
+              <option key={s.value || 'all'} value={s.value}>{s.label}</option>
             ))}
           </select>
         </div>

@@ -153,6 +153,10 @@ class AnalysisPipeline:
         self._prompt_template = analysis_prompt or DEFAULT_ANALYSIS_PROMPT
         self._notify_callback = notify_callback
 
+    async def aclose(self) -> None:
+        """내부 LLM 클라이언트의 HTTP 리소스를 정리한다."""
+        await self._llm.aclose()
+
     def _render(self, channel_name: str, published_at_str: str) -> str:
         from zoneinfo import ZoneInfo
 

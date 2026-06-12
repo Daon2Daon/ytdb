@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Telegram 알림 미리보기: 발송 본문 HTML(b/i/code/a)을 텔레그램과 비슷하게 표시 */
+.telegram-preview a {
+  color: #6ab7ff;
+  text-decoration: underline;
+}
+.telegram-preview b {
+  font-weight: 700;
+}
+.telegram-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+}

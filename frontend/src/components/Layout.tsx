@@ -8,12 +8,14 @@ import { NewGroupModal, EditGroupModal } from './GroupModals'
 const NAV = [
   { sub: '', label: '대시보드', icon: '🏠', end: true },
   { sub: 'videos', label: '영상 목록', icon: '🎬' },
+  { sub: 'instant-analyze', label: '즉시 분석', icon: '🔍' },
   { sub: 'digests', label: '주간 리뷰', icon: '📊' },
   { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
-  { sub: 'instant-analyze', label: '영상 분석', icon: '🔍' },
   { sub: 'channels', label: '채널 관리', icon: '📺' },
-  { sub: 'logs', label: 'Logs', icon: '📋' },
+  { sub: 'logs', label: '작업 로그', icon: '📋' },
 ]
+
+const SETTINGS_DEFAULT = SETTING_CATEGORIES[0].key
 
 export default function Layout() {
   const { groups, activeSlug, activeGroup } = useGroup()
@@ -26,7 +28,12 @@ export default function Layout() {
   const onSwitchGroup = (slug: string) => {
     const after = location.pathname.replace(/^\/g\/[^/]+/, '')
     const seg = after.split('/').filter(Boolean)[0] ?? ''
-    const safe = ['channels', 'videos', 'instant-analyze', 'tags', 'digests', 'logs'].includes(seg) ? seg : ''
+    if (seg === 'settings') {
+      navigate(`/g/${slug}/settings/${SETTINGS_DEFAULT}`)
+      return
+    }
+    const navSubs = NAV.map((i) => i.sub).filter(Boolean)
+    const safe = navSubs.includes(seg) ? seg : ''
     navigate(`/g/${slug}/${safe}`)
   }
 
@@ -89,12 +96,12 @@ export default function Layout() {
               </NavLink>
             ))}
             <div className="mt-1 pt-1 border-t border-gray-100 flex flex-row lg:flex-col gap-1">
-              <span className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase">설정</span>
-              {SETTING_CATEGORIES.map((c) => (
-                <NavLink key={c.key} to={`/g/${activeSlug}/settings/${c.key}`} className={linkClass}>
-                  <span>⚙️</span><span>{c.label}</span>
-                </NavLink>
-              ))}
+              <NavLink
+                to={`/g/${activeSlug}/settings/${SETTINGS_DEFAULT}`}
+                className={() => linkClass({ isActive: location.pathname.includes('/settings/') })}
+              >
+                <span>⚙️</span><span>설정</span>
+              </NavLink>
             </div>
           </nav>
         </aside>
