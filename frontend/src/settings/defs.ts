@@ -23,7 +23,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   { key: 'ai_gateway', label: 'AI 게이트웨이' },
   { key: 'polling', label: '모니터링' },
   { key: 'notification', label: '알림' },
-  { key: 'digest', label: '주간 리뷰' },
+  { key: 'digest', label: '리뷰 알림' },
   { key: 'prompts', label: '프롬프트' },
 ]
 
@@ -74,14 +74,5 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
     { key: 'message_template', label: '메시지 템플릿', type: 'template_builder',
       help: '포함할 필드를 선택하고 ▲▼로 순서를 조정하세요. 위 두 버튼으로 기본값 복원 가능.' },
   ],
-  digest: [
-    { key: 'enabled', label: '주간 리뷰 자동 생성', type: 'bool' },
-    { key: 'period_weeks', label: '집계 기간(주)', type: 'int' },
-    { key: 'schedule_day', label: '실행 요일', type: 'select', options: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-    { key: 'schedule_time', label: '실행 시각(HH:MM)' },
-    { key: 'timezone', label: '시간대' },
-    { key: 'telegram_enabled', label: '다이제스트 텔레그램 발송', type: 'bool' },
-    { key: 'share_link_enabled', label: '웹에서 자세히 보기 링크 첨부', type: 'bool' },
-    { key: 'category', label: '카테고리 필터(선택)' },
-  ],
+  digest: [],
 }

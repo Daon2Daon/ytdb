@@ -157,10 +157,27 @@ export interface PollResponse {
 
 export interface TagCount { name: string; count: number }
 
+export interface DigestScheduleConfig {
+  id: string
+  name: string
+  enabled: boolean
+  period_days: 1 | 7 | 30
+  schedule_time: string
+  schedule_day: string
+  schedule_dom: number
+  timezone: string
+  category: string
+  digest_prompt: string
+  telegram_enabled: boolean
+}
+
 export interface Digest {
   digest_pk: number
   period_type: string
   period_weeks: number
+  period_days: number | null
+  digest_config_id: string | null
+  config_name: string | null
   period_start: string
   period_end: string
   category: string | null

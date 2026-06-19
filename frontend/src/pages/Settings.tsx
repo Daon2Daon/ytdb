@@ -4,6 +4,7 @@ import { useGroup } from '../group/useGroup'
 import { settingsApi, type SettingItem } from '../api/settings'
 import { SETTING_DEFS, SETTING_CATEGORIES } from '../settings/defs'
 import SettingsForm from '../components/SettingsForm'
+import DigestConfigsEditor from '../components/DigestConfigsEditor'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 
@@ -19,9 +20,10 @@ export default function Settings() {
   const [modelMsg, setModelMsg] = useState<string | null>(null)
 
   const defs = category ? SETTING_DEFS[category] : undefined
+  const isDigest = category === 'digest'
 
   const load = useCallback(async () => {
-    if (!category || !defs) return
+    if (!category || (!defs && !isDigest)) return
     setLoading(true)
     setError(null)
     try {
@@ -58,7 +60,7 @@ export default function Settings() {
     }
   }
 
-  if (!category || !defs) return <Navigate to={`/g/${activeSlug}/settings/${SETTING_CATEGORIES[0].key}`} replace />
+  if (!category || (!defs && !isDigest)) return <Navigate to={`/g/${activeSlug}/settings/${SETTING_CATEGORIES[0].key}`} replace />
 
   const label = SETTING_CATEGORIES.find((c) => c.key === category)?.label ?? category
 
@@ -98,7 +100,11 @@ export default function Settings() {
               모델 목록을 불러오지 못했습니다: {modelMsg} (base_url/api_key 저장 후 다시 시도)
             </div>
           )}
-          <SettingsForm key={category} defs={defs} items={items} models={models} saving={saving} onSave={handleSave} />
+          {isDigest ? (
+            <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} />
+          ) : (
+            <SettingsForm key={category} defs={defs!} items={items} models={models} saving={saving} onSave={handleSave} />
+          )}
         </>
       )}
     </div>

@@ -117,13 +117,50 @@ class DatabaseSettings:
         return f"{self.host}:{self.port}:{self.dbname}:{self.username}:{self.sslmode}"
 
 
+VALID_PERIOD_DAYS = frozenset({1, 7, 30})
+VALID_SCHEDULE_DAYS = frozenset({"mon", "tue", "wed", "thu", "fri", "sat", "sun"})
+MAX_DIGEST_CONFIGS = 10
+
+
 @dataclass
-class DigestSettings:
+class DigestScheduleConfig:
+    """그룹 digest 스케줄 1건 (configs JSON 배열 원소)."""
+
+    id: str
+    name: str = ""
     enabled: bool = False
-    period_weeks: int = 1
-    schedule_day: str = "sun"  # mon..sun
+    period_days: int = 7  # 1 | 7 | 30
     schedule_time: str = "20:00"  # HH:MM
+    schedule_day: str = "sun"  # 7일 전용
+    schedule_dom: int = 1  # 30일 전용, 1..28
     timezone: str = "Asia/Seoul"
-    telegram_enabled: bool = False
     category: str = ""
+    digest_prompt: str = ""
+    telegram_enabled: bool = False
+
+
+@dataclass
+class DigestShareSettings:
+    """그룹 공통 digest 텔레그램 공유 링크 설정."""
+
     share_link_enabled: bool = True
+
+
+def period_type_from_days(period_days: int) -> str:
+    if period_days == 1:
+        return "daily"
+    if period_days == 30:
+        return "monthly"
+    return "weekly"
+
+
+def period_label_from_days(period_days: int) -> str:
+    if period_days == 1:
+        return "일간"
+    if period_days == 30:
+        return "월간"
+    return "주간"
+
+
+# 레거시 호환 alias (일부 테스트·import)
+DigestSettings = DigestScheduleConfig

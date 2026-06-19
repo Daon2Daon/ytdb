@@ -19,10 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings as app_settings
 from app.control_db import get_sessionmaker
 from app.models.control.setting import Setting
+from app.services.digest_config import legacy_flat_to_config, parse_digest_configs
 from app.services.settings_types import (
     AIGatewaySettings,
     DatabaseSettings,
-    DigestSettings,
+    DigestScheduleConfig,
+    DigestShareSettings,
     NotificationSettings,
     PollingSettings,
     PromptSettings,
@@ -255,22 +257,39 @@ class SettingsManager:
             dispatch_scope=_normalize_dispatch_scope(d.get("dispatch_scope")),
         )
 
-    async def get_digest(self, group_id: int) -> DigestSettings:
+    async def get_digest_configs(self, group_id: int) -> list[DigestScheduleConfig]:
         d = await self.get_typed(group_id, "digest")
-        schedule_day = str(d.get("schedule_day") or "sun").strip().lower()
-        if schedule_day not in {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}:
-            schedule_day = "sun"
-        schedule_time = str(d.get("schedule_time") or "20:00").strip() or "20:00"
-        return DigestSettings(
-            enabled=bool(d.get("enabled", False)),
-            period_weeks=max(1, _as_int(d.get("period_weeks"), 1)),
-            schedule_day=schedule_day,
-            schedule_time=schedule_time,
-            timezone=str(d.get("timezone") or "Asia/Seoul"),
-            telegram_enabled=bool(d.get("telegram_enabled", False)),
-            category=str(d.get("category") or ""),
+        raw_configs = d.get("configs")
+        if raw_configs is not None:
+            parsed = parse_digest_configs(raw_configs)
+            if parsed:
+                return parsed
+        legacy = legacy_flat_to_config(d)
+        return [legacy] if legacy else []
+
+    async def get_digest_config_by_id(
+        self, group_id: int, config_id: str
+    ) -> DigestScheduleConfig | None:
+        cid = (config_id or "").strip()
+        if not cid:
+            return None
+        for cfg in await self.get_digest_configs(group_id):
+            if cfg.id == cid:
+                return cfg
+        return None
+
+    async def get_digest_share_settings(self, group_id: int) -> DigestShareSettings:
+        d = await self.get_typed(group_id, "digest")
+        return DigestShareSettings(
             share_link_enabled=bool(d.get("share_link_enabled", True)),
         )
+
+    async def get_digest(self, group_id: int) -> DigestScheduleConfig:
+        """레거시 호환: 첫 번째 digest 설정 또는 기본값."""
+        configs = await self.get_digest_configs(group_id)
+        if configs:
+            return configs[0]
+        return DigestScheduleConfig(id="default", name="Digest 1")
 
     async def list_for_api(self, group_id: int, category: str) -> list[dict[str, Any]]:
         """API 응답용. 시크릿은 마스킹하여 반환."""

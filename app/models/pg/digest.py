@@ -20,6 +20,9 @@ class Digest(PgBase):
 
     period_type: Mapped[str] = mapped_column(Text, nullable=False, default="weekly")
     period_weeks: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    period_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    digest_config_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True

@@ -14,6 +14,9 @@ class DigestOut(BaseModel):
     digest_pk: int
     period_type: str
     period_weeks: int
+    period_days: Optional[int] = None
+    digest_config_id: Optional[str] = None
+    config_name: Optional[str] = None
     period_start: datetime
     period_end: datetime
     category: Optional[str]
@@ -36,5 +39,6 @@ class DigestOut(BaseModel):
 
 class DigestGenerateRequest(BaseModel):
     save: bool = True
-    period_weeks: Optional[int] = None
+    digest_config_id: Optional[str] = None
+    period_days: Optional[int] = None
     category: Optional[str] = None

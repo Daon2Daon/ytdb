@@ -180,6 +180,9 @@ class DataPlaneEngineManager:
                     ("videos", "notify_source", "text"),
                     ("digests", "share_token", "text"),
                     ("digests", "share_visibility", "text"),
+                    ("digests", "period_days", "integer"),
+                    ("digests", "digest_config_id", "text"),
+                    ("digests", "config_name", "text"),
                 ]
                 for tbl, col, coltype in additive_columns:
                     await conn.execute(

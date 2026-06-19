@@ -30,7 +30,7 @@ from app.services.job_logger import (
 from app.services.llm_client import LiteLLMClient
 from app.services.notify_service import send_telegram
 from app.services.settings_manager import get_settings_manager
-from app.services.settings_types import DigestSettings
+from app.services.settings_types import DigestScheduleConfig, period_label_from_days, period_type_from_days
 from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
@@ -207,15 +207,16 @@ class DigestGenerated:
     model_name: str
 
 
-def _period(as_of: datetime, weeks: int) -> tuple[datetime, datetime]:
-    """집계 기간 [start, end). end는 기준 시각(as_of)을 분 단위로 절삭한 값.
-
-    스케줄 발송에서는 as_of로 '발생 시각'을 넘겨 매 틱마다 동일한 경계가 나오게 해
-    중복 생성(dedup)이 안정적으로 동작하도록 한다.
-    """
+def _period(as_of: datetime, period_days: int) -> tuple[datetime, datetime]:
+    """집계 기간 [start, end). end는 기준 시각(as_of)을 분 단위로 절삭한 값."""
+    days = period_days if period_days in (1, 7, 30) else 7
     end = as_of.replace(second=0, microsecond=0)
-    start = end - timedelta(days=7 * max(1, weeks))
+    start = end - timedelta(days=days)
     return start, end
+
+
+def _fallback_headline(period_days: int) -> str:
+    return f"{period_label_from_days(period_days)} 리뷰 브리핑"
 
 
 def _period_label(period_start: datetime, period_end: datetime) -> str:
@@ -238,15 +239,33 @@ def _format_previous_digest(prev: Optional["Digest"]) -> str:
 async def _fetch_previous_digest(
     session: AsyncSession,
     *,
-    weeks: int,
+    period_days: int,
     category: Optional[str],
     before: datetime,
+    digest_config_id: Optional[str] = None,
 ) -> Optional["Digest"]:
-    """현재 기간 직전의 동일 카테고리·주기 리포트 1건."""
+    """현재 기간 직전의 동일 설정·주기 리포트 1건."""
+    if digest_config_id:
+        return (
+            await session.execute(
+                select(Digest)
+                .where(
+                    Digest.digest_config_id == digest_config_id,
+                    Digest.period_days == period_days,
+                    Digest.category == (category or None),
+                    Digest.period_end <= before,
+                    Digest.status.in_(["done", "fallback"]),
+                )
+                .order_by(Digest.period_end.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    weeks = max(1, period_days // 7)
     return (
         await session.execute(
             select(Digest)
             .where(
+                Digest.digest_config_id.is_(None),
                 Digest.period_type == "weekly",
                 Digest.period_weeks == weeks,
                 Digest.category == (category or None),
@@ -355,12 +374,21 @@ async def aggregate_period(
     )
 
 
-async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_start: datetime, period_end: datetime, category: str = "", previous_digest: str = "없음") -> DigestGenerated:
+async def synthesize_with_llm(
+    group_id: int,
+    aggregate: DigestAggregate,
+    period_start: datetime,
+    period_end: datetime,
+    category: str = "",
+    previous_digest: str = "없음",
+    digest_prompt: str = "",
+    period_days: int = 7,
+) -> DigestGenerated:
     mgr = get_settings_manager()
     ai = await mgr.get_ai_gateway(group_id)
     prompts = await mgr.get_prompts(group_id)
     model = ai.digest_model or ai.primary_model
-    prompt = (prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
+    prompt = (digest_prompt or prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
     period_label = _period_label(period_start, period_end)
     try:
         user_msg = prompt.format(
@@ -393,7 +421,7 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
         summary_md = str(data.get("summary_md") or "").strip()
         telegram_summary = str(data.get("telegram_summary") or "").strip()
         if not headline:
-            headline = "주간 리뷰 브리핑"
+            headline = _fallback_headline(period_days)
         if not summary_md:
             summary_md = f"- 분석 영상 수: {aggregate.video_count}\n- 감성 분포: {aggregate.sentiment_breakdown}"
         if not telegram_summary:
@@ -408,8 +436,10 @@ async def synthesize_with_llm(group_id: int, aggregate: DigestAggregate, period_
         await client.aclose()
 
 
-def _fallback_generated(aggregate: DigestAggregate, period_start: datetime, period_end: datetime) -> DigestGenerated:
-    headline = "주간 리뷰 브리핑 (Fallback)"
+def _fallback_generated(
+    aggregate: DigestAggregate, period_start: datetime, period_end: datetime, period_days: int = 7
+) -> DigestGenerated:
+    headline = f"{_fallback_headline(period_days)} (Fallback)"
     lines = [
         f"- 기간: {period_start.date()} ~ {period_end.date()}",
         f"- 분석 영상 수: {aggregate.video_count}",
@@ -481,8 +511,9 @@ async def _send_digest_telegram(
 
 async def generate_digest_for_group(
     group: Group,
-    digest_cfg: DigestSettings,
-    period_weeks: Optional[int] = None,
+    digest_cfg: DigestScheduleConfig,
+    *,
+    period_days: Optional[int] = None,
     category: Optional[str] = None,
     save: bool = True,
     as_of: Optional[datetime] = None,
@@ -491,18 +522,21 @@ async def generate_digest_for_group(
     engine = await dpm.get_engine_for_group(group)
     make_session = lambda: dpm.session_for_group(engine, group.schema_name)
 
-    weeks = max(1, int(period_weeks or digest_cfg.period_weeks or 1))
+    days = period_days if period_days in (1, 7, 30) else digest_cfg.period_days
+    if days not in (1, 7, 30):
+        days = 7
     cat = (category if category is not None else digest_cfg.category).strip()
     anchor = as_of or datetime.now(timezone.utc)
-    period_start, period_end = _period(anchor, weeks)
+    period_start, period_end = _period(anchor, days)
+    config_id = digest_cfg.id
 
     async with make_session() as session:
         if save:
             existing = (
                 await session.execute(
                     select(Digest).where(
-                        Digest.period_type == "weekly",
-                        Digest.period_weeks == weeks,
+                        Digest.digest_config_id == config_id,
+                        Digest.period_days == days,
                         Digest.period_start == period_start,
                         Digest.period_end == period_end,
                         Digest.category == (cat or None),
@@ -513,22 +547,38 @@ async def generate_digest_for_group(
                 return existing
 
         agg = await aggregate_period(session, period_start, period_end, cat)
-        prev = await _fetch_previous_digest(session, weeks=weeks, category=cat or None, before=period_start)
+        prev = await _fetch_previous_digest(
+            session,
+            period_days=days,
+            category=cat or None,
+            before=period_start,
+            digest_config_id=config_id,
+        )
         previous_digest = _format_previous_digest(prev)
         status = "done"
         error = None
         try:
             generated = await synthesize_with_llm(
-                group.group_id, agg, period_start, period_end, cat, previous_digest=previous_digest
+                group.group_id,
+                agg,
+                period_start,
+                period_end,
+                cat,
+                previous_digest=previous_digest,
+                digest_prompt=digest_cfg.digest_prompt,
+                period_days=days,
             )
         except Exception as e:
-            generated = _fallback_generated(agg, period_start, period_end)
+            generated = _fallback_generated(agg, period_start, period_end, days)
             status = "fallback"
             error = str(e)[:500]
 
         digest = Digest(
-            period_type="weekly",
-            period_weeks=weeks,
+            period_type=period_type_from_days(days),
+            period_weeks=max(1, days // 7),
+            period_days=days,
+            digest_config_id=config_id,
+            config_name=digest_cfg.name or None,
             period_start=period_start,
             period_end=period_end,
             category=cat or None,
@@ -552,16 +602,7 @@ async def generate_digest_for_group(
         return digest
 
 
-def _most_recent_occurrence(
-    now_local: datetime, schedule_day: str, schedule_time: str
-) -> Optional[datetime]:
-    """now_local(로컬 tz aware) 기준 (요일, HH:MM) 스케줄의 가장 최근 발생 시각.
-
-    이번 주 발생 시각이 아직 미래면 지난주로 보정한다. 형식 오류면 None.
-    매 틱마다 '정확히 그 분'에 맞아야 하는 _is_due_now와 달리, 발생 시각을
-    결정적으로 계산해 한 번이라도 늦거나 재시작으로 분을 놓쳐도 따라잡을 수 있다.
-    """
-    idx = _DAY_INDEX.get(schedule_day, 6)
+def _parse_schedule_time(schedule_time: str) -> tuple[int, int] | None:
     try:
         hh_str, mm_str = schedule_time.split(":")
         hh, mm = int(hh_str), int(mm_str)
@@ -569,6 +610,18 @@ def _most_recent_occurrence(
         return None
     if not (0 <= hh <= 23 and 0 <= mm <= 59):
         return None
+    return hh, mm
+
+
+def _most_recent_weekly(
+    now_local: datetime, schedule_day: str, schedule_time: str
+) -> Optional[datetime]:
+    """now_local(로컬 tz aware) 기준 (요일, HH:MM) 스케줄의 가장 최근 발생 시각."""
+    idx = _DAY_INDEX.get(schedule_day, 6)
+    parsed = _parse_schedule_time(schedule_time)
+    if parsed is None:
+        return None
+    hh, mm = parsed
     days_since = (now_local.weekday() - idx) % 7
     occ = (now_local - timedelta(days=days_since)).replace(
         hour=hh, minute=mm, second=0, microsecond=0
@@ -578,10 +631,71 @@ def _most_recent_occurrence(
     return occ
 
 
+def _most_recent_daily(now_local: datetime, schedule_time: str) -> Optional[datetime]:
+    parsed = _parse_schedule_time(schedule_time)
+    if parsed is None:
+        return None
+    hh, mm = parsed
+    occ = now_local.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if occ > now_local:
+        occ -= timedelta(days=1)
+    return occ
+
+
+def _clamp_dom(year: int, month: int, dom: int) -> int:
+    """dom이 해당 월 일수를 넘으면 월말로 clamp."""
+    import calendar
+
+    last = calendar.monthrange(year, month)[1]
+    return min(max(1, dom), last)
+
+
+def _most_recent_monthly(now_local: datetime, schedule_dom: int, schedule_time: str) -> Optional[datetime]:
+    parsed = _parse_schedule_time(schedule_time)
+    if parsed is None:
+        return None
+    hh, mm = parsed
+    dom = max(1, min(28, int(schedule_dom)))
+    day = _clamp_dom(now_local.year, now_local.month, dom)
+    occ = now_local.replace(day=day, hour=hh, minute=mm, second=0, microsecond=0)
+    if occ > now_local:
+        if now_local.month == 1:
+            prev_year, prev_month = now_local.year - 1, 12
+        else:
+            prev_year, prev_month = now_local.year, now_local.month - 1
+        prev_day = _clamp_dom(prev_year, prev_month, dom)
+        occ = occ.replace(year=prev_year, month=prev_month, day=prev_day)
+    return occ
+
+
+def compute_occurrence(cfg: DigestScheduleConfig, now_local: datetime) -> Optional[datetime]:
+    if cfg.period_days == 1:
+        return _most_recent_daily(now_local, cfg.schedule_time)
+    if cfg.period_days == 30:
+        return _most_recent_monthly(now_local, cfg.schedule_dom, cfg.schedule_time)
+    return _most_recent_weekly(now_local, cfg.schedule_day, cfg.schedule_time)
+
+
+def catch_up_window(cfg: DigestScheduleConfig) -> timedelta:
+    if cfg.period_days == 1:
+        return timedelta(days=1)
+    if cfg.period_days == 30:
+        return timedelta(days=31)
+    return timedelta(days=7)
+
+
+def _most_recent_occurrence(
+    now_local: datetime, schedule_day: str, schedule_time: str
+) -> Optional[datetime]:
+    """레거시 호환 alias."""
+    return _most_recent_weekly(now_local, schedule_day, schedule_time)
+
+
 async def _digest_exists_for_period(
     session: AsyncSession,
     *,
-    weeks: int,
+    digest_config_id: str,
+    period_days: int,
     period_start: datetime,
     period_end: datetime,
     category: Optional[str],
@@ -589,8 +703,8 @@ async def _digest_exists_for_period(
     found = (
         await session.execute(
             select(Digest.digest_pk).where(
-                Digest.period_type == "weekly",
-                Digest.period_weeks == weeks,
+                Digest.digest_config_id == digest_config_id,
+                Digest.period_days == period_days,
                 Digest.period_start == period_start,
                 Digest.period_end == period_end,
                 Digest.category == (category or None),
@@ -602,11 +716,7 @@ async def _digest_exists_for_period(
 
 
 async def run_digest_tick_once() -> None:
-    """매 1분 호출. 활성 그룹별로 '가장 최근 스케줄 발생분'이 아직 없으면 생성·발송한다.
-
-    분 단위 정확 일치가 아닌 '발생 시각 이후 미생성' 기준이라, 틱이 밀리거나 그 분에
-    앱이 재시작 중이어도 해당 주 리뷰를 건너뛰지 않는다(따라잡기). 발생분당 1회만 생성.
-    """
+    """매 1분 호출. 활성 그룹·설정별로 최근 스케줄 발생분이 없으면 생성·발송."""
     from zoneinfo import ZoneInfo
 
     sf = get_sessionmaker()
@@ -617,74 +727,77 @@ async def run_digest_tick_once() -> None:
         )
     for group in groups:
         try:
-            cfg = await mgr.get_digest(group.group_id)
-            if not cfg.enabled:
+            configs = await mgr.get_digest_configs(group.group_id)
+            share = await mgr.get_digest_share_settings(group.group_id)
+            if not configs:
                 continue
-            try:
-                tz = ZoneInfo(cfg.timezone)
-            except Exception:
-                tz = ZoneInfo("Asia/Seoul")
-            now_local = datetime.now(tz)
-            occ_local = _most_recent_occurrence(now_local, cfg.schedule_day, cfg.schedule_time)
-            if occ_local is None:
-                continue
-            # 발생 후 1주 이내만 따라잡기(앱이 오래 꺼져 있었더라도 폭주 없이 최근분 한 건만).
-            if now_local - occ_local > timedelta(days=7):
-                continue
+            for cfg in configs:
+                if not cfg.enabled:
+                    continue
+                try:
+                    tz = ZoneInfo(cfg.timezone)
+                except Exception:
+                    tz = ZoneInfo("Asia/Seoul")
+                now_local = datetime.now(tz)
+                occ_local = compute_occurrence(cfg, now_local)
+                if occ_local is None:
+                    continue
+                if now_local - occ_local > catch_up_window(cfg):
+                    continue
 
-            weeks = max(1, int(cfg.period_weeks or 1))
-            cat = (cfg.category or "").strip()
-            occ_utc = occ_local.astimezone(timezone.utc)
-            period_start, period_end = _period(occ_utc, weeks)
+                cat = (cfg.category or "").strip()
+                occ_utc = occ_local.astimezone(timezone.utc)
+                period_start, period_end = _period(occ_utc, cfg.period_days)
 
-            await dpm.ensure_schema(group)
-            engine = await dpm.get_engine_for_group(group)
-            make_session = lambda: dpm.session_for_group(engine, group.schema_name)
+                await dpm.ensure_schema(group)
+                engine = await dpm.get_engine_for_group(group)
+                make_session = lambda: dpm.session_for_group(engine, group.schema_name)
 
-            async with make_session() as session:
-                if await _digest_exists_for_period(
-                    session,
-                    weeks=weeks,
-                    period_start=period_start,
-                    period_end=period_end,
-                    category=cat or None,
-                ):
-                    continue  # 이번 발생분은 이미 생성됨 → 재생성·재발송 안 함
+                async with make_session() as session:
+                    if await _digest_exists_for_period(
+                        session,
+                        digest_config_id=cfg.id,
+                        period_days=cfg.period_days,
+                        period_start=period_start,
+                        period_end=period_end,
+                        category=cat or None,
+                    ):
+                        continue
 
-            timer = JobTimer()
-            try:
-                with timer:
-                    digest = await generate_digest_for_group(
-                        group, cfg, period_weeks=weeks, category=cat, save=True, as_of=occ_utc
-                    )
-                    if cfg.telegram_enabled and digest.telegram_summary:
-                        await _send_digest_telegram(
-                            group.group_id,
-                            digest.headline or "주간 리뷰",
-                            digest.telegram_summary,
-                            slug=group.slug,
-                            share_token=digest.share_token,
-                            share_link_enabled=cfg.share_link_enabled,
+                timer = JobTimer()
+                try:
+                    with timer:
+                        digest = await generate_digest_for_group(
+                            group, cfg, save=True, as_of=occ_utc
                         )
-                await write_job_log(
-                    make_session,
-                    job_type=JOB_TYPE_DIGEST,
-                    status=STATUS_SUCCESS if digest.status != "fallback" else STATUS_SKIP,
-                    message=(
-                        f"주간 리뷰 생성 — {digest.headline} (영상 {digest.video_count}건)"
-                        + (f" / LLM 실패 폴백: {digest.error}" if digest.status == "fallback" else "")
-                    ),
-                    duration_ms=timer.elapsed_ms,
-                )
-            except Exception as e:
-                await write_job_log(
-                    make_session,
-                    job_type=JOB_TYPE_DIGEST,
-                    status=STATUS_FAIL,
-                    message=f"주간 리뷰 생성 실패: {e}",
-                    duration_ms=timer.elapsed_ms,
-                )
-                print(f"[{group.slug}] digest tick 실패: {e}")
+                        if cfg.telegram_enabled and digest.telegram_summary:
+                            await _send_digest_telegram(
+                                group.group_id,
+                                digest.headline or _fallback_headline(cfg.period_days),
+                                digest.telegram_summary,
+                                slug=group.slug,
+                                share_token=digest.share_token,
+                                share_link_enabled=share.share_link_enabled,
+                            )
+                    await write_job_log(
+                        make_session,
+                        job_type=JOB_TYPE_DIGEST,
+                        status=STATUS_SUCCESS if digest.status != "fallback" else STATUS_SKIP,
+                        message=(
+                            f"{cfg.name or 'Digest'} 생성 — {digest.headline} (영상 {digest.video_count}건)"
+                            + (f" / LLM 실패 폴백: {digest.error}" if digest.status == "fallback" else "")
+                        ),
+                        duration_ms=timer.elapsed_ms,
+                    )
+                except Exception as e:
+                    await write_job_log(
+                        make_session,
+                        job_type=JOB_TYPE_DIGEST,
+                        status=STATUS_FAIL,
+                        message=f"{cfg.name or 'Digest'} 생성 실패: {e}",
+                        duration_ms=timer.elapsed_ms,
+                    )
+                    print(f"[{group.slug}] digest tick 실패 ({cfg.name}): {e}")
         except DBNotConfiguredError:
             continue
         except Exception as e:

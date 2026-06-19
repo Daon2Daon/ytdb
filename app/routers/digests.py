@@ -55,11 +55,20 @@ async def delete_digest(digest_pk: int, group: Group = Depends(get_group_or_404)
 async def generate_digest(
     payload: DigestGenerateRequest, group: Group = Depends(get_group_or_404)
 ) -> Digest:
-    cfg = await get_settings_manager().get_digest(group.group_id)
+    mgr = get_settings_manager()
+    if payload.digest_config_id:
+        cfg = await mgr.get_digest_config_by_id(group.group_id, payload.digest_config_id)
+        if cfg is None:
+            raise HTTPException(status_code=404, detail="digest 설정을 찾을 수 없습니다.")
+    else:
+        configs = await mgr.get_digest_configs(group.group_id)
+        if not configs:
+            raise HTTPException(status_code=400, detail="digest 설정이 없습니다. 설정에서 추가하세요.")
+        cfg = configs[0]
     digest = await generate_digest_for_group(
         group=group,
         digest_cfg=cfg,
-        period_weeks=payload.period_weeks,
+        period_days=payload.period_days,
         category=payload.category,
         save=payload.save,
     )

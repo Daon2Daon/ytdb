@@ -52,12 +52,7 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "dispatch_scope", "value": "after_activation", "value_type": "string"},
     ],
     "digest": [
-        {"key": "enabled", "value": "false", "value_type": "bool"},
-        {"key": "period_weeks", "value": "1", "value_type": "int"},
-        {"key": "schedule_day", "value": "sun", "value_type": "string"},
-        {"key": "schedule_time", "value": "20:00", "value_type": "string"},
-        {"key": "timezone", "value": "Asia/Seoul", "value_type": "string"},
-        {"key": "telegram_enabled", "value": "false", "value_type": "bool"},
+        {"key": "configs", "value": "[]", "value_type": "json"},
         {"key": "share_link_enabled", "value": "true", "value_type": "bool"},
     ],
     "prompts": [
