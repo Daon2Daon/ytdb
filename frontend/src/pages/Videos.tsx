@@ -221,7 +221,7 @@ export default function Videos() {
                   )}
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={v.analysis_status} />
-                    <NotifyBadge analysisStatus={v.analysis_status} notifiedAt={v.notified_at} />
+                    <NotifyBadge analysisStatus={v.analysis_status} notifiedAt={v.notified_at} notifySource={v.notify_source} />
                     {v.source_channel_name && (
                       <span className="text-xs text-purple-600 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
                         추가 · {v.source_channel_name}

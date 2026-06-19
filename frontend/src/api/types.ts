@@ -23,6 +23,7 @@ export interface Video {
   view_count: number | null
   analysis_status: 'pending' | 'processing' | 'done' | 'failed'
   notified_at: string | null
+  notify_source: 'telegram' | 'web' | null
   summary: VideoSummary | null
   source_channel_name: string | null
 }
@@ -97,6 +98,7 @@ export interface VideoDetail {
   analysis_status: 'pending' | 'processing' | 'done' | 'failed'
   analysis_error: string | null
   notified_at: string | null
+  notify_source: 'telegram' | 'web' | null
   source_channel_name: string | null
   retry_count: number | null
   tags: string[]
@@ -178,4 +180,5 @@ export interface VideoNotifyResponse {
   success: boolean
   message: string
   notified_at: string | null
+  notify_source: 'telegram' | 'web' | null
 }

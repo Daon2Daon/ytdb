@@ -28,8 +28,14 @@ from app.schemas.video import (
     VideoListItem,
 )
 from app.services.db_engine import data_plane_engine_manager as dpm
+from app.services.job_logger import JOB_TYPE_NOTIFY, STATUS_SKIP, write_job_log
 from app.services.monitor_service import analyze_specific_video
-from app.services.notify_service import notify_video
+from app.services.notify_service import (
+    NOTIFY_SOURCE_TELEGRAM,
+    NOTIFY_SOURCE_WEB,
+    mark_video_notified,
+    notify_video,
+)
 from app.services.settings_manager import get_settings_manager
 from app.services.youtube_api import YouTubeAPIClient, YouTubeAPIError
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
@@ -51,6 +57,7 @@ class VideoNotifyResponse(BaseModel):
     success: bool
     message: str
     notified_at: Optional[datetime] = None
+    notify_source: Optional[str] = None
 
 
 class NotifyPreviewResponse(BaseModel):
@@ -332,6 +339,7 @@ async def notify_video_now(
                 success=False,
                 message="이미 발송된 영상입니다. 재발송하려면 force=true로 요청하세요.",
                 notified_at=video.notified_at,
+                notify_source=video.notify_source,
             )
         channel_name = await _resolve_channel_name(session, video)
 
@@ -357,10 +365,57 @@ async def notify_video_now(
     now = datetime.now(timezone.utc)
     async with dpm.group_session(group) as write_session:
         async with write_session.begin():
-            await write_session.execute(
-                update(Video).where(Video.video_pk == video_pk).values(notified_at=now)
+            await mark_video_notified(write_session, video_pk, NOTIFY_SOURCE_TELEGRAM, now=now)
+    return VideoNotifyResponse(
+        success=True,
+        message=f"{sent}개 대상에 발송했습니다.",
+        notified_at=now,
+        notify_source=NOTIFY_SOURCE_TELEGRAM,
+    )
+
+
+@router.post("/{video_pk}/ack-notify", response_model=VideoNotifyResponse)
+async def ack_notify_video(
+    video_pk: int,
+    group: Group = Depends(get_group_or_404),
+) -> VideoNotifyResponse:
+    """Telegram 발송 없이 웹에서 확인 처리한다. 자동 발송 대상에서 제외된다."""
+    make_session = lambda: dpm.group_session(group)
+    async with dpm.group_session(group) as session:
+        video = (
+            await session.execute(select(Video).where(Video.video_pk == video_pk))
+        ).scalar_one_or_none()
+        if video is None:
+            raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
+        if video.analysis_status != "done":
+            raise HTTPException(
+                status_code=400, detail="분석이 완료된 영상만 확인 처리할 수 있습니다."
             )
-    return VideoNotifyResponse(success=True, message=f"{sent}개 대상에 발송했습니다.", notified_at=now)
+        if video.notified_at is not None:
+            return VideoNotifyResponse(
+                success=True,
+                message="이미 처리된 영상입니다.",
+                notified_at=video.notified_at,
+                notify_source=video.notify_source,
+            )
+
+    now = datetime.now(timezone.utc)
+    async with dpm.group_session(group) as write_session:
+        async with write_session.begin():
+            await mark_video_notified(write_session, video_pk, NOTIFY_SOURCE_WEB, now=now)
+    await write_job_log(
+        make_session,
+        job_type=JOB_TYPE_NOTIFY,
+        status=STATUS_SKIP,
+        message="웹 확인으로 발송 생략",
+        video_pk=video_pk,
+    )
+    return VideoNotifyResponse(
+        success=True,
+        message="웹에서 확인 처리했습니다. Telegram 발송은 생략됩니다.",
+        notified_at=now,
+        notify_source=NOTIFY_SOURCE_WEB,
+    )
 
 
 @router.get("/{video_pk}/notify-preview", response_model=NotifyPreviewResponse)

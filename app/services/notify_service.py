@@ -31,6 +31,9 @@ from app.services.settings_types import NotificationSettings
 
 MakeSession = Callable[[], AsyncSession]
 
+NOTIFY_SOURCE_TELEGRAM = "telegram"
+NOTIFY_SOURCE_WEB = "web"
+
 _TELEGRAM_API = "https://api.telegram.org"
 _TELEGRAM_MAX_LEN = 4096
 
@@ -355,6 +358,23 @@ def _matches_scheduled_time(now_local: datetime, scheduled_times: list[str]) -> 
     return cur in valid
 
 
+async def mark_video_notified(
+    session: AsyncSession,
+    video_pk: int,
+    source: str,
+    *,
+    now: datetime | None = None,
+) -> datetime:
+    """영상 알림 처리 완료를 기록한다. source는 telegram 또는 web."""
+    ts = now or datetime.now(timezone.utc)
+    await session.execute(
+        update(Video)
+        .where(Video.video_pk == video_pk)
+        .values(notified_at=ts, notify_source=source)
+    )
+    return ts
+
+
 async def send_telegram(
     client: httpx.AsyncClient,
     bot_token: str,
@@ -498,10 +518,8 @@ async def notify_pending_batch(
                         if ok:
                             async with make_session() as sess:
                                 async with sess.begin():
-                                    await sess.execute(
-                                        update(Video)
-                                        .where(Video.video_pk == video.video_pk)
-                                        .values(notified_at=datetime.now(timezone.utc))
+                                    await mark_video_notified(
+                                        sess, video.video_pk, NOTIFY_SOURCE_TELEGRAM
                                     )
                             sent += 1
                     except Exception as exc:

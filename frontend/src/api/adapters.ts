@@ -16,6 +16,7 @@ export function toVideo(raw: Record<string, any>): Video {
     view_count: raw.view_count ?? null,
     analysis_status: raw.analysis_status,
     notified_at: raw.notified_at ?? null,
+    notify_source: raw.notify_source ?? null,
     summary,
     source_channel_name: raw.source_channel_name ?? null,
   }
@@ -38,6 +39,7 @@ export function toVideoDetail(raw: Record<string, any>): VideoDetail {
     analysis_status: raw.analysis_status,
     analysis_error: raw.analysis_error ?? null,
     notified_at: raw.notified_at ?? null,
+    notify_source: raw.notify_source ?? null,
     source_channel_name: raw.source_channel_name ?? null,
     retry_count: raw.retry_count ?? null,
     tags: Array.isArray(raw.tags) ? raw.tags : [],

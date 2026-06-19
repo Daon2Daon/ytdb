@@ -177,6 +177,7 @@ class DataPlaneEngineManager:
                     ("video_analysis", "analysis_sections", "jsonb"),
                     ("videos", "share_token", "text"),
                     ("videos", "share_visibility", "text"),
+                    ("videos", "notify_source", "text"),
                     ("digests", "share_token", "text"),
                     ("digests", "share_visibility", "text"),
                 ]
@@ -187,6 +188,15 @@ class DataPlaneEngineManager:
                             f'ADD COLUMN IF NOT EXISTS "{col}" {coltype}'
                         )
                     )
+
+                # 레거시: Telegram 발송만 notified_at이 있던 행을 telegram으로 표시.
+                await conn.execute(
+                    text(
+                        f'UPDATE "{group.schema_name}"."videos" '
+                        f"SET notify_source = 'telegram' "
+                        f"WHERE notified_at IS NOT NULL AND notify_source IS NULL"
+                    )
+                )
 
                 await conn.execute(
                     text(

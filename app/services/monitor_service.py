@@ -38,7 +38,12 @@ from app.services.job_logger import (
     JobTimer,
     write_job_log,
 )
-from app.services.notify_service import notify_video
+from app.services.notify_service import (
+    NOTIFY_SOURCE_TELEGRAM,
+    NOTIFY_SOURCE_WEB,
+    mark_video_notified,
+    notify_video,
+)
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
@@ -487,11 +492,7 @@ async def _notify_after_analysis(
             )
         async with make_session() as sess:
             async with sess.begin():
-                await sess.execute(
-                    update(Video)
-                    .where(Video.video_pk == video_pk)
-                    .values(notified_at=datetime.now(timezone.utc))
-                )
+                await mark_video_notified(sess, video_pk, NOTIFY_SOURCE_TELEGRAM)
         await write_job_log(
             make_session,
             job_type=JOB_TYPE_NOTIFY,

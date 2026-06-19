@@ -40,6 +40,7 @@ class VideoListItem(BaseModel):
     view_count: Optional[int] = None
     analysis_status: str
     notified_at: Optional[datetime]
+    notify_source: Optional[str] = None
     source_channel_name: Optional[str] = None
     # 분석이 있으면 헤드라인/한 줄 요약을 함께 노출
     headline: Optional[str] = None
@@ -62,6 +63,7 @@ class VideoDetail(BaseModel):
     analysis_status: str
     analysis_error: Optional[str]
     notified_at: Optional[datetime]
+    notify_source: Optional[str] = None
     retry_count: int = 0
     source_channel_name: Optional[str] = None
     tags: list[str] = []

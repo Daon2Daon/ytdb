@@ -37,6 +37,8 @@ class Video(PgBase):
     analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # null | telegram | web — notified_at과 함께 설정. 레거시 행은 null일 수 있음.
+    notify_source: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 미등록 채널의 즉시 분석 시 원래 채널명 보존
     source_channel_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 공유 페이지 토큰/접근모드

@@ -37,6 +37,8 @@ export default function VideoDetail() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [notifying, setNotifying] = useState(false)
+  const [ackConfirm, setAckConfirm] = useState(false)
+  const [acknowledging, setAcknowledging] = useState(false)
   const [promptOpen, setPromptOpen] = useState(false)
   const [customPrompt, setCustomPrompt] = useState('')
   const [promptLoaded, setPromptLoaded] = useState(false)
@@ -100,7 +102,18 @@ export default function VideoDetail() {
       .then((r) => { if (!cancelled) setPreviewHtml(r.text || null) })
       .catch(() => { if (!cancelled) setPreviewHtml(null) })
     return () => { cancelled = true }
-  }, [videoPk, activeSlug, video?.analysis_status, video?.notified_at])
+  }, [videoPk, activeSlug, video?.analysis_status, video?.notified_at, video?.notify_source])
+
+  const notifyStatusLabel = () => {
+    if (!video?.notified_at) return null
+    if (video.notify_source === 'web') {
+      return `웹 확인 처리됨: ${dayjs(video.notified_at).format('MM/DD HH:mm')}`
+    }
+    if (video.notify_source === 'telegram') {
+      return `Telegram 발송됨: ${dayjs(video.notified_at).format('MM/DD HH:mm')}`
+    }
+    return `처리됨: ${dayjs(video.notified_at).format('MM/DD HH:mm')}`
+  }
 
   const handleDelete = async () => {
     if (!videoPk) return
@@ -145,7 +158,7 @@ export default function VideoDetail() {
   const handleNotify = async (force = false) => {
     if (!video) return
     if (video.analysis_status !== 'done') { alert('분석 완료 후 발송할 수 있습니다.'); return }
-    if (video.notified_at && !force && !window.confirm('이미 발송된 영상입니다. 다시 발송할까요?')) return
+    if (video.notified_at && !force && !window.confirm('이미 처리된 영상입니다. Telegram으로 다시 발송할까요?')) return
     setNotifying(true)
     try {
       const res = await videoApi(activeSlug).notify(Number(videoPk), force || Boolean(video.notified_at))
@@ -153,6 +166,21 @@ export default function VideoDetail() {
       alert(res.message)
     } catch (e) { alert((e as Error).message) }
     finally { setNotifying(false) }
+  }
+
+  const handleAckNotify = async () => {
+    if (!videoPk) return
+    setAcknowledging(true)
+    try {
+      const res = await videoApi(activeSlug).ackNotify(Number(videoPk))
+      await silentRefresh()
+      setAckConfirm(false)
+      alert(res.message)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setAcknowledging(false)
+    }
   }
 
   if (loading) return <Spinner />
@@ -199,10 +227,20 @@ export default function VideoDetail() {
                   >
                     {reanalyzing ? '분석 중...' : promptOpen ? '이 프롬프트로 재분석' : '재분석'}
                   </button>
-                  <button onClick={() => handleNotify(false)} disabled={notifying || reanalyzing || video.analysis_status !== 'done'}
+                  <button onClick={() => handleNotify(false)} disabled={notifying || acknowledging || reanalyzing || video.analysis_status !== 'done'}
                     className="px-3 py-1.5 bg-sky-50 text-sky-700 text-xs rounded-lg hover:bg-sky-100 disabled:opacity-60 font-medium">
                     {notifying ? '발송 중...' : video.notified_at ? 'Telegram 재발송' : 'Telegram 발송'}
                   </button>
+                  {!video.notified_at && video.analysis_status === 'done' && (
+                    <button
+                      type="button"
+                      onClick={() => setAckConfirm(true)}
+                      disabled={notifying || acknowledging || reanalyzing}
+                      className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs rounded-lg hover:bg-blue-100 disabled:opacity-60 font-medium"
+                    >
+                      {acknowledging ? '처리 중...' : '발송 생략 (웹 확인)'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setDeleteConfirm(true)}
@@ -387,7 +425,11 @@ export default function VideoDetail() {
               className="telegram-preview text-gray-100 whitespace-pre-wrap font-sans leading-relaxed max-h-80 overflow-y-auto border border-gray-600 rounded-lg p-3"
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
-            {video.notified_at && <p className="text-green-400">✅ 발송됨: {dayjs(video.notified_at).format('MM/DD HH:mm')}</p>}
+            {video.notified_at && (
+              <p className={video.notify_source === 'web' ? 'text-blue-400' : 'text-green-400'}>
+                {video.notify_source === 'web' ? '✓' : '✅'} {notifyStatusLabel()}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -402,6 +444,20 @@ export default function VideoDetail() {
           busyLabel="삭제 중..."
           onConfirm={handleDelete}
           onClose={() => setDeleteConfirm(false)}
+        />
+      )}
+
+      {ackConfirm && (
+        <ConfirmModal
+          title="발송 생략 (웹 확인)"
+          message="Telegram으로 보내지 않고 확인 처리합니다. 단체방 구독자에게는 전달되지 않으며, 자동 발송 대상에서도 제외됩니다."
+          detail={video.title}
+          confirmLabel="확인 처리"
+          busy={acknowledging}
+          busyLabel="처리 중..."
+          danger={false}
+          onConfirm={handleAckNotify}
+          onClose={() => setAckConfirm(false)}
         />
       )}
     </div>
