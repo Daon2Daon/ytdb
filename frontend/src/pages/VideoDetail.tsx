@@ -172,10 +172,9 @@ export default function VideoDetail() {
     if (!videoPk) return
     setAcknowledging(true)
     try {
-      const res = await videoApi(activeSlug).ackNotify(Number(videoPk))
+      await videoApi(activeSlug).ackNotify(Number(videoPk))
       await silentRefresh()
       setAckConfirm(false)
-      alert(res.message)
     } catch (e) {
       alert((e as Error).message)
     } finally {
@@ -203,11 +202,8 @@ export default function VideoDetail() {
               <img src={video.thumbnail_url} alt={video.title} className="w-full aspect-video object-cover" />
             )}
             <div className="p-4 sm:p-5 space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug min-w-0 flex-1 order-2 sm:order-1">
-                  {video.title}
-                </h1>
-                <div className="flex flex-wrap gap-2 shrink-0 order-1 sm:order-2 sm:justify-end">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2">
                   <a
                     href={video.video_url}
                     target="_blank"
@@ -250,15 +246,22 @@ export default function VideoDetail() {
                     삭제
                   </button>
                 </div>
+                {video.channel_name && (
+                  video.source_channel_name ? (
+                    <span className="inline-flex w-fit text-xs text-purple-600 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                      추가 · {video.channel_name}
+                    </span>
+                  ) : (
+                    <p className="text-sm font-medium text-gray-600">{video.channel_name}</p>
+                  )
+                )}
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug min-w-0">
+                  {video.title}
+                </h1>
               </div>
 
               <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
                 <StatusBadge status={video.analysis_status} />
-                {video.source_channel_name && (
-                  <span className="text-purple-600 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
-                    추가 · {video.source_channel_name}
-                  </span>
-                )}
                 <span>📅 {dayjs(video.published_at).format('YYYY-MM-DD HH:mm')}</span>
                 {video.view_count != null && <span>👁 {video.view_count.toLocaleString()}</span>}
                 {video.like_count != null && <span>👍 {video.like_count.toLocaleString()}</span>}

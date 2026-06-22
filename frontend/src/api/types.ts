@@ -100,6 +100,7 @@ export interface VideoDetail {
   notified_at: string | null
   notify_source: 'telegram' | 'web' | null
   source_channel_name: string | null
+  channel_name: string | null
   retry_count: number | null
   tags: string[]
   one_line: string | null

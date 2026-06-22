@@ -41,6 +41,7 @@ export function toVideoDetail(raw: Record<string, any>): VideoDetail {
     notified_at: raw.notified_at ?? null,
     notify_source: raw.notify_source ?? null,
     source_channel_name: raw.source_channel_name ?? null,
+    channel_name: raw.channel_name ?? null,
     retry_count: raw.retry_count ?? null,
     tags: Array.isArray(raw.tags) ? raw.tags : [],
     one_line: a?.one_line ?? null,

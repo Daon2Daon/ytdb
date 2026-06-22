@@ -62,6 +62,7 @@ describe('toVideoDetail', () => {
     expect(v.bullet_points).toEqual(['p1', 'p2'])
     expect(v.tags).toEqual(['반도체', 'AI'])
     expect(v.confidence_score).toBe(0.8)
+    expect(v.channel_name).toBeNull()
     expect(v.retry_count).toBeNull()
   })
 

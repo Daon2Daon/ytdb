@@ -133,6 +133,15 @@ async def _resolve_channel_name(session, video) -> str:
     return name
 
 
+async def _build_video_detail(session, video, *, analysis=None, tags: list[str] | None = None) -> VideoDetail:
+    detail = VideoDetail.model_validate(video)
+    detail.tags = tags or []
+    if analysis is not None:
+        detail.analysis = AnalysisOut.model_validate(analysis)
+    detail.channel_name = await _resolve_channel_name(session, video) or None
+    return detail
+
+
 @router.get("", response_model=list[VideoListItem] | PaginatedVideos)
 async def list_videos(
     group: Group = Depends(get_group_or_404),
@@ -245,11 +254,7 @@ async def get_video(
             ).scalars().all()
         )
 
-    detail = VideoDetail.model_validate(video)
-    detail.tags = tags
-    if analysis is not None:
-        detail.analysis = AnalysisOut.model_validate(analysis)
-    return detail
+        return await _build_video_detail(session, video, analysis=analysis, tags=tags)
 
 
 @router.post("/{video_pk}/reanalyze", response_model=VideoDetail)
@@ -268,7 +273,7 @@ async def reanalyze_video(
         video = (
             await session.execute(select(Video).where(Video.video_pk == video_pk))
         ).scalar_one()
-    return VideoDetail.model_validate(video)
+        return await _build_video_detail(session, video)
 
 
 @router.post("/{video_pk}/analyze-now", status_code=202)
