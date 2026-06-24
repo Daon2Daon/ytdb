@@ -28,7 +28,7 @@ function parseConfigsFromSettings(items: { key: string; value: string | null }[]
   if (!map.enabled && !map.period_weeks) return []
   return [{
     id: 'legacy',
-    name: '주간 리뷰',
+    name: '다이제스트',
     enabled: String(map.enabled).toLowerCase() === 'true',
     period_days: 7,
     schedule_time: map.schedule_time || '20:00',

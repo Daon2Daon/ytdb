@@ -92,7 +92,7 @@ def legacy_flat_to_config(d: dict[str, Any]) -> DigestScheduleConfig | None:
         schedule_day = "sun"
     return DigestScheduleConfig(
         id="legacy",
-        name="주간 리뷰",
+        name="다이제스트",
         enabled=bool(d.get("enabled", False)),
         period_days=max(7, weeks * 7),
         schedule_day=schedule_day,

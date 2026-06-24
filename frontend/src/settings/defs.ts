@@ -37,7 +37,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
   ],
   prompts: [
     { key: 'analysis_prompt', label: '분석 프롬프트', type: 'textarea' },
-    { key: 'digest_prompt', label: '주간 리뷰 프롬프트', type: 'textarea' },
+    { key: 'digest_prompt', label: '다이제스트 프롬프트', type: 'textarea' },
   ],
   database: [
     { key: 'host', label: '호스트' },

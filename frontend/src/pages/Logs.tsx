@@ -10,7 +10,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   channel_poll: '채널 모니터링',
   video_analyze: '영상 분석',
   notify: '텔레그램 알림',
-  digest: '주간 리뷰',
+  digest: '다이제스트',
   stats: '조회수 갱신',
   gateway_health: '게이트웨이 헬스',
 }

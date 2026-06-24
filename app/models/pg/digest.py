@@ -1,4 +1,4 @@
-"""데이터 평면: digests (주간 리뷰 결과)."""
+"""데이터 평면: digests (다이제스트 결과)."""
 
 from __future__ import annotations
 

@@ -309,8 +309,39 @@ export default function VideoDetail() {
             </details>
           )}
 
-          {/* 분석 결과 */}
-          {video.analysis_sections && video.analysis_sections.length > 0 ? (
+        {/* 요약 → 상세 분석 → 분석 정보 → 오류 */}
+        {(video.headline ||
+          video.one_line ||
+          video.short_summary_md ||
+          (video.bullet_points && video.bullet_points.length > 0)) && (
+          <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5 space-y-3">
+            <h2 className="font-semibold text-gray-800">요약</h2>
+            {video.headline && (
+              <p className="font-medium text-gray-900">{video.headline}</p>
+            )}
+            {video.one_line && (
+              <p className="text-sm text-gray-600 italic">{video.one_line}</p>
+            )}
+            {video.short_summary_md && (
+              <article className="prose prose-sm max-w-none text-gray-700 break-words">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{video.short_summary_md}</ReactMarkdown>
+              </article>
+            )}
+            {video.bullet_points && video.bullet_points.length > 0 && (
+              <ul className="space-y-1">
+                {video.bullet_points.map((bp, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-gray-700">
+                    <span className="text-blue-400 shrink-0">•</span>
+                    <span className="min-w-0 break-words">{bp}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* 분석 결과 */}
+        {video.analysis_sections && video.analysis_sections.length > 0 ? (
             <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5">
               <h2 className="font-semibold text-gray-800 mb-4">상세 분석</h2>
               <div className="space-y-5">
@@ -346,37 +377,6 @@ export default function VideoDetail() {
               <p>분석이 진행 중입니다...</p>
             </div>
           ) : null}
-
-        {/* 상세 분석 아래: 요약 → 분석 정보 → 오류 */}
-        {(video.headline ||
-          video.one_line ||
-          video.short_summary_md ||
-          (video.bullet_points && video.bullet_points.length > 0)) && (
-          <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5 space-y-3">
-            <h2 className="font-semibold text-gray-800">요약</h2>
-            {video.headline && (
-              <p className="font-medium text-gray-900">{video.headline}</p>
-            )}
-            {video.one_line && (
-              <p className="text-sm text-gray-600 italic">{video.one_line}</p>
-            )}
-            {video.short_summary_md && (
-              <article className="prose prose-sm max-w-none text-gray-700 break-words">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{video.short_summary_md}</ReactMarkdown>
-              </article>
-            )}
-            {video.bullet_points && video.bullet_points.length > 0 && (
-              <ul className="space-y-1">
-                {video.bullet_points.map((bp, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-gray-700">
-                    <span className="text-blue-400 shrink-0">•</span>
-                    <span className="min-w-0 break-words">{bp}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
 
         {(video.sentiment || video.confidence_score != null || video.model_name) && (
           <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5 space-y-3">
@@ -422,10 +422,13 @@ export default function VideoDetail() {
             백엔드 build_message가 렌더한 텔레그램 HTML(b/i/code/a 한정, 동적 내용은
             모두 이스케이프됨)을 그대로 표시한다. */}
         {previewHtml && (
-          <div className="bg-gray-800 rounded-xl p-4 text-gray-100 text-xs space-y-2 break-words">
-            <p className="text-gray-400 uppercase tracking-wide">Telegram 알림 미리보기</p>
+          <details className="group bg-gray-800 rounded-xl p-4 text-gray-100 text-xs space-y-2 break-words">
+            <summary className="text-gray-400 uppercase tracking-wide cursor-pointer select-none list-none flex items-center justify-between">
+              <span>Telegram 알림 미리보기</span>
+              <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
             <div
-              className="telegram-preview text-gray-100 whitespace-pre-wrap font-sans leading-relaxed max-h-80 overflow-y-auto border border-gray-600 rounded-lg p-3"
+              className="telegram-preview mt-2 text-gray-100 whitespace-pre-wrap font-sans leading-relaxed max-h-80 overflow-y-auto border border-gray-600 rounded-lg p-3"
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
             {video.notified_at && (
@@ -433,7 +436,7 @@ export default function VideoDetail() {
                 {video.notify_source === 'web' ? '✓' : '✅'} {notifyStatusLabel()}
               </p>
             )}
-          </div>
+          </details>
         )}
       </div>
 

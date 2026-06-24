@@ -1,4 +1,4 @@
-"""그룹 주간 리뷰(digests) API."""
+"""그룹 다이제스트(digests) API."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ async def get_digest(digest_pk: int, group: Group = Depends(get_group_or_404)) -
             await session.execute(select(Digest).where(Digest.digest_pk == digest_pk))
         ).scalar_one_or_none()
         if digest is None:
-            raise HTTPException(status_code=404, detail="주간 리뷰를 찾을 수 없습니다.")
+            raise HTTPException(status_code=404, detail="다이제스트를 찾을 수 없습니다.")
         return digest
 
 
@@ -47,7 +47,7 @@ async def delete_digest(digest_pk: int, group: Group = Depends(get_group_or_404)
                 await session.execute(select(Digest).where(Digest.digest_pk == digest_pk))
             ).scalar_one_or_none()
             if digest is None:
-                raise HTTPException(status_code=404, detail="주간 리뷰를 찾을 수 없습니다.")
+                raise HTTPException(status_code=404, detail="다이제스트를 찾을 수 없습니다.")
             await session.delete(digest)
 
 

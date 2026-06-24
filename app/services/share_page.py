@@ -83,7 +83,7 @@ def render_digest_share_html(
     category: Optional[str],
     canonical_url: str,
 ) -> str:
-    og_title = headline or "주간 리뷰"
+    og_title = headline or "다이제스트"
     og_desc = (summary_md or "").strip().replace("\n", " ")[:160]
     metas = [
         _meta("og:title", og_title),
@@ -113,7 +113,7 @@ def render_digest_share_html(
 </style>
 </head>
 <body>
-<h1>{escape(headline or "주간 리뷰")}</h1>
+<h1>{escape(headline or "다이제스트")}</h1>
 <p class="meta">{meta_line}</p>
 {body}
 </body>

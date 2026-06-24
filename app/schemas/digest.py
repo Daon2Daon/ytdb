@@ -1,4 +1,4 @@
-"""주간 리뷰(digest) 입출력 스키마."""
+"""다이제스트(digest) 입출력 스키마."""
 
 from __future__ import annotations
 

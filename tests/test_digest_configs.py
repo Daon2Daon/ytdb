@@ -31,7 +31,7 @@ def test_legacy_flat_to_config():
     )
     assert cfg is not None
     assert cfg.id == "legacy"
-    assert cfg.name == "주간 리뷰"
+    assert cfg.name == "다이제스트"
     assert cfg.period_days == 7
     assert cfg.schedule_day == "mon"
     assert cfg.enabled is True

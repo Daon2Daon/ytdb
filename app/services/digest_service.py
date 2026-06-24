@@ -1,4 +1,4 @@
-"""주간 리뷰(다이제스트) 생성 서비스."""
+"""다이제스트 생성 서비스."""
 
 from __future__ import annotations
 

@@ -38,13 +38,13 @@ export default function DigestDetail() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to={`/g/${activeSlug}/digests`} className="hover:text-blue-600">주간 리뷰</Link>
+        <Link to={`/g/${activeSlug}/digests`} className="hover:text-blue-600">다이제스트</Link>
         <span>/</span>
-        <span className="text-gray-700 truncate">{digest.headline || '주간 리뷰'}</span>
+        <span className="text-gray-700 truncate">{digest.headline || '다이제스트'}</span>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-5 space-y-2">
-        <h1 className="text-xl font-bold text-gray-900">{digest.headline || '주간 리뷰'}</h1>
+        <h1 className="text-xl font-bold text-gray-900">{digest.headline || '다이제스트'}</h1>
         <p className="text-sm text-gray-500">
           {dayjs(digest.period_start).format('YYYY-MM-DD')} ~ {dayjs(digest.period_end).format('YYYY-MM-DD')}
           {' · '}분석 영상 {digest.video_count}건 · 상태 {digest.status}
