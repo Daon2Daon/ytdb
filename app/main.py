@@ -27,6 +27,9 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_control_schema()
+    from app.services.auth_service import bootstrap_auth
+
+    await bootstrap_auth()
     from app.services.notify_service import backfill_notify_baselines
 
     try:
