@@ -17,7 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings as app_settings
 from app.control_db import ensure_control_schema
 from app.routers import actions, auth, channels, digests, groups, health, logs, settings, share, stats, tags, videos
-from app.routers.auth import require_auth
+from app.routers.auth import require_user
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
 
@@ -61,11 +61,11 @@ async def db_not_configured_handler(_request: Request, exc: DBNotConfiguredError
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-# 인증 라우터는 무인증(로그인/상태 확인). 나머지 데이터 라우터는 require_auth로 보호.
+# 인증 라우터는 무인증(로그인/상태 확인). 나머지 데이터 라우터는 require_user로 보호.
 app.include_router(auth.router)
 app.include_router(share.router)  # 공개 공유 페이지(무인증)
 
-_protected = [Depends(require_auth)]
+_protected = [Depends(require_user)]
 app.include_router(groups.router, dependencies=_protected)
 app.include_router(settings.router, dependencies=_protected)
 app.include_router(channels.router, dependencies=_protected)
