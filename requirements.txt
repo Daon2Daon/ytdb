@@ -23,6 +23,9 @@ isodate>=0.6.1
 # Secrets encryption
 cryptography>=42.0.0
 
+# 비밀번호 해시 (users 계정)
+argon2-cffi>=23.1.0
+
 # 세션 쿠키 서명 (Starlette SessionMiddleware)
 itsdangerous>=2.1.0
 
