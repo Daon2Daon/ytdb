@@ -57,11 +57,19 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 
 
 async def ensure_control_schema() -> None:
-    """app 스키마와 groups/settings 테이블을 멱등 생성한다."""
+    """app 스키마와 제어 평면 테이블을 멱등 생성한다."""
     # 모델을 임포트해 Base.metadata에 등록되도록 한다.
-    from app.models.control import group, setting  # noqa: F401
+    from app.models.control import group, invitation, plan, setting, user  # noqa: F401
 
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{APP_SCHEMA}"'))
         await conn.run_sync(Base.metadata.create_all)
+        # 기존 설치 업그레이드: create_all은 기존 테이블에 컬럼을 추가하지 않는다.
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".groups '
+                f"ADD COLUMN IF NOT EXISTS owner_user_id BIGINT "
+                f'REFERENCES "{APP_SCHEMA}".users(user_id)'
+            )
+        )
