@@ -162,20 +162,35 @@ CREATE TABLE app.prompt_presets (
 preset_id → 프리셋 본문으로 해석한다. 기존 admin 그룹의 직접 저장된 프롬프트는 그대로 인정
 (preset_id 없으면 기존 키 사용).
 
-### 2.7 telegram_links (공용 봇 연결)
+### 2.7 telegram_destinations (공용 봇 연결 — 개인 DM + 그룹채팅방)
 
 ```sql
-CREATE TABLE app.telegram_links (
-    user_id    BIGINT      PRIMARY KEY REFERENCES app.users(user_id) ON DELETE CASCADE,
+CREATE TABLE app.telegram_destinations (
+    dest_id    BIGSERIAL   PRIMARY KEY,
+    user_id    BIGINT      NOT NULL REFERENCES app.users(user_id) ON DELETE CASCADE,
     chat_id    TEXT        NOT NULL,
-    linked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    chat_type  TEXT        NOT NULL,   -- 'private' | 'group'  (채널은 추후)
+    title      TEXT,                   -- 그룹방 이름 (표시용)
+    linked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, chat_id)
 );
 ```
 
-연결 흐름: 마이페이지에서 "텔레그램 연결" 클릭 → 서버가 1회용 토큰 발급(메모리/짧은 TTL) →
-`t.me/<공용봇>?start=<토큰>` 딥링크 → 봇 getUpdates(또는 webhook)에서 `/start <토큰>` 수신 →
-chat_id를 계정에 바인딩. 사용자 그룹의 알림은 공용 봇 + 이 chat_id로 발송한다.
-사용자는 notification 설정에서 on/off·발송 모드·조용 시간만 편집한다.
+연결 흐름 — 두 경우 모두 사용자 입장에서 클릭 두 번이며, 봇 토큰·chat_id 개념 비노출:
+
+- **개인 DM(기본)**: 마이페이지 "텔레그램 연결" 클릭 → 서버가 1회용 토큰 발급(짧은 TTL) →
+  `t.me/<공용봇>?start=<토큰>` 딥링크 → 사용자가 "시작" 탭 → 봇이 `/start <토큰>` 수신 →
+  private chat_id 바인딩.
+- **그룹채팅방**: "그룹방에 연결" 클릭 → `t.me/<공용봇>?startgroup=<토큰>` 딥링크 →
+  텔레그램이 그룹 선택창 표시 → 선택 시 봇이 그룹에 추가되며 토큰이 담긴 `/start` 메시지가
+  자동 전송 → 그룹 chat_id 바인딩(title 저장). 봇이 그룹에서 제거되면(my_chat_member 수신)
+  해당 destination을 비활성/삭제 처리.
+- **채널**: 봇을 채널 관리자로 수동 추가해야 하고 바인딩 토큰 전달 경로가 없어 절차가
+  복잡하다. 일반 사용자 수요 대비 복잡도가 높아 **본 설계 범위에서 제외**(추후 고급 기능).
+
+봇 업데이트 수신은 getUpdates 폴링(또는 webhook) 워커 1개가 담당한다. 모니터링 그룹의
+notification 설정은 `dest_id`로 발송 대상을 선택한다(기본값: 첫 private destination).
+사용자는 notification 설정에서 발송 대상 선택·on/off·발송 모드·조용 시간만 편집한다.
 
 ### 2.8 groups 변경
 
