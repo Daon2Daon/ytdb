@@ -1079,6 +1079,9 @@ def test_signup_duplicate_email():
 
 
 def test_signup_short_password_rejected():
+    # 검증 실패(422) 경로도 get_session 의존성은 해석되므로, DB 없는 환경에서
+    # 엔진 생성 500을 피하기 위해 세션을 오버라이드한다(핸들러는 실행되지 않음).
+    override_session(FakeSession([]))
     r = _client().post("/api/auth/signup", json=_payload(password="short"))
     assert r.status_code == 422
 ```

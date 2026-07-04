@@ -14,9 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.control_db import get_session, get_sessionmaker
+from app.models.control.invitation import Invitation
 from app.models.control.user import User
-from app.schemas.auth import LoginRequest, MeResponse, UserOut
-from app.services.auth_service import is_auth_enabled, verify_password
+from app.schemas.auth import LoginRequest, MeResponse, SignupRequest, UserOut
+from app.services.auth_service import hash_password, is_auth_enabled, set_users_exist, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -110,3 +111,39 @@ async def login(
 @router.post("/logout", status_code=204)
 async def logout(request: Request) -> None:
     request.session.clear()
+
+
+@router.post("/signup", response_model=UserOut, status_code=201)
+async def signup(
+    payload: SignupRequest, request: Request, session: AsyncSession = Depends(get_session)
+) -> UserOut:
+    """초대 토큰으로 가입. 성공 시 초대 소진 + 자동 로그인."""
+    result = await session.execute(
+        select(Invitation).where(Invitation.token == payload.token)
+    )
+    invite = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if invite is None or invite.used_at is not None or invite.expires_at <= now:
+        raise HTTPException(status_code=400, detail="유효하지 않거나 만료된 초대입니다.")
+
+    dup = await session.execute(select(User).where(User.email == payload.email))
+    if dup.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="이미 가입된 이메일입니다.")
+
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        display_name=payload.display_name,
+        role="user",
+        status="active",
+        plan_id=invite.plan_id,
+    )
+    session.add(user)
+    await session.flush()
+    invite.used_by = user.user_id
+    invite.used_at = now
+    await session.commit()
+
+    set_users_exist(True)
+    request.session["user_id"] = user.user_id
+    return UserOut(email=user.email, display_name=user.display_name, role=user.role)
