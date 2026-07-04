@@ -14,7 +14,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       setState(await authApi.me())
     } catch {
       // /me 자체가 실패하면 로그인 필요로 간주.
-      setState({ auth_enabled: true, authenticated: false, username: null })
+      setState({ auth_enabled: true, authenticated: false, user: null })
     } finally {
       setLoading(false)
     }
@@ -25,7 +25,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   // 세션 만료(임의 API 401) 시 로그인 화면으로 전환.
   useEffect(() => {
     setUnauthorizedHandler(() =>
-      setState((s) => (s ? { ...s, authenticated: false, username: null } : s)),
+      setState((s) => (s ? { ...s, authenticated: false, user: null } : s)),
     )
     return () => setUnauthorizedHandler(null)
   }, [])
@@ -36,7 +36,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     } catch {
       /* 무시 */
     }
-    setState((s) => (s ? { ...s, authenticated: false, username: null } : s))
+    setState((s) => (s ? { ...s, authenticated: false, user: null } : s))
   }, [])
 
   if (loading || !state) return <Spinner />
@@ -46,7 +46,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   }
 
   return (
-    <AuthContext.Provider value={{ username: state.username, authEnabled: state.auth_enabled, logout }}>
+    <AuthContext.Provider value={{ user: state.user, authEnabled: state.auth_enabled, logout }}>
       {children}
     </AuthContext.Provider>
   )

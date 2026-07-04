@@ -19,7 +19,7 @@ const SETTINGS_DEFAULT = SETTING_CATEGORIES[0].key
 
 export default function Layout() {
   const { groups, activeSlug, activeGroup } = useGroup()
-  const { authEnabled, username, logout } = useAuth()
+  const { authEnabled, user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [groupModal, setGroupModal] = useState<null | 'new' | 'edit'>(null)
@@ -50,7 +50,10 @@ export default function Layout() {
           <span className="font-bold text-gray-800 whitespace-nowrap">Youtube Monitor</span>
           {authEnabled && (
             <div className="flex items-center gap-2 sm:hidden">
-              {username && <span className="text-xs text-gray-400">{username}</span>}
+              {user && <span className="text-xs text-gray-400">{user.display_name || user.email}</span>}
+              {user?.role === 'admin' && (
+                <a href="/admin" className="text-xs text-amber-600 hover:underline">관리자</a>
+              )}
               <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
             </div>
           )}
@@ -75,7 +78,10 @@ export default function Layout() {
         {/* 계정(데스크톱 전용): 오른쪽 끝 정렬 */}
         {authEnabled && (
           <div className="ml-auto hidden sm:flex items-center gap-2">
-            {username && <span className="text-xs text-gray-400">{username}</span>}
+            {user && <span className="text-xs text-gray-400">{user.display_name || user.email}</span>}
+            {user?.role === 'admin' && (
+              <a href="/admin" className="text-xs text-amber-600 hover:underline">관리자</a>
+            )}
             <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
           </div>
         )}

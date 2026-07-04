@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react'
+import type { AuthUser } from '../api/auth'
 
 export interface AuthContextValue {
-  username: string | null
+  user: AuthUser | null
   authEnabled: boolean
   logout: () => Promise<void>
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { authApi } from '../api/auth'
 
 export default function Login({ onLoggedIn }: { onLoggedIn: () => void | Promise<void> }) {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -12,7 +12,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void | Promise
     setBusy(true)
     setError(null)
     try {
-      await authApi.login(username, password)
+      await authApi.login(email, password)
       await onLoggedIn()
     } catch (err) {
       setError((err as Error).message || '로그인에 실패했습니다.')
@@ -29,12 +29,13 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void | Promise
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
         )}
         <div>
-          <label className="block text-sm text-gray-600 mb-1">아이디</label>
+          <label className="block text-sm text-gray-600 mb-1">이메일</label>
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             autoFocus
-            autoComplete="username"
+            autoComplete="email"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -50,11 +51,14 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void | Promise
         </div>
         <button
           type="submit"
-          disabled={busy || !username || !password}
+          disabled={busy || !email || !password}
           className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
         >
           {busy ? '로그인 중...' : '로그인'}
         </button>
+        <p className="text-xs text-gray-400">
+          계정이 없나요? 초대 링크를 통해 가입할 수 있습니다.
+        </p>
       </form>
     </div>
   )

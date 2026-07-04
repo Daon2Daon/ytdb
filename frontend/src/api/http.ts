@@ -52,4 +52,5 @@ export const rootApi = {
     }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(`/api${path}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  del: <T>(path: string) => request<T>(`/api${path}`, { method: 'DELETE' }),
 }
