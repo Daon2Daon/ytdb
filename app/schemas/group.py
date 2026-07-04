@@ -12,7 +12,8 @@ SLUG_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 class GroupCreate(BaseModel):
-    slug: str
+    # 관리자는 지정, 일반 사용자는 서버가 자동 생성(값 무시).
+    slug: Optional[str] = None
     name: str
     # 미지정 시 'youtube_{slug}' 로 자동 생성
     schema_name: Optional[str] = None
@@ -20,7 +21,9 @@ class GroupCreate(BaseModel):
 
     @field_validator("slug")
     @classmethod
-    def _check_slug(cls, v: str) -> str:
+    def _check_slug(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         v = v.strip().lower()
         if not SLUG_RE.fullmatch(v):
             raise ValueError("slug는 소문자/숫자/밑줄(a-z0-9_)만 허용합니다.")
@@ -51,6 +54,7 @@ class GroupOut(BaseModel):
     name: str
     schema_name: str
     is_active: bool
+    owner_user_id: Optional[int] = None
     description: Optional[str]
     created_at: datetime
     updated_at: datetime
