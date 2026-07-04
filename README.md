@@ -29,6 +29,13 @@ uvicorn app.main:app --reload
 - API 문서: `http://localhost:8000/docs`
 - 헬스체크: `GET /health`
 
+## 계정
+
+- 최초 부팅 시 `.env`의 `AUTH_USERNAME`/`AUTH_PASSWORD`로 admin 계정이 자동 생성된다
+  (로그인 ID는 이메일 형식 — `AUTH_USERNAME`이 이메일이 아니면 `{username}@local`).
+- 일반 사용자는 관리자가 발급한 초대 링크(`/signup?token=...`)로 가입한다.
+- `AUTH_PASSWORD` 미설정 + 사용자 0명이면 인증 비활성(개발 모드).
+
 ## 구조 (P1)
 
 ```
