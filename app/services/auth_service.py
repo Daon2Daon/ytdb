@@ -66,7 +66,8 @@ PLAN_SEEDS: list[dict] = [
     {
         "slug": "unlimited", "name": "Unlimited", "max_groups": 1000,
         "max_channels_total": 100000, "max_analyses_per_day": 100000,
-        "max_video_minutes": 100000, "monthly_cost_budget_usd": "1000000.0",
+        # NUMERIC(10,4) 컬럼의 최대값(10^6 미만)에 맞춘 사실상의 무제한 값.
+        "max_video_minutes": 100000, "monthly_cost_budget_usd": "999999.9999",
         "min_poll_interval_min": 1, "is_default": False,
     },
 ]
