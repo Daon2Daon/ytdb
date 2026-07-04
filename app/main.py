@@ -16,7 +16,21 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings as app_settings
 from app.control_db import ensure_control_schema
-from app.routers import actions, auth, channels, digests, groups, health, logs, settings, share, stats, tags, videos
+from app.routers import (
+    actions,
+    admin,
+    auth,
+    channels,
+    digests,
+    groups,
+    health,
+    logs,
+    settings,
+    share,
+    stats,
+    tags,
+    videos,
+)
 from app.routers.auth import require_user
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
@@ -76,6 +90,7 @@ app.include_router(actions.router, dependencies=_protected)
 app.include_router(logs.router, dependencies=_protected)
 app.include_router(stats.router, dependencies=_protected)
 app.include_router(health.router, dependencies=_protected)
+app.include_router(admin.router)  # 자체적으로 require_admin 의존성을 가짐
 
 
 @app.get("/health", tags=["meta"])
