@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
+import Admin from './pages/Admin'
 import Dashboard from './pages/Dashboard'
 import Channels from './pages/Channels'
 import Videos from './pages/Videos'
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
       </Route>
+      <Route path="/admin" element={<Admin />} />
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
     </Routes>
