@@ -59,7 +59,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def ensure_control_schema() -> None:
     """app 스키마와 제어 평면 테이블을 멱등 생성한다."""
     # 모델을 임포트해 Base.metadata에 등록되도록 한다.
-    from app.models.control import group, invitation, plan, setting, user  # noqa: F401
+    from app.models.control import group, invitation, plan, prompt_preset, setting, user  # noqa: F401
 
     engine = get_engine()
     async with engine.begin() as conn:
