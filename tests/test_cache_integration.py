@@ -38,3 +38,12 @@ def test_build_analysis_pipeline_accepts_resolved_param():
 
     params = inspect.signature(build_analysis_pipeline).parameters
     assert "resolved" in params
+
+
+def test_should_use_cache_matrix():
+    from app.services.monitor_service import _should_use_cache
+
+    assert _should_use_cache(preset_id=7, custom_prompt=None) is True
+    assert _should_use_cache(preset_id=None, custom_prompt=None) is False   # 직접 프롬프트
+    assert _should_use_cache(preset_id=7, custom_prompt="커스텀") is False  # 즉시 분석 오버라이드
+    assert _should_use_cache(preset_id=None, custom_prompt="커스텀") is False

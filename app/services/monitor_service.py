@@ -25,7 +25,13 @@ from app.models.pg.channel import Channel
 from app.models.pg.deleted_video import DeletedVideo
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
-from app.services.analyzer import build_analysis_pipeline
+from app.services.analysis_cache_service import (
+    claim_or_get_cached,
+    complete_cached,
+    fail_cached,
+    record_delivery_for,
+)
+from app.services.analyzer import build_analysis_pipeline, result_from_cache, save_analysis_to_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
@@ -44,6 +50,7 @@ from app.services.notify_service import (
     mark_video_notified,
     notify_video,
 )
+from app.services.preset_service import ResolvedPrompts, resolve_prompts
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
@@ -515,6 +522,11 @@ async def _notify_after_analysis(
         )
 
 
+def _should_use_cache(preset_id: Optional[int], custom_prompt: Optional[str]) -> bool:
+    """프리셋 그룹만 공유 캐시에 참여. 직접 프롬프트/커스텀 오버라이드는 기존 경로."""
+    return preset_id is not None and not custom_prompt
+
+
 async def _run_analysis(
     group: Group,
     make_session: MakeSession,
@@ -525,35 +537,48 @@ async def _run_analysis(
 ) -> None:
     """단일 영상 분석 실행 + 성공/실패 로깅 + 커밋 후 알림.
 
-    스케줄 분석(_analyze_group)과 즉시 분석(analyze_specific_video) 공용 경로.
-    실패 시 메인 트랜잭션이 롤백되므로 별도 세션으로 failed 상태/재시도를 기록한다.
+    프리셋 그룹은 공유 분석 캐시(§2.9)를 경유한다: 적중 시 LLM 호출 없이 복사,
+    미스 시 선점 후 1회 분석 + 캐시 기록. 직접 프롬프트/커스텀 오버라이드는
+    기존 경로 그대로.
     """
+    resolved = await resolve_prompts(group.group_id)
+
+    # 영상 메타 조회 (양 경로 공용)
+    async with make_session() as sess:
+        video = (
+            await sess.execute(select(Video).where(Video.video_pk == video_pk))
+        ).scalar_one_or_none()
+        if not video:
+            return
+        channel = (
+            await sess.execute(
+                select(Channel).where(Channel.channel_pk == video.channel_pk)
+            )
+        ).scalar_one_or_none()
+    title, channel_pk = video.title, video.channel_pk
+    channel_name = channel.channel_name if channel else ""
+
+    if _should_use_cache(resolved.preset_id, custom_prompt):
+        await _run_analysis_cached(
+            group, make_session, video, channel_name, resolved,
+            channel_pk=channel_pk, label=label,
+        )
+        return
+
+    # ── 기존 경로 (직접 프롬프트 / 커스텀 오버라이드) ──────────────────────────
     pipeline = await build_analysis_pipeline(
-        group.group_id, analysis_prompt_override=custom_prompt
+        group.group_id, analysis_prompt_override=custom_prompt, resolved=resolved
     )
     timer = JobTimer()
-    title: Optional[str] = None
-    channel_pk: Optional[int] = None
     try:
         with timer:
             async with make_session() as sess:
                 async with sess.begin():
-                    video = (
-                        await sess.execute(select(Video).where(Video.video_pk == video_pk))
-                    ).scalar_one_or_none()
-                    if not video:
-                        return
-                    title, channel_pk = video.title, video.channel_pk
-                    channel = (
-                        await sess.execute(
-                            select(Channel).where(Channel.channel_pk == video.channel_pk)
-                        )
-                    ).scalar_one_or_none()
                     await pipeline.run_and_save(
                         session=sess,
                         video_pk=video_pk,
                         video_url=video.video_url,
-                        channel_name=channel.channel_name if channel else "",
+                        channel_name=channel_name,
                         published_at_str=video.published_at.isoformat(),
                         duration_seconds=video.duration_seconds,
                     )
@@ -569,20 +594,7 @@ async def _run_analysis(
         await _notify_after_analysis(group, make_session, video_pk, channel_pk)
     except Exception as e:
         print(f"[{group.slug}] {label} 실패 (video_pk={video_pk}): {e}")
-        try:
-            async with make_session() as fs:
-                async with fs.begin():
-                    await fs.execute(
-                        update(Video)
-                        .where(Video.video_pk == video_pk)
-                        .values(
-                            analysis_status="failed",
-                            analysis_error=str(e)[:500],
-                            retry_count=Video.retry_count + 1,
-                        )
-                    )
-        except Exception as upd:
-            print(f"[{group.slug}] {label} 실패 상태 기록 오류 (video_pk={video_pk}): {upd}")
+        await _mark_video_failed(group, make_session, video_pk, e, label)
         await write_job_log(
             make_session,
             job_type=JOB_TYPE_VIDEO_ANALYZE,
@@ -594,6 +606,154 @@ async def _run_analysis(
         )
     finally:
         await pipeline.aclose()
+
+
+async def _mark_video_failed(
+    group: Group, make_session: MakeSession, video_pk: int, e: Exception, label: str
+) -> None:
+    """분석 실패 상태 기록 (기존 _run_analysis except 블록에서 추출)."""
+    try:
+        async with make_session() as fs:
+            async with fs.begin():
+                await fs.execute(
+                    update(Video)
+                    .where(Video.video_pk == video_pk)
+                    .values(
+                        analysis_status="failed",
+                        analysis_error=str(e)[:500],
+                        retry_count=Video.retry_count + 1,
+                    )
+                )
+    except Exception as upd:
+        print(f"[{group.slug}] {label} 실패 상태 기록 오류 (video_pk={video_pk}): {upd}")
+
+
+async def _run_analysis_cached(
+    group: Group,
+    make_session: MakeSession,
+    video: Video,
+    channel_name: str,
+    resolved: ResolvedPrompts,
+    *,
+    channel_pk: Optional[int],
+    label: str,
+) -> None:
+    """공유 캐시 경유 분석. 적중=복사, 선점=1회 분석+캐시 기록, 진행중=다음 틱 연기."""
+    mgr = get_settings_manager()
+    ai = await mgr.get_ai_gateway(group.group_id)
+    video_pk = video.video_pk
+    assert resolved.preset_id is not None
+
+    outcome = await claim_or_get_cached(video.video_id, resolved.preset_id, ai.primary_model)
+
+    if outcome.kind == "in_progress":
+        # 다른 워커가 분석 중 — 영상을 pending으로 되돌려 다음 틱에 캐시 적중을 노린다.
+        async with make_session() as sess:
+            async with sess.begin():
+                await sess.execute(
+                    update(Video)
+                    .where(Video.video_pk == video_pk)
+                    .values(analysis_status="pending")
+                )
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_SKIP,
+            message="공유 캐시 분석 진행 중 — 다음 틱 재시도",
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
+    timer = JobTimer()
+    if outcome.kind == "hit":
+        try:
+            with timer:
+                result = result_from_cache(
+                    outcome.analysis or {}, model_name=ai.primary_model, gateway_url=ai.base_url
+                )
+                async with make_session() as sess:
+                    async with sess.begin():
+                        await save_analysis_to_group(sess, video_pk, result)
+            await _record_delivery_safe(group, outcome.cache_id)
+            await write_job_log(
+                make_session,
+                job_type=JOB_TYPE_VIDEO_ANALYZE,
+                status=STATUS_SUCCESS,
+                message=f"{label} 완료(캐시 적중) - {video.title}",
+                duration_ms=timer.elapsed_ms,
+                channel_pk=channel_pk,
+                video_pk=video_pk,
+            )
+            await _notify_after_analysis(group, make_session, video_pk, channel_pk)
+        except Exception as e:
+            print(f"[{group.slug}] 캐시 복사 실패 (video_pk={video_pk}): {e}")
+            await _mark_video_failed(group, make_session, video_pk, e, label)
+            await write_job_log(
+                make_session,
+                job_type=JOB_TYPE_VIDEO_ANALYZE,
+                status=STATUS_FAIL,
+                message=f"캐시 복사 실패: {e}",
+                duration_ms=timer.elapsed_ms,
+                channel_pk=channel_pk,
+                video_pk=video_pk,
+            )
+        return
+
+    # outcome.kind == "claimed" — 이 워커가 분석 수행권을 가진다.
+    pipeline = await build_analysis_pipeline(group.group_id, resolved=resolved)
+    try:
+        with timer:
+            async with make_session() as sess:
+                async with sess.begin():
+                    result = await pipeline.run_and_save(
+                        session=sess,
+                        video_pk=video_pk,
+                        video_url=video.video_url,
+                        channel_name=channel_name,
+                        published_at_str=video.published_at.isoformat(),
+                        duration_seconds=video.duration_seconds,
+                    )
+        await complete_cached(outcome.cache_id, result.data)
+        await _record_delivery_safe(group, outcome.cache_id)
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_SUCCESS,
+            message=f"{label} 완료(캐시 신규) - {video.title}",
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        await _notify_after_analysis(group, make_session, video_pk, channel_pk)
+    except Exception as e:
+        print(f"[{group.slug}] {label} 실패 (video_pk={video_pk}): {e}")
+        try:
+            await fail_cached(outcome.cache_id)
+        except Exception as ce:
+            print(f"[{group.slug}] 캐시 실패 기록 오류 (cache_id={outcome.cache_id}): {ce}")
+        await _mark_video_failed(group, make_session, video_pk, e, label)
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_FAIL,
+            message=str(e),
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+    finally:
+        await pipeline.aclose()
+
+
+async def _record_delivery_safe(group: Group, cache_id: Optional[int]) -> None:
+    """전달 원장 기록. 실패해도 분석 흐름을 깨지 않는다(원장은 쿼터/과금용 부가 데이터)."""
+    if cache_id is None or group.owner_user_id is None:
+        return
+    try:
+        await record_delivery_for(group.owner_user_id, group.group_id, cache_id)
+    except Exception as e:
+        print(f"[{group.slug}] 전달 원장 기록 실패 (cache_id={cache_id}): {e}")
 
 
 async def _analyze_group(group: Group) -> None:
