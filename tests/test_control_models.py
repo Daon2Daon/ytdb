@@ -34,3 +34,24 @@ def test_invitation_columns():
 
 def test_group_has_owner():
     assert "owner_user_id" in {c.name for c in Group.__table__.columns}
+
+
+def test_b0b_tables_registered():
+    """B-0b 테이블 3개가 Base.metadata에 app 스키마로 등록된다."""
+    from app.models.control.channel_registry import ChannelRegistry
+    from app.models.control.channel_subscription import ChannelSubscription
+    from app.models.control.global_setting import GlobalSetting
+
+    assert ChannelRegistry.__table__.schema == "app"
+    assert ChannelSubscription.__table__.schema == "app"
+    assert GlobalSetting.__table__.schema == "app"
+
+    # 비정규화 컬럼은 NOT NULL (스펙 §2 — 동기화 시점에 유효값 해석 완료)
+    sub = ChannelSubscription.__table__
+    assert sub.c.poll_interval_min.nullable is False
+    assert sub.c.window_hours.nullable is False
+    # 복합 PK
+    assert {c.name for c in sub.primary_key.columns} == {"channel_id", "group_id"}
+    # 그룹 삭제 캐스케이드 백스톱
+    fk_group = next(fk for fk in sub.c.group_id.foreign_keys)
+    assert fk_group.ondelete == "CASCADE"
