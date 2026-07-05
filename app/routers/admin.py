@@ -12,9 +12,19 @@ from app.config import settings as app_settings
 from app.control_db import get_session
 from app.models.control.invitation import Invitation
 from app.models.control.plan import Plan
+from app.models.control.prompt_preset import PromptPreset
 from app.models.control.user import User
 from app.routers.auth import CurrentUser, require_admin
-from app.schemas.admin import AdminUserOut, InviteCreate, InviteCreated, InviteOut, PlanOut
+from app.schemas.admin import (
+    AdminUserOut,
+    InviteCreate,
+    InviteCreated,
+    InviteOut,
+    PlanOut,
+    PresetCreate,
+    PresetOut,
+    PresetPatch,
+)
 from app.services.auth_service import generate_invite_token
 
 router = APIRouter(
@@ -89,3 +99,41 @@ async def revoke_invitation(
         raise HTTPException(status_code=400, detail="이미 사용된 초대는 회수할 수 없습니다.")
     await session.delete(invite)
     await session.commit()
+
+
+@router.get("/presets", response_model=list[PresetOut])
+async def list_presets(session: AsyncSession = Depends(get_session)) -> list[PromptPreset]:
+    result = await session.execute(select(PromptPreset).order_by(PromptPreset.preset_id.desc()))
+    return list(result.scalars().all())
+
+
+@router.post("/presets", response_model=PresetOut, status_code=201)
+async def create_preset(
+    payload: PresetCreate, session: AsyncSession = Depends(get_session)
+) -> PromptPreset:
+    preset = PromptPreset(
+        name=payload.name,
+        description=payload.description,
+        analysis_prompt=payload.analysis_prompt,
+        digest_prompt=payload.digest_prompt,
+        is_active=True,
+    )
+    session.add(preset)
+    await session.commit()
+    await session.refresh(preset)
+    return preset
+
+
+@router.patch("/presets/{preset_id}", response_model=PresetOut)
+async def patch_preset(
+    preset_id: int, payload: PresetPatch, session: AsyncSession = Depends(get_session)
+) -> PromptPreset:
+    preset = await session.get(PromptPreset, preset_id)
+    if preset is None:
+        raise HTTPException(status_code=404, detail="프리셋을 찾을 수 없습니다.")
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(preset, field, value)
+    await session.commit()
+    await session.refresh(preset)
+    return preset

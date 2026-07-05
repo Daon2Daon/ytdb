@@ -56,3 +56,34 @@ class InviteOut(BaseModel):
 
 class InviteCreated(InviteOut):
     signup_url: str
+
+
+class PresetCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    analysis_prompt: str
+    digest_prompt: str = ""
+
+
+class PresetPatch(BaseModel):
+    """프리셋 본문(analysis_prompt/digest_prompt)은 불변 — 여기 두지 않는다(스펙 §8).
+
+    본문 변경은 새 프리셋 생성 + 구버전 is_active=false로 처리한다.
+    """
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PresetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    preset_id: int
+    name: str
+    description: Optional[str]
+    analysis_prompt: str
+    digest_prompt: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
