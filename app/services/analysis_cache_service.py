@@ -77,6 +77,9 @@ async def claim_or_get(
         .where(
             AnalysisCache.cache_id == row.cache_id,
             AnalysisCache.status == row.status,  # 상태가 그대로일 때만(동시 재클레임 방지)
+            # 첫 재클레임이 created_at을 갱신하므로, 두 번째 동시 재클레임은 매치 실패한다
+            # (stale-pending은 status가 pending→pending으로 안 바뀌어 status 가드만으론 부족).
+            AnalysisCache.created_at == row.created_at,
         )
         .values(status="pending", created_at=datetime.now(timezone.utc), completed_at=None)
     )

@@ -88,6 +88,18 @@ async def test_conflict_failed_reclaims():
     assert out == ClaimOutcome(kind="claimed", cache_id=5, analysis=None)
 
 
+async def test_stale_pending_double_reclaim_second_loses():
+    """동시 재클레임 레이스: 두 번째 워커는 created_at 가드로 rowcount 0 → in_progress."""
+    stale = datetime.now(timezone.utc) - timedelta(minutes=CACHE_STALE_PENDING_MINUTES + 5)
+    row = FakeRow(cache_id=3, status="pending", created_at=stale)
+    # 첫 워커가 이미 재클레임해 created_at이 갱신됨 → 이 워커의 UPDATE는 rowcount 0
+    fake = FakeSession(
+        [FakeResult(scalar=None), FakeResult(row=row), FakeResult(rowcount=0)]
+    )
+    out = await claim_or_get(fake, "vid1", 7, "m")
+    assert out.kind == "in_progress"
+
+
 async def test_reclaim_lost_race_returns_in_progress():
     row = FakeRow(cache_id=5, status="failed")
     fake = FakeSession(
