@@ -140,6 +140,130 @@ def _strip_code_fence(text: str) -> str:
     return t
 
 
+def result_from_cache(
+    data: Dict[str, Any], model_name: str, gateway_url: str = ""
+) -> AnalysisPipelineResult:
+    """공유 캐시(app.analysis_cache)의 analysis JSON → 파이프라인 결과 객체."""
+    return AnalysisPipelineResult(
+        data=data, route="cache", model_name=model_name, gateway_url=gateway_url
+    )
+
+
+async def save_tags_for_video(
+    session: AsyncSession, video_pk: int, raw_tags: List[Dict[str, Any]]
+) -> None:
+    involved: list[int] = []
+    for t in raw_tags:
+        name = (t.get("name") or "").strip()
+        if not name:
+            continue
+        # LLM이 허용 외 type(예: company, event)을 반환하면 CHECK 위반으로
+        # 트랜잭션이 깨지므로 화이트리스트로 정규화하고 미허용 값은 기본값 폴백.
+        tag_type = (t.get("type") or DEFAULT_TAG_TYPE).strip().lower()
+        if tag_type not in ALLOWED_TAG_TYPES:
+            tag_type = DEFAULT_TAG_TYPE
+        weight = t.get("weight")
+        ins = (
+            pg_insert(Tag)
+            .values(name=name, tag_type=tag_type)
+            .on_conflict_do_nothing(index_elements=["name"])
+            .returning(Tag.tag_pk)
+        )
+        tag_pk = (await session.execute(ins)).scalar()
+        if tag_pk is None:
+            tag_pk = (
+                await session.execute(select(Tag.tag_pk).where(Tag.name == name))
+            ).scalar()
+        if tag_pk is None:
+            continue
+        await session.execute(
+            pg_insert(VideoTag)
+            .values(video_pk=video_pk, tag_pk=tag_pk, weight=weight)
+            .on_conflict_do_nothing(index_elements=["video_pk", "tag_pk"])
+        )
+        involved.append(tag_pk)
+
+    # 연관된 태그의 video_count 재계산
+    for tag_pk in involved:
+        cnt = (
+            await session.execute(
+                select(func.count()).select_from(VideoTag).where(VideoTag.tag_pk == tag_pk)
+            )
+        ).scalar()
+        await session.execute(
+            update(Tag).where(Tag.tag_pk == tag_pk).values(video_count=cnt)
+        )
+
+
+async def save_analysis_to_group(
+    session: AsyncSession,
+    video_pk: int,
+    result: AnalysisPipelineResult,
+    notify_callback: Optional[Callable[[int], Awaitable[Any]]] = None,
+) -> None:
+    """분석 결과를 그룹 스키마에 저장 (video_analysis upsert + 태그 + 상태 done).
+
+    LLM 호출 여부와 무관한 순수 저장 경로 — 캐시 적중 복사와 신규 분석이 공용.
+    """
+    data = result.data
+    await session.execute(
+        update(Video)
+        .where(Video.video_pk == video_pk, Video.share_token.is_(None))
+        .values(share_token=generate_share_token(), share_visibility=DEFAULT_VISIBILITY)
+    )
+    stmt = pg_insert(VideoAnalysis).values(
+        video_pk=video_pk,
+        one_line=data.get("one_line", ""),
+        headline=data.get("headline"),
+        short_summary_md=data.get("short_summary_md", ""),
+        bullet_points=data.get("bullet_points"),
+        full_analysis_md=data.get("full_analysis_md"),
+        analysis_sections=data.get("analysis_sections"),
+        key_points=data.get("key_points"),
+        insights=data.get("insights"),
+        entities=data.get("entities"),
+        sentiment=data.get("sentiment"),
+        confidence_score=_coerce_confidence(data.get("confidence_score")),
+        model_name=result.model_name,
+        gateway_url=result.gateway_url,
+        prompt_version=result.prompt_version,
+        analyzed_at=datetime.now(timezone.utc),
+    )
+    upsert = stmt.on_conflict_do_update(
+        index_elements=["video_pk"],
+        set_={
+            c: stmt.excluded[c]
+            for c in (
+                "one_line",
+                "headline",
+                "short_summary_md",
+                "bullet_points",
+                "full_analysis_md",
+                "analysis_sections",
+                "key_points",
+                "insights",
+                "entities",
+                "sentiment",
+                "confidence_score",
+                "model_name",
+                "gateway_url",
+                "prompt_version",
+                "analyzed_at",
+            )
+        },
+    )
+    await session.execute(upsert)
+
+    await save_tags_for_video(session, video_pk, data.get("tags") or [])
+
+    await session.execute(
+        update(Video).where(Video.video_pk == video_pk).values(analysis_status="done")
+    )
+
+    if notify_callback:
+        await notify_callback(video_pk)
+
+
 class AnalysisPipeline:
     def __init__(
         self,
@@ -206,108 +330,9 @@ class AnalysisPipeline:
     async def save_to_db(
         self, session: AsyncSession, video_pk: int, result: AnalysisPipelineResult
     ) -> None:
-        data = result.data
-        await session.execute(
-            update(Video)
-            .where(Video.video_pk == video_pk, Video.share_token.is_(None))
-            .values(share_token=generate_share_token(), share_visibility=DEFAULT_VISIBILITY)
+        await save_analysis_to_group(
+            session, video_pk, result, notify_callback=self._notify_callback
         )
-        stmt = pg_insert(VideoAnalysis).values(
-            video_pk=video_pk,
-            one_line=data.get("one_line", ""),
-            headline=data.get("headline"),
-            short_summary_md=data.get("short_summary_md", ""),
-            bullet_points=data.get("bullet_points"),
-            full_analysis_md=data.get("full_analysis_md"),
-            analysis_sections=data.get("analysis_sections"),
-            key_points=data.get("key_points"),
-            insights=data.get("insights"),
-            entities=data.get("entities"),
-            sentiment=data.get("sentiment"),
-            confidence_score=_coerce_confidence(data.get("confidence_score")),
-            model_name=result.model_name,
-            gateway_url=result.gateway_url,
-            prompt_version=result.prompt_version,
-            analyzed_at=datetime.now(timezone.utc),
-        )
-        upsert = stmt.on_conflict_do_update(
-            index_elements=["video_pk"],
-            set_={
-                c: stmt.excluded[c]
-                for c in (
-                    "one_line",
-                    "headline",
-                    "short_summary_md",
-                    "bullet_points",
-                    "full_analysis_md",
-                    "analysis_sections",
-                    "key_points",
-                    "insights",
-                    "entities",
-                    "sentiment",
-                    "confidence_score",
-                    "model_name",
-                    "gateway_url",
-                    "prompt_version",
-                    "analyzed_at",
-                )
-            },
-        )
-        await session.execute(upsert)
-
-        await self._save_tags(session, video_pk, data.get("tags") or [])
-
-        await session.execute(
-            update(Video).where(Video.video_pk == video_pk).values(analysis_status="done")
-        )
-
-        if self._notify_callback:
-            await self._notify_callback(video_pk)
-
-    async def _save_tags(
-        self, session: AsyncSession, video_pk: int, raw_tags: List[Dict[str, Any]]
-    ) -> None:
-        involved: list[int] = []
-        for t in raw_tags:
-            name = (t.get("name") or "").strip()
-            if not name:
-                continue
-            # LLM이 허용 외 type(예: company, event)을 반환하면 CHECK 위반으로
-            # 트랜잭션이 깨지므로 화이트리스트로 정규화하고 미허용 값은 기본값 폴백.
-            tag_type = (t.get("type") or DEFAULT_TAG_TYPE).strip().lower()
-            if tag_type not in ALLOWED_TAG_TYPES:
-                tag_type = DEFAULT_TAG_TYPE
-            weight = t.get("weight")
-            ins = (
-                pg_insert(Tag)
-                .values(name=name, tag_type=tag_type)
-                .on_conflict_do_nothing(index_elements=["name"])
-                .returning(Tag.tag_pk)
-            )
-            tag_pk = (await session.execute(ins)).scalar()
-            if tag_pk is None:
-                tag_pk = (
-                    await session.execute(select(Tag.tag_pk).where(Tag.name == name))
-                ).scalar()
-            if tag_pk is None:
-                continue
-            await session.execute(
-                pg_insert(VideoTag)
-                .values(video_pk=video_pk, tag_pk=tag_pk, weight=weight)
-                .on_conflict_do_nothing(index_elements=["video_pk", "tag_pk"])
-            )
-            involved.append(tag_pk)
-
-        # 연관된 태그의 video_count 재계산
-        for tag_pk in involved:
-            cnt = (
-                await session.execute(
-                    select(func.count()).select_from(VideoTag).where(VideoTag.tag_pk == tag_pk)
-                )
-            ).scalar()
-            await session.execute(
-                update(Tag).where(Tag.tag_pk == tag_pk).values(video_count=cnt)
-            )
 
     async def run_and_save(
         self,
@@ -341,11 +366,19 @@ async def build_analysis_pipeline(
     group_id: int,
     notify_callback: Optional[Callable[[int], Awaitable[Any]]] = None,
     analysis_prompt_override: Optional[str] = None,
+    resolved: Optional["ResolvedPrompts"] = None,
 ) -> AnalysisPipeline:
-    """그룹의 AI agent 설정 + 프롬프트로 파이프라인 생성."""
+    """그룹의 AI agent 설정 + 해석된 프롬프트로 파이프라인 생성.
+
+    프롬프트는 preset_service.resolve_prompts()를 경유한다(프리셋 우선, 직접 폴백).
+    호출 측이 이미 해석했다면 resolved로 넘겨 중복 조회를 피한다.
+    """
+    from app.services.preset_service import ResolvedPrompts, resolve_prompts
+
     mgr = get_settings_manager()
     ai = await mgr.get_ai_gateway(group_id)
-    prompts = await mgr.get_prompts(group_id)
+    if resolved is None:
+        resolved = await resolve_prompts(group_id)
     llm = LiteLLMClient(settings=ai)
     return AnalysisPipeline(
         llm_client=llm,
@@ -353,7 +386,7 @@ async def build_analysis_pipeline(
         analysis_prompt=(
             analysis_prompt_override.strip()
             if analysis_prompt_override and analysis_prompt_override.strip()
-            else prompts.analysis_prompt
+            else resolved.analysis_prompt
         ),
         notify_callback=notify_callback,
     )

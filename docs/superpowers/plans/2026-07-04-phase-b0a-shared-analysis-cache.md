@@ -907,6 +907,10 @@ git add app/services/analyzer.py tests/test_cache_integration.py
 git commit -m "refactor: 분석 저장 로직 모듈 함수화 (캐시 적중 경로 공용화)"
 ```
 
+**(실행 중 보완)** Task 7의 선점 경로가 프리셋 본문으로 분석하도록
+`build_analysis_pipeline`을 `resolve_prompts` 경유로 전환하고 `resolved` 주입
+파라미터를 추가했다(중복 조회 방지). Task 4 리뷰에서 확인된 계획 공백의 수정.
+
 ---
 
 ### Task 6: analysis_cache_service (선점/완료/실패/전달)
