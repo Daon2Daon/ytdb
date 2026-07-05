@@ -26,6 +26,7 @@ from app.schemas.admin import (
     PresetPatch,
 )
 from app.services.auth_service import generate_invite_token
+from app.services.preset_service import invalidate_preset_cache
 
 router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)]
@@ -121,6 +122,7 @@ async def create_preset(
     session.add(preset)
     await session.commit()
     await session.refresh(preset)
+    invalidate_preset_cache(preset.preset_id)
     return preset
 
 
@@ -136,4 +138,5 @@ async def patch_preset(
         setattr(preset, field, value)
     await session.commit()
     await session.refresh(preset)
+    invalidate_preset_cache(preset.preset_id)
     return preset

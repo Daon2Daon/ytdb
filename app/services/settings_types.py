@@ -77,10 +77,15 @@ class AIGatewaySettings:
 
 @dataclass
 class PromptSettings:
-    """그룹별 프롬프트. 비어 있으면 코드 기본값 사용."""
+    """그룹별 프롬프트. 비어 있으면 코드 기본값 사용.
+
+    preset_id가 설정되면 프리셋(app.prompt_presets)이 우선한다 — 해석은
+    preset_service.resolve_prompts()가 담당. 직접 프롬프트는 관리자 그룹 전용.
+    """
 
     analysis_prompt: str = ""
     digest_prompt: str = ""
+    preset_id: Optional[int] = None
 
 
 @dataclass

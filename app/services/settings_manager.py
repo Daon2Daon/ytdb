@@ -198,9 +198,15 @@ class SettingsManager:
 
     async def get_prompts(self, group_id: int) -> PromptSettings:
         d = await self.get_typed(group_id, "prompts")
+        raw_preset = d.get("preset_id")
+        try:
+            preset_id = int(raw_preset) if raw_preset not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            preset_id = None
         return PromptSettings(
             analysis_prompt=str(d.get("analysis_prompt") or ""),
             digest_prompt=str(d.get("digest_prompt") or ""),
+            preset_id=preset_id,
         )
 
     async def get_polling(self, group_id: int) -> PollingSettings:

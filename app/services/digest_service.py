@@ -386,7 +386,9 @@ async def synthesize_with_llm(
 ) -> DigestGenerated:
     mgr = get_settings_manager()
     ai = await mgr.get_ai_gateway(group_id)
-    prompts = await mgr.get_prompts(group_id)
+    from app.services.preset_service import resolve_prompts
+
+    prompts = await resolve_prompts(group_id)
     model = ai.digest_model or ai.primary_model
     prompt = (digest_prompt or prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
     period_label = _period_label(period_start, period_end)
