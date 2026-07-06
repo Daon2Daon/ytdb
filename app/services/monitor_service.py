@@ -12,6 +12,7 @@ SQL 대신 ORM의 FOR UPDATE SKIP LOCKED를 사용해 translate map을 그대로
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Optional, Sequence
 
@@ -33,6 +34,7 @@ from app.services.analysis_cache_service import (
 )
 from app.services.analyzer import build_analysis_pipeline, result_from_cache, save_analysis_to_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.global_settings import resolve_youtube_key
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
     JOB_TYPE_NOTIFY,
@@ -314,9 +316,11 @@ def _build_stats_map(metas) -> dict[str, tuple]:
 async def _poll_group(group: Group) -> None:
     mgr = get_settings_manager()
     polling = await mgr.get_polling(group.group_id)
-    if not polling.youtube_api_key:
-        print(f"[{group.slug}] YouTube API 키 미설정 - 폴링 SKIP")
+    api_key = await resolve_youtube_key(group.group_id)
+    if not api_key:
+        print(f"[{group.slug}] YouTube API 키 미설정(그룹·시스템 모두) - 폴링 SKIP")
         return
+    polling = replace(polling, youtube_api_key=api_key)
     try:
         await dpm.ensure_schema(group)
         engine = await dpm.get_engine_for_group(group)
@@ -833,8 +837,10 @@ async def run_stats_refresh_once() -> None:
             polling = await mgr.get_polling(group.group_id)
             if int(polling.stats_refresh_days or 0) <= 0:
                 continue
-            if not polling.youtube_api_key:
+            api_key = await resolve_youtube_key(group.group_id)
+            if not api_key:
                 continue
+            polling = replace(polling, youtube_api_key=api_key)
             try:
                 await dpm.ensure_schema(group)
                 engine = await dpm.get_engine_for_group(group)
@@ -921,9 +927,11 @@ async def poll_single_channel(group: Group, channel_pk: int) -> None:
     """단일 채널을 즉시 폴링한다(수동 트리거용). _poll_group의 1채널 버전."""
     mgr = get_settings_manager()
     polling = await mgr.get_polling(group.group_id)
-    if not polling.youtube_api_key:
-        print(f"[{group.slug}] YouTube API 키 미설정 - 단건 폴링 SKIP")
+    api_key = await resolve_youtube_key(group.group_id)
+    if not api_key:
+        print(f"[{group.slug}] YouTube API 키 미설정(그룹·시스템 모두) - 단건 폴링 SKIP")
         return
+    polling = replace(polling, youtube_api_key=api_key)
     try:
         await dpm.ensure_schema(group)
         engine = await dpm.get_engine_for_group(group)
