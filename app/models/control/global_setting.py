@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, LargeBinary, Text, func
+from sqlalchemy import Boolean, DateTime, LargeBinary, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.control_db import APP_SCHEMA, Base
@@ -21,7 +21,9 @@ class GlobalSetting(Base):
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)       # 평문
     value_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # 암호문
-    is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_secret: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

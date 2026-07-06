@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, Text, func
+from sqlalchemy import DateTime, Integer, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.control_db import APP_SCHEMA, Base
@@ -29,7 +29,9 @@ class ChannelRegistry(Base):
     last_video_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    subscriber_groups: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subscriber_groups: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

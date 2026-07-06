@@ -55,3 +55,7 @@ def test_b0b_tables_registered():
     # 그룹 삭제 캐스케이드 백스톱
     fk_group = next(fk for fk in sub.c.group_id.foreign_keys)
     assert fk_group.ondelete == "CASCADE"
+
+    # DB 레벨 DEFAULT (raw pg_insert 경로 보호 — 품질 리뷰 반영)
+    assert ChannelRegistry.__table__.c.subscriber_groups.server_default is not None
+    assert GlobalSetting.__table__.c.is_secret.server_default is not None
