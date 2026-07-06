@@ -55,6 +55,14 @@ async def test_get_global_secret_decrypts(monkeypatch):
     assert out == "AIza-secret"
 
 
+async def test_set_global_secret_requires_fernet(monkeypatch):
+    from app.services.settings_manager import SettingsSecretError
+
+    monkeypatch.setattr(gs, "_get_fernet", lambda: None)
+    with pytest.raises(SettingsSecretError):
+        await gs.set_global(FakeSession([]), "youtube_api_key", "AIza-x")
+
+
 async def test_get_central_poll_floor_min_default_and_clamp():
     # 행 없음 → 기본 10
     assert await gs.get_central_poll_floor_min(FakeSession([FakeResult(None)])) == 10

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,11 +46,15 @@ async def get_global(session: AsyncSession, key: str) -> Optional[str]:
         fernet = _get_fernet()
         if fernet is None:
             return None  # 키 없이는 복호 불가 — 미설정과 동일 취급
-        return fernet.decrypt(row.value_enc).decode("utf-8")
+        try:
+            return fernet.decrypt(row.value_enc).decode("utf-8")
+        except InvalidToken as e:
+            raise SettingsSecretError(f"전역 설정 복호화 실패: {key}") from e
     return row.value
 
 
 async def set_global(session: AsyncSession, key: str, value: str) -> None:
+    """키-값 upsert. SECRET_KEYS는 암호화 저장. 커밋은 호출부 책임."""
     is_secret = key in SECRET_KEYS
     if is_secret:
         fernet = _get_fernet()
