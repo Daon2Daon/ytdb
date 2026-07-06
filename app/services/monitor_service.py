@@ -78,6 +78,7 @@ async def fetch_channel_updates(
 
     상세 조회는 window 내 전체 항목 대상(그룹별 '신규' 판정은 삽입 단계 몫).
     videos.list는 50개당 1유닛이라 쿼터 영향 무시 가능.
+    반환은 published_at 내림차순(최신 먼저) — latest_video_id/채번이 응답 순서에 의존하지 않도록 보장.
     """
     items = await api_client.get_latest_playlist_items(
         upload_playlist_id, published_after=cutoff
@@ -85,7 +86,9 @@ async def fetch_channel_updates(
     if not items:
         return []
     metas = await api_client.get_video_details([it.video_id for it in items])
-    return [m for m in metas if parse_iso_datetime(m.published_at) >= cutoff]
+    metas = [m for m in metas if parse_iso_datetime(m.published_at) >= cutoff]
+    metas.sort(key=lambda m: parse_iso_datetime(m.published_at), reverse=True)
+    return metas
 
 
 class MonitorService:
