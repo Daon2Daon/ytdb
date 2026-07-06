@@ -2,7 +2,9 @@
 
 - 항상 시스템 키 사용 (그룹 키 폴백 없음 — 그룹 스코프 호출과 구별).
 - 그룹 단위 try/except 격리: 한 그룹 실패가 다른 그룹을 막지 않는다.
-- 쿼터 초과는 틱 전체 중단. last_polled_at 미갱신 채널은 다음 틱 재폴링되며
+- 쿼터 초과는 틱 전체 중단 (best-effort — 이미 세마포어를 통과해 진행 중인
+  채널은 완주 후 드레인; 강제 취소 없음, idempotent라 안전).
+  last_polled_at 미갱신 채널은 다음 틱 재폴링되며
   이미 삽입된 그룹은 _filter_new_videos가 중복을 막는다 (idempotent).
 """
 
@@ -27,6 +29,7 @@ from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manag
 from app.services.global_settings import get_central_poll_floor_min, get_system_youtube_key
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
+    STATUS_FAIL,
     STATUS_SUCCESS,
     JobTimer,
     write_job_log,
@@ -79,20 +82,33 @@ async def _fan_out_group(
     cutoff = now - timedelta(hours=int(window_hours))
 
     timer = JobTimer()
-    with timer:
-        async with make_session() as session:
-            async with session.begin():
-                channel = (
-                    await session.execute(
-                        select(Channel).where(Channel.channel_id == channel_id)
+    channel_pk = None
+    try:
+        with timer:
+            async with make_session() as session:
+                async with session.begin():
+                    channel = (
+                        await session.execute(
+                            select(Channel).where(Channel.channel_id == channel_id)
+                        )
+                    ).scalar_one_or_none()
+                    if channel is None or not channel.is_active:
+                        return None  # 구독 테이블과 그룹 스키마 불일치 — 다음 resync가 복구
+                    new_pks = await service.insert_group_videos(
+                        channel, session, metas, cutoff, now=now
                     )
-                ).scalar_one_or_none()
-                if channel is None or not channel.is_active:
-                    return None  # 구독 테이블과 그룹 스키마 불일치 — 다음 resync가 복구
-                new_pks = await service.insert_group_videos(
-                    channel, session, metas, cutoff, now=now
-                )
-                channel_pk = channel.channel_pk
+                    channel_pk = channel.channel_pk
+    except Exception as e:
+        # 관찰성: 기존 _poll_group과 동일하게 실패도 그룹 job log에 남긴다.
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_CHANNEL_POLL,
+            status=STATUS_FAIL,
+            message=f"중앙폴링 팬아웃 실패: {e}",
+            duration_ms=timer.elapsed_ms,
+            channel_pk=channel_pk,
+        )
+        raise
     await write_job_log(
         make_session,
         job_type=JOB_TYPE_CHANNEL_POLL,
