@@ -56,6 +56,7 @@ from app.services.settings_types import PollingSettings
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 from app.services.youtube_api import (
     PlaylistItemMeta,
+    VideoMeta,
     YouTubeAPIClient,
     YouTubeQuotaExceededError,
 )
@@ -68,6 +69,23 @@ MakeSession = Callable[[], AsyncSession]
 
 
 # ── 그룹 스코프 단위 작업 ──────────────────────────────────────────────────────
+
+
+async def fetch_channel_updates(
+    api_client: YouTubeAPIClient, upload_playlist_id: str, cutoff: datetime
+) -> List[VideoMeta]:
+    """채널 업로드 목록 조회 → 상세 일괄 조회. 그룹 무관 — 중앙 폴러가 채널당 1회 호출.
+
+    상세 조회는 window 내 전체 항목 대상(그룹별 '신규' 판정은 삽입 단계 몫).
+    videos.list는 50개당 1유닛이라 쿼터 영향 무시 가능.
+    """
+    items = await api_client.get_latest_playlist_items(
+        upload_playlist_id, published_after=cutoff
+    )
+    if not items:
+        return []
+    metas = await api_client.get_video_details([it.video_id for it in items])
+    return [m for m in metas if parse_iso_datetime(m.published_at) >= cutoff]
 
 
 class MonitorService:
@@ -108,28 +126,39 @@ class MonitorService:
         """
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=int(self.polling.window_hours or 24))
-        items: Sequence[PlaylistItemMeta] = await api_client.get_latest_playlist_items(
-            channel.upload_playlist_id,
-            published_after=cutoff,
-        )
-        if not items:
-            await self._update_last_checked(session, channel, now)
-            return []
+        metas = await fetch_channel_updates(api_client, channel.upload_playlist_id, cutoff)
+        return await self.insert_group_videos(channel, session, metas, cutoff, now=now)
 
-        new_ids = await self._filter_new_videos(session, [it.video_id for it in items])
-        if not new_ids:
-            await self._update_last_checked(session, channel, now, items[0].video_id)
-            return []
+    async def insert_group_videos(
+        self,
+        channel: Channel,
+        session: AsyncSession,
+        metas: Sequence[VideoMeta],
+        cutoff: datetime,
+        now: Optional[datetime] = None,
+    ) -> List[int]:
+        """조회 결과를 이 그룹 스키마에 삽입한다 (그룹별 필터·채번·last_checked).
 
-        metas = await api_client.get_video_details(new_ids)
-        metas = [v for v in metas if parse_iso_datetime(v.published_at) >= cutoff]
+        중앙 폴러 팬아웃과 그룹 스코프 폴링이 공유하는 삽입 경로 — 필터 이중화 금지.
+        cutoff: 이 그룹의 window_hours 컷 (중앙 폴러는 최대 윈도로 넓게 조회 후 재컷).
+        """
+        now = now or datetime.now(timezone.utc)
+        latest_video_id = metas[0].video_id if metas else None
+        metas = [m for m in metas if parse_iso_datetime(m.published_at) >= cutoff]
         if not metas:
-            await self._update_last_checked(session, channel, now, items[0].video_id)
+            await self._update_last_checked(session, channel, now, latest_video_id)
+            return []
+
+        new_ids = await self._filter_new_videos(session, [m.video_id for m in metas])
+        by_id = {m.video_id: m for m in metas}
+        new_metas = [by_id[v] for v in new_ids]
+        if not new_metas:
+            await self._update_last_checked(session, channel, now, latest_video_id)
             return []
 
         seq_start = await self._next_sequence(session, channel.channel_pk)
         inserted: List[int] = []
-        for idx, vm in enumerate(metas):
+        for idx, vm in enumerate(new_metas):
             stmt = (
                 pg_insert(Video)
                 .values(
@@ -155,7 +184,7 @@ class MonitorService:
                 inserted.append(pk)
 
         await session.flush()
-        await self._update_last_checked(session, channel, now, items[0].video_id)
+        await self._update_last_checked(session, channel, now, latest_video_id)
         return inserted
 
     async def _filter_new_videos(
