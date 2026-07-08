@@ -86,19 +86,24 @@ async def add_channel(
                     await s2.execute(select(Channel).where(Channel.channel_pk == channel_pk))
                 ).scalar_one()
 
-            async with get_sessionmaker()() as cs:
-                async with cs.begin():
-                    await registry.upsert_registry(
-                        cs, meta.channel_id,
-                        title=meta.channel_name,
-                        upload_playlist_id=meta.upload_playlist_id,
-                    )
-                    await registry.subscribe(
-                        cs, meta.channel_id, group.group_id,
-                        poll_interval_min=payload.poll_interval_min
-                        or polling.default_channel_interval_min,
-                        window_hours=polling.window_hours,
-                    )
+            try:
+                async with get_sessionmaker()() as cs:
+                    async with cs.begin():
+                        await registry.upsert_registry(
+                            cs, meta.channel_id,
+                            title=meta.channel_name,
+                            upload_playlist_id=meta.upload_playlist_id,
+                        )
+                        await registry.subscribe(
+                            cs, meta.channel_id, group.group_id,
+                            poll_interval_min=payload.poll_interval_min
+                            or polling.default_channel_interval_min,
+                            window_hours=polling.window_hours,
+                        )
+            except Exception as e:
+                # 훅 실패로 201을 막지 않는다 — 채널은 이미 생성됐고 재시도는 409로
+                # 막히므로, 구독 누락은 부팅 백필(resync)이 복구한다 (스펙 §8).
+                print(f"[{group.slug}] 채널 구독 동기화 실패(백필이 복구): {e}")
 
             return result
         finally:
@@ -129,6 +134,8 @@ async def update_channel(
             await session.execute(select(Channel).where(Channel.channel_pk == channel_pk))
         ).scalar_one()
 
+        # channel_name 변경은 registry.title에 전파하지 않음 — title은 표시용 캐시,
+        # 다음 폴링/백필이 갱신 (스펙 §4)
         if "poll_interval_min" in data or "is_active" in data:
             polling = await get_settings_manager().get_polling(group.group_id)
             async with get_sessionmaker()() as cs:
