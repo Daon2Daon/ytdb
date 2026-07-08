@@ -57,7 +57,6 @@ from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 from app.services.youtube_api import (
-    PlaylistItemMeta,
     VideoMeta,
     YouTubeAPIClient,
     YouTubeQuotaExceededError,
