@@ -11,6 +11,7 @@ from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
+from app.services.channel_registry_service import resync_group as registry_resync_group
 from app.services.notify_service import _should_stamp_on_save
 from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
@@ -75,8 +76,11 @@ async def put_settings(
                 [{"key": "notify_baseline_at", "value": now_iso, "value_type": "string"}],
             )
 
-    if category == "polling" and app_settings.SCHEDULER_ENABLED:
-        await apply_pending_analysis_schedule()
+    if category == "polling":
+        # default_channel_interval_min/window_hours 변경이 구독 유효값에 반영되도록
+        await registry_resync_group(group)
+        if app_settings.SCHEDULER_ENABLED:
+            await apply_pending_analysis_schedule()
     return await mgr.list_for_api(group.group_id, category)
 
 

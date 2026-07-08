@@ -87,3 +87,13 @@ class PresetOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class GlobalSettingItem(BaseModel):
+    key: str
+    value: str  # 시크릿은 마스킹 반환
+    is_secret: bool = False
+
+
+class GlobalSettingsUpdate(BaseModel):
+    items: list[GlobalSettingItem]

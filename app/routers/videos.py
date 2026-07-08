@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -28,6 +29,7 @@ from app.schemas.video import (
     VideoListItem,
 )
 from app.services.db_engine import data_plane_engine_manager as dpm
+from app.services.global_settings import resolve_youtube_key
 from app.services.job_logger import JOB_TYPE_NOTIFY, STATUS_SKIP, write_job_log
 from app.services.monitor_service import analyze_specific_video
 from app.services.notify_service import (
@@ -473,10 +475,13 @@ async def instant_analyze_video(
         raise HTTPException(status_code=400, detail="유효한 YouTube 영상 URL/ID가 아닙니다.")
 
     polling = await get_settings_manager().get_polling(group.group_id)
-    if not polling.youtube_api_key:
+    api_key = await resolve_youtube_key(group.group_id)
+    if not api_key:
         raise HTTPException(
-            status_code=400, detail="YouTube API 키(polling.youtube_api_key)를 먼저 설정하세요."
+            status_code=400,
+            detail="YouTube API 키가 없습니다. 그룹 polling 설정 또는 시스템 전역 키를 설정하세요.",
         )
+    polling = replace(polling, youtube_api_key=api_key)
 
     async with dpm.group_session(group) as session:
         async with session.begin():

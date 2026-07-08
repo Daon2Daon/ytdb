@@ -62,6 +62,9 @@ async def ensure_control_schema() -> None:
     from app.models.control import (  # noqa: F401
         analysis_cache,
         analysis_delivery,
+        channel_registry,
+        channel_subscription,
+        global_setting,
         group,
         invitation,
         plan,
