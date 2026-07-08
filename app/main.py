@@ -50,6 +50,15 @@ async def lifespan(app: FastAPI):
         await backfill_notify_baselines()
     except Exception as e:
         print(f"[backfill] 발송 기준선 보정 실패(기동 계속): {e}")
+
+    from app.services.channel_registry_service import backfill_channel_registry
+    from app.services.global_settings import bootstrap_global_settings
+
+    await bootstrap_global_settings()
+    try:
+        await backfill_channel_registry()
+    except Exception as e:
+        print(f"[startup] 채널 레지스트리 백필 실패(다음 부팅에서 재시도): {e}")
     if app_settings.SCHEDULER_ENABLED:
         start_scheduler()
         await apply_pending_analysis_schedule()

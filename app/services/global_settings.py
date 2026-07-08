@@ -92,3 +92,47 @@ async def resolve_youtube_key(group_id: int) -> str:
     if polling.youtube_api_key:
         return polling.youtube_api_key
     return await get_system_youtube_key()
+
+
+async def pick_bootstrap_youtube_key(groups, get_polling) -> Optional[str]:
+    """후보 그룹들(호출자가 admin 소유·group_id 순으로 전달) 중 첫 polling 키."""
+    for group in groups:
+        polling = await get_polling(group.group_id)
+        if polling.youtube_api_key:
+            return polling.youtube_api_key
+    return None
+
+
+async def bootstrap_global_settings() -> None:
+    """시스템 YouTube 키 미설정 시 admin 소유 그룹 키로 1회 시드. 멱등 (스펙 §6).
+
+    Phase A의 AUTH_PASSWORD 부트스트랩과 같은 철학 — 기존 단일 운영자 배포가
+    업그레이드 직후에도 설정 변경 없이 폴링 무중단.
+    """
+    from app.models.control.group import Group
+    from app.models.control.user import User
+
+    sf = get_sessionmaker()
+    async with sf() as session:
+        existing = await get_global(session, GLOBAL_YOUTUBE_API_KEY)
+        if existing:
+            return
+        groups = list(
+            (
+                await session.execute(
+                    select(Group)
+                    .join(User, User.user_id == Group.owner_user_id)
+                    .where(User.role == "admin", Group.is_active.is_(True))
+                    .order_by(Group.group_id)
+                )
+            ).scalars().all()
+        )
+    key = await pick_bootstrap_youtube_key(
+        groups, get_settings_manager().get_polling
+    )
+    if not key:
+        return
+    async with sf() as session:
+        async with session.begin():
+            await set_global(session, GLOBAL_YOUTUBE_API_KEY, key)
+    print("[bootstrap] 시스템 YouTube 키를 admin 그룹 키로 시드했습니다.")

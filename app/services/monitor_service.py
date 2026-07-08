@@ -382,18 +382,6 @@ async def _poll_group(group: Group) -> None:
         await api_client.aclose()
 
 
-async def run_master_poll_once() -> None:
-    """전역 마스터 폴링: 활성 그룹 순회 → 채널 폴링."""
-    groups = await _active_groups()
-    if not groups:
-        return
-    for group in groups:
-        try:
-            await _poll_group(group)
-        except Exception as e:
-            print(f"[{group.slug}] 폴링 그룹 처리 오류: {e}")
-
-
 def _passes_notify_baseline(notify_from: Optional[datetime], published_at: datetime) -> bool:
     """채널 알림 기준 시점 게이트. notify_from 이후 게시된 영상만 발송.
 

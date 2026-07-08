@@ -13,9 +13,9 @@ from sqlalchemy import select
 from app.config import settings
 from app.control_db import get_sessionmaker
 from app.models.control.group import Group
+from app.services.central_poller import run_central_poll_once
 from app.services.digest_service import run_digest_tick_once
 from app.services.monitor_service import (
-    run_master_poll_once,
     run_pending_analysis_once,
     run_stats_refresh_once,
 )
@@ -90,7 +90,7 @@ async def apply_pending_analysis_schedule() -> None:
 def setup_jobs() -> AsyncIOScheduler:
     scheduler = get_scheduler()
     scheduler.add_job(
-        run_master_poll_once,
+        run_central_poll_once,       # B-0b: 그룹 순회 폴링 → 중앙 폴링
         trigger="interval",
         minutes=int(settings.MASTER_POLL_INTERVAL_MIN),
         id=JOB_MASTER_POLL,
