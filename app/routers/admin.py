@@ -175,7 +175,23 @@ async def put_global_settings(
     for item in payload.items:
         if item.key not in _GLOBAL_KEYS:
             raise HTTPException(status_code=400, detail=f"허용되지 않은 키: {item.key}")
-        if item.value.strip():
-            await set_global(session, item.key, item.value.strip())
+        value = item.value.strip()
+        if not value:
+            continue
+        if item.key in SECRET_KEYS:
+            current = await get_global(session, item.key)
+            # GET이 돌려준 마스킹 값을 그대로 재전송한 경우 — 변경 아님 (set_values와 동일 가드)
+            if current and value == mask_secret(current):
+                continue
+        if item.key == GLOBAL_CENTRAL_POLL_FLOOR_MIN:
+            try:
+                floor = int(value)
+            except ValueError:
+                floor = 0
+            if floor <= 0:
+                raise HTTPException(
+                    status_code=400, detail="central_poll_floor_min은 양의 정수여야 합니다."
+                )
+        await set_global(session, item.key, value)
     await session.commit()
     return await list_global_settings(session)
