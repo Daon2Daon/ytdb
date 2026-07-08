@@ -8,10 +8,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 
+from app.control_db import get_sessionmaker
 from app.models.control.group import Group
 from app.models.pg.channel import Channel
 from app.routers.deps import get_group_or_404
 from app.schemas.channel import ChannelCreate, ChannelOut, ChannelUpdate
+from app.services import channel_registry_service as registry
 from app.services.db_engine import data_plane_engine_manager as dpm
 from app.services.global_settings import resolve_youtube_key
 from app.services.monitor_service import MonitorService, poll_single_channel
@@ -80,9 +82,25 @@ async def add_channel(
                     await service.process_channel(channel, session, api)
 
             async with dpm.group_session(group) as s2:
-                return (
+                result = (
                     await s2.execute(select(Channel).where(Channel.channel_pk == channel_pk))
                 ).scalar_one()
+
+            async with get_sessionmaker()() as cs:
+                async with cs.begin():
+                    await registry.upsert_registry(
+                        cs, meta.channel_id,
+                        title=meta.channel_name,
+                        upload_playlist_id=meta.upload_playlist_id,
+                    )
+                    await registry.subscribe(
+                        cs, meta.channel_id, group.group_id,
+                        poll_interval_min=payload.poll_interval_min
+                        or polling.default_channel_interval_min,
+                        window_hours=polling.window_hours,
+                    )
+
+            return result
         finally:
             await api.aclose()
 
@@ -107,9 +125,26 @@ async def update_channel(
             # 알림 OFF→ON 전환 시 기준 시점을 지금으로 재설정("알림 켠 이후"부터 발송).
             if data.get("notify_enabled") is True and not was_notify:
                 channel.notify_from = datetime.now(timezone.utc)
-        return (
+        channel = (
             await session.execute(select(Channel).where(Channel.channel_pk == channel_pk))
         ).scalar_one()
+
+        if "poll_interval_min" in data or "is_active" in data:
+            polling = await get_settings_manager().get_polling(group.group_id)
+            async with get_sessionmaker()() as cs:
+                async with cs.begin():
+                    if channel.is_active:
+                        await registry.upsert_registry(cs, channel.channel_id)
+                        await registry.subscribe(
+                            cs, channel.channel_id, group.group_id,
+                            poll_interval_min=channel.poll_interval_min
+                            or polling.default_channel_interval_min,
+                            window_hours=polling.window_hours,
+                        )
+                    else:
+                        await registry.unsubscribe(cs, channel.channel_id, group.group_id)
+
+        return channel
 
 
 @router.delete("/{channel_pk}", status_code=204)
@@ -123,7 +158,12 @@ async def delete_channel(
             ).scalar_one_or_none()
             if channel is None:
                 raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
+            deleted_channel_id = channel.channel_id
             await session.delete(channel)
+
+    async with get_sessionmaker()() as cs:
+        async with cs.begin():
+            await registry.unsubscribe(cs, deleted_channel_id, group.group_id)
 
 
 @router.post("/{channel_pk}/poll", status_code=202)

@@ -14,6 +14,7 @@ from app.models.control.group import Group
 from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
+from app.services.channel_registry_service import remove_group_subscriptions, resync_group
 from app.services.default_settings import seed_default_settings
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
@@ -80,10 +81,17 @@ async def update_group(
     session: AsyncSession = Depends(get_session),
 ) -> Group:
     data = payload.model_dump(exclude_unset=True)
+    was_active = group.is_active
     for field, value in data.items():
         setattr(group, field, value)
     await session.commit()
     await session.refresh(group)
+    if "is_active" in data and group.is_active != was_active:
+        if group.is_active:
+            await resync_group(group)                      # 재활성 → 구독 복원 (스펙 §4)
+        else:
+            await remove_group_subscriptions(session, group.group_id)
+            await session.commit()
     return group
 
 
@@ -92,5 +100,6 @@ async def delete_group(
     group: Group = Depends(get_group_or_404),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    await remove_group_subscriptions(session, group.group_id)
     await session.delete(group)
     await session.commit()
