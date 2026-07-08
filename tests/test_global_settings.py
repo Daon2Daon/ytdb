@@ -122,3 +122,45 @@ async def test_pick_seed_key_none_when_no_keys():
         return SimpleNamespace(youtube_api_key="")
 
     assert await pick_bootstrap_youtube_key([SimpleNamespace(group_id=1)], get_polling) is None
+
+
+async def test_bootstrap_seed_survives_missing_fernet(monkeypatch):
+    """평문 그룹 키 + FERNET_KEY 부재 조합에서 SettingsSecretError가 부팅 경로 밖으로
+    전파되지 않는다 (방어 가드). 시드 실패는 skip일 뿐 부팅을 막지 않는다."""
+    from app.services.settings_manager import SettingsSecretError
+
+    class _BootSession:
+        """async CM + begin() CM + 그룹 조회용 execute 최소 구현."""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def begin(self):
+            return self
+
+        async def execute(self, stmt):
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: (lambda: _BootSession()))
+    monkeypatch.setattr(
+        gs, "get_settings_manager", lambda: SimpleNamespace(get_polling=None)
+    )
+
+    async def fake_get_global(session, key):
+        return None  # 시스템 키 미설정 → 시드 경로 진입
+
+    async def fake_pick(groups, get_polling):
+        return "plain-group-key"  # 평문 그룹 키 발견
+
+    async def fake_set_global(session, key, value):
+        raise SettingsSecretError("시크릿을 저장하려면 FERNET_KEY가 필요합니다.")
+
+    monkeypatch.setattr(gs, "get_global", fake_get_global)
+    monkeypatch.setattr(gs, "pick_bootstrap_youtube_key", fake_pick)
+    monkeypatch.setattr(gs, "set_global", fake_set_global)
+
+    # 가드가 있으면 예외 없이 리턴, 없으면 SettingsSecretError가 테스트를 실패시킨다.
+    await gs.bootstrap_global_settings()

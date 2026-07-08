@@ -132,7 +132,12 @@ async def bootstrap_global_settings() -> None:
     )
     if not key:
         return
-    async with sf() as session:
-        async with session.begin():
-            await set_global(session, GLOBAL_YOUTUBE_API_KEY, key)
-    print("[bootstrap] 시스템 YouTube 키를 admin 그룹 키로 시드했습니다.")
+    try:
+        async with sf() as session:
+            async with session.begin():
+                await set_global(session, GLOBAL_YOUTUBE_API_KEY, key)
+        print("[bootstrap] 시스템 YouTube 키를 admin 그룹 키로 시드했습니다.")
+    except SettingsSecretError as e:
+        # FERNET_KEY 없는 배포 — 부팅을 막지 않는다. 폴링은 그룹 키 폴백으로 계속
+        # 동작하고, 시스템 키는 관리자가 FERNET_KEY 설정 후 API로 넣으면 된다.
+        print(f"[bootstrap] 시스템 키 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
