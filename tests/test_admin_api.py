@@ -24,6 +24,7 @@ def test_admin_routes_registered():
     assert "/api/admin/invitations" in paths
     assert "/api/admin/invitations/{invite_id}" in paths
     assert "/api/admin/plans" in paths
+    assert "/api/admin/global-settings" in paths          # B-0b
 
 
 def test_non_admin_forbidden():
@@ -34,6 +35,15 @@ def test_non_admin_forbidden():
     assert c.get("/api/admin/users").status_code == 403
     assert c.get("/api/admin/invitations").status_code == 403
     assert c.post("/api/admin/invitations", json={}).status_code == 403
+
+
+def test_non_admin_forbidden_global_settings():
+    async def _dep():
+        return USER
+    app.dependency_overrides[require_user] = _dep
+    c = TestClient(app, raise_server_exceptions=False)
+    assert c.get("/api/admin/global-settings").status_code == 403
+    assert c.put("/api/admin/global-settings", json={"items": []}).status_code == 403
 
 
 def test_unauthenticated_401():

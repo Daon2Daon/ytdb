@@ -17,6 +17,8 @@ from app.models.control.user import User
 from app.routers.auth import CurrentUser, require_admin
 from app.schemas.admin import (
     AdminUserOut,
+    GlobalSettingItem,
+    GlobalSettingsUpdate,
     InviteCreate,
     InviteCreated,
     InviteOut,
@@ -26,11 +28,21 @@ from app.schemas.admin import (
     PresetPatch,
 )
 from app.services.auth_service import generate_invite_token
+from app.services.global_settings import (
+    GLOBAL_CENTRAL_POLL_FLOOR_MIN,
+    GLOBAL_YOUTUBE_API_KEY,
+    SECRET_KEYS,
+    get_global,
+    set_global,
+)
 from app.services.preset_service import invalidate_preset_cache
+from app.services.settings_manager import mask_secret
 
 router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )
+
+_GLOBAL_KEYS = (GLOBAL_YOUTUBE_API_KEY, GLOBAL_CENTRAL_POLL_FLOOR_MIN)
 
 
 def _signup_url(token: str) -> str:
@@ -140,3 +152,30 @@ async def patch_preset(
     await session.refresh(preset)
     invalidate_preset_cache(preset.preset_id)
     return preset
+
+
+@router.get("/global-settings", response_model=list[GlobalSettingItem])
+async def list_global_settings(
+    session: AsyncSession = Depends(get_session),
+) -> list[GlobalSettingItem]:
+    out = []
+    for key in _GLOBAL_KEYS:
+        raw = await get_global(session, key)
+        is_secret = key in SECRET_KEYS
+        value = mask_secret(raw) if (raw and is_secret) else (raw or "")
+        out.append(GlobalSettingItem(key=key, value=value, is_secret=is_secret))
+    return out
+
+
+@router.put("/global-settings", response_model=list[GlobalSettingItem])
+async def put_global_settings(
+    payload: GlobalSettingsUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> list[GlobalSettingItem]:
+    for item in payload.items:
+        if item.key not in _GLOBAL_KEYS:
+            raise HTTPException(status_code=400, detail=f"허용되지 않은 키: {item.key}")
+        if item.value.strip():
+            await set_global(session, item.key, item.value.strip())
+    await session.commit()
+    return await list_global_settings(session)
