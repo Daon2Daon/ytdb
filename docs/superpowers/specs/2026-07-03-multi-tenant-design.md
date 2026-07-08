@@ -378,7 +378,7 @@ CREATE INDEX analysis_deliveries_user_created ON app.analysis_deliveries (user_i
 |-------|------|-----------|
 | A. 계정·소유권 (완료 2026-07-04) | users/invitations, argon2 로그인, admin 시드, groups.owner_user_id, `get_owned_group_or_404` 전면 적용, 초대 가입 플로우, 관리자 사용자 목록(최소) | 초대→가입→로그인→본인 그룹만 접근. 타인 그룹 slug 접근 시 404. 기존 admin 그룹 무변경 동작 — 실 DB E2E 통과 |
 | B-0a. 공유 분석 캐시 (완료 2026-07-04) | §2.9 — analysis_cache, analysis_deliveries, prompt_presets(§2.6, C에서 앞당김 — 캐시 키의 전제), 직접 프롬프트 그룹 캐시 우회 | 두 그룹이 같은 채널 구독 + 같은 프리셋 → 신규 영상 AI 호출 1회, 두 그룹 모두 분석 보유, deliveries 2행. 직접 프롬프트 그룹은 기존 경로 — 실 DB E2E 통과 |
-| B-0b. 중앙 채널 레지스트리 (설계 확정 2026-07-05) | §2.9 + 별도 설계 문서 — channel_registry 중앙 폴링(채널당 1회), channel_subscriptions 역방향 매핑, global_settings 최소 골격(시스템 YouTube 키·폴링 하한), 그룹 키 폴백 | 두 그룹이 같은 채널 구독 → 중앙 틱 1회에 채널 API 조회 1회, 두 그룹 모두 신규 영상 보유. 기존 단일 운영자 배포는 설정 변경 없이 폴링 무중단 |
+| B-0b. 중앙 채널 레지스트리 (구현 완료 2026-07-08 — 실 DB E2E는 별도 세션) | §2.9 + 별도 설계 문서 — channel_registry 중앙 폴링(채널당 1회), channel_subscriptions 역방향 매핑, global_settings 최소 골격(시스템 YouTube 키·폴링 하한), 그룹 키 폴백 | 두 그룹이 같은 채널 구독 → 중앙 틱 1회에 채널 API 조회 1회, 두 그룹 모두 신규 영상 보유. 기존 단일 운영자 배포는 설정 변경 없이 폴링 무중단 |
 | B. 쿼터·관리자 콘솔 | plans/user_limits, 6개 강제 지점(분석 카운트는 deliveries 기준), 관리자 콘솔(사용자/초대/한도) | free 플랜 사용자가 한도 초과 생성 시 400. 관리자 오버라이드 반영 |
 | C. AI 원장·전역 게이트웨이 | ai_usage 기록(시스템 몫 규칙 포함), global_settings, 설정 권한 분리(3.3), 예산 강제, 사용량 대시보드 | 캐시 미스 분석 1건 → 원장 1행(user_id=NULL, 토큰/비용). 예산 초과 그룹 skip. 사용자 화면에 AI 설정 비노출 |
 | D. 온보딩·운영 | 공용 봇 딥링크 연결, 사용자 그룹 자동 프로비저닝 마법사, YouTube 쿼터 카운터, 전 스키마 순회 마이그레이션 도구 | 신규 사용자가 UI만으로: 가입→그룹 생성→채널 추가→분석 결과 텔레그램 수신 |

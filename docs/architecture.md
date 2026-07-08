@@ -175,13 +175,17 @@ CREATE TABLE IF NOT EXISTS app.settings (
 - 변경: 그룹 컨텍스트(해당 그룹의 ai_gateway 설정, prompts, 데이터 평면 엔진)를 인자로 받는다.
 - 이로써 같은 영상이라도 소속 그룹의 AI agent와 프롬프트로 분석된다.
 
-### 5.4 스케줄러 (전역 잡이 그룹을 순회)
+### 5.4 스케줄러
 
-- `youtube_master_poll` (전역 1개): 활성 그룹 순회 → 그룹별 엔진/설정으로 채널 폴링. 채널별 주기 판정 로직(due-channel 선별)을 그룹 스코프로 새로 작성.
+- `JOB_MASTER_POLL` (전역 1개, B-0b로 중앙 폴링 전환): 그룹을 순회하며 그룹별로 채널을 조회하던 구 방식(`run_master_poll_once`, 삭제됨) 대신, `run_central_poll_once`가 `app.channel_registry`의 due 채널을 한 번에 뽑아 채널당 YouTube API 조회를 1회만 수행한다. 조회 결과는 `app.channel_subscriptions` 역방향 매핑을 따라 구독 중인 각 그룹의 스키마로 팬아웃 삽입된다. 같은 채널을 구독하는 그룹이 여럿이어도 API 호출은 1회로 줄고, 그룹별 시청 윈도우(`window_hours`)만 팬아웃 시점에 반영한다. 그룹 단위로 try/except가 격리되어 한 그룹의 실패가 다른 그룹 팬아웃을 막지 않으며, 쿼터 초과는 틱 전체를 중단하되 이미 진행 중인 채널은 완주시킨다(멱등이라 안전).
 - `youtube_pending_analysis` (전역 1개): 활성 그룹 순회 → 그룹별 pending 1건 claim → 그룹 AI agent로 분석.
 - `youtube_gateway_health`: 그룹별 게이트웨이가 다를 수 있으므로 그룹별 잡(`youtube_gateway_health_{slug}`).
 - 예약발송/다이제스트 잡: `job_id`에 slug 접미사(`youtube_digest_{slug}_{dow}_{HHMM}`, `youtube_notify_{slug}_{HHMM}`).
 - jobstore는 PG(`app.apscheduler_jobs`) 또는 메모리. 부팅 시 `setup_*_jobs()`로 재등록하므로 영속성은 필수가 아니다.
+
+### 5.4.1 전역 설정과 YouTube 키 폴백 (B-0b)
+
+`app.global_settings`(단순 키-값, 시크릿은 Fernet 암호화)에 그룹에 속하지 않는 설정 두 가지를 둔다: 시스템 YouTube API 키(`youtube_api_key`)와 중앙 폴링 하한 주기(`central_poll_floor_min`, 기본 10분 — 레지스트리의 채널별 주기가 이보다 짧아도 틱 자체는 이 주기보다 자주 돌지 않는다). 중앙 폴링(`run_central_poll_once`)은 폴백 없이 항상 이 시스템 키만 사용한다. 반면 그룹 스코프로 YouTube API를 직접 호출하는 5개 지점(그룹 수동 폴링, 그룹 통계 갱신, 단건 채널 폴링, 채널 등록, 즉시분석)은 `resolve_youtube_key(group_id)`를 통해 그룹의 `polling.youtube_api_key`를 우선 사용하고, 없으면 시스템 키로 폴백한다. 부팅 시 `bootstrap_global_settings()`가 시스템 키 미설정이면 admin 소유 그룹의 키로 1회 시드하여, 기존 단일 운영자 배포가 업그레이드 후에도 설정 변경 없이 동작을 이어간다(FERNET_KEY 미설정 시에는 시드를 건너뛰고 그룹 키 폴백만으로 계속 동작).
 
 ### 5.5 API와 UI 그룹 스코프
 
