@@ -99,3 +99,26 @@ def test_add_channel_poll_interval_below_plan_floor_400(monkeypatch):
     )
     assert resp.status_code == 400
     assert "폴링 주기" in resp.json()["detail"]
+
+
+def test_put_polling_settings_below_plan_floor_400(monkeypatch):
+    _as_user()
+    _as_group()
+
+    async def _limits(group):
+        from app.services.quota_service import EffectiveLimits
+        return EffectiveLimits(
+            max_groups=1, max_channels_total=5, max_analyses_per_day=10,
+            max_video_minutes=60, min_poll_interval_min=60,
+            plan_slug="free", plan_name="Free", has_override=False,
+        )
+
+    monkeypatch.setattr("app.routers.settings.limits_for_group_owner", _limits)
+    c = TestClient(app, raise_server_exceptions=False)
+    resp = c.put(
+        "/api/groups/g1/settings/polling",
+        json={"items": [{"key": "default_channel_interval_min", "value": "30",
+                         "value_type": "int"}]},
+    )
+    assert resp.status_code == 400
+    assert "폴링 주기" in resp.json()["detail"]
