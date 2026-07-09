@@ -119,7 +119,12 @@ async def mark_failed(session: AsyncSession, cache_id: int) -> None:
 async def record_delivery(
     session: AsyncSession, user_id: int, group_id: int, cache_id: int
 ) -> None:
-    session.add(AnalysisDelivery(user_id=user_id, group_id=group_id, cache_id=cache_id))
+    """전달 원장 1행 기록. 같은 (user_id, cache_id) 재전달은 무시(쿼터 과카운트 방지)."""
+    await session.execute(
+        pg_insert(AnalysisDelivery)
+        .values(user_id=user_id, group_id=group_id, cache_id=cache_id)
+        .on_conflict_do_nothing(constraint="uq_analysis_deliveries_user_cache")
+    )
 
 
 # ── 제어 평면 세션을 여는 편의 래퍼 (monitor_service가 사용) ──────────────────

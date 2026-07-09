@@ -59,3 +59,29 @@ def test_b0b_tables_registered():
     # DB 레벨 DEFAULT (raw pg_insert 경로 보호 — 품질 리뷰 반영)
     assert ChannelRegistry.__table__.c.subscriber_groups.server_default is not None
     assert GlobalSetting.__table__.c.is_secret.server_default is not None
+
+
+def test_user_limits_model_columns():
+    from app.models.control.user_limit import UserLimit
+
+    cols = {c.name for c in UserLimit.__table__.columns}
+    assert cols == {
+        "user_id", "max_groups", "max_channels_total", "max_analyses_per_day",
+        "max_video_minutes", "monthly_cost_budget_usd", "min_poll_interval_min",
+        "note", "updated_at",
+    }
+    # user_id 외 한도 컬럼은 전부 NULL 허용(NULL=플랜 값 사용)
+    for name in ("max_groups", "max_channels_total", "max_analyses_per_day",
+                 "max_video_minutes", "monthly_cost_budget_usd", "min_poll_interval_min"):
+        assert UserLimit.__table__.columns[name].nullable is True
+
+
+def test_analysis_delivery_unique_constraint():
+    from sqlalchemy import UniqueConstraint
+
+    from app.models.control.analysis_delivery import AnalysisDelivery
+
+    uqs = [c for c in AnalysisDelivery.__table__.constraints if isinstance(c, UniqueConstraint)]
+    assert any(
+        {col.name for col in uq.columns} == {"user_id", "cache_id"} for uq in uqs
+    )

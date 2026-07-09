@@ -107,3 +107,19 @@ async def test_reclaim_lost_race_returns_in_progress():
     )
     out = await claim_or_get(fake, "vid1", 7, "m")
     assert out.kind == "in_progress"
+
+
+async def test_record_delivery_is_conflict_free():
+    """record_delivery가 ON CONFLICT DO NOTHING insert를 발행한다."""
+    from app.services.analysis_cache_service import record_delivery
+
+    captured = []
+
+    class _S:
+        async def execute(self, stmt):
+            captured.append(stmt)
+
+    await record_delivery(_S(), user_id=1, group_id=2, cache_id=3)
+    assert len(captured) == 1
+    sql = str(captured[0].compile(compile_kwargs={"literal_binds": False}))
+    assert "ON CONFLICT" in sql
