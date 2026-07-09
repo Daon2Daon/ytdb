@@ -40,3 +40,46 @@ def test_validate_poll_interval():
     assert validate_poll_interval(LIMITS, 59) is False
     assert validate_poll_interval(LIMITS, None) is True         # 미지정=그룹 기본값 사용
     assert validate_poll_interval(None, 1) is True
+
+
+import pytest
+
+from app.services.quota_service import (
+    QuotaExceeded,
+    _merge_limits,
+)
+from app.models.control.plan import Plan
+from app.models.control.user_limit import UserLimit
+
+
+def _plan(**over):
+    base = dict(
+        plan_id=1, slug="free", name="Free", max_groups=1, max_channels_total=5,
+        max_analyses_per_day=10, max_video_minutes=60,
+        monthly_cost_budget_usd=5, min_poll_interval_min=60, is_default=True,
+    )
+    base.update(over)
+    return Plan(**base)
+
+
+def test_merge_limits_no_override():
+    lim = _merge_limits(_plan(), None)
+    assert lim.max_groups == 1
+    assert lim.min_poll_interval_min == 60
+    assert lim.has_override is False
+    assert lim.plan_slug == "free"
+
+
+def test_merge_limits_partial_override():
+    ul = UserLimit(user_id=2, max_groups=3, min_poll_interval_min=None)
+    lim = _merge_limits(_plan(), ul)
+    assert lim.max_groups == 3           # 오버라이드 적용
+    assert lim.max_channels_total == 5   # NULL → 플랜 값
+    assert lim.min_poll_interval_min == 60
+    assert lim.has_override is True
+
+
+def test_quota_exceeded_detail():
+    exc = QuotaExceeded("그룹 한도 초과", limit=1, current=1)
+    assert exc.limit == 1 and exc.current == 1
+    assert "그룹 한도 초과" in str(exc)
