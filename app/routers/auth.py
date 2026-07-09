@@ -16,8 +16,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.control_db import get_session, get_sessionmaker
 from app.models.control.invitation import Invitation
 from app.models.control.user import User
-from app.schemas.auth import LoginRequest, MeResponse, SignupRequest, UserOut
+from app.schemas.auth import (
+    LoginRequest,
+    MeResponse,
+    MyLimits,
+    MyUsage,
+    MyUsageResponse,
+    SignupRequest,
+    UserOut,
+)
 from app.services.auth_service import hash_password, is_auth_enabled, set_users_exist, verify_password
+from app.services.quota_service import (
+    count_daily_deliveries,
+    count_owned_channels,
+    count_owned_groups,
+    effective_limits,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -147,3 +161,36 @@ async def signup(
     set_users_exist(True)
     request.session["user_id"] = user.user_id
     return UserOut(email=user.email, display_name=user.display_name, role=user.role)
+
+
+me_router = APIRouter(prefix="/api/me", tags=["me"])
+
+
+@me_router.get("/usage", response_model=MyUsageResponse)
+async def my_usage(
+    user: CurrentUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> MyUsageResponse:
+    limits = await effective_limits(session, user.user_id)
+    usage = MyUsage(
+        group_count=await count_owned_groups(session, user.user_id),
+        channel_count=await count_owned_channels(session, user.user_id),
+        today_analyses=await count_daily_deliveries(session, user.user_id),
+    )
+    if limits is None:
+        # admin 또는 개발 모드 — 무제한
+        return MyUsageResponse(
+            plan_name="Unlimited", plan_slug="unlimited", unlimited=True, usage=usage
+        )
+    return MyUsageResponse(
+        plan_name=limits.plan_name,
+        plan_slug=limits.plan_slug,
+        limits=MyLimits(
+            max_groups=limits.max_groups,
+            max_channels_total=limits.max_channels_total,
+            max_analyses_per_day=limits.max_analyses_per_day,
+            max_video_minutes=limits.max_video_minutes,
+            min_poll_interval_min=limits.min_poll_interval_min,
+        ),
+        usage=usage,
+    )

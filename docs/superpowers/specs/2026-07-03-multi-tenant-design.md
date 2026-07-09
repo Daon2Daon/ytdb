@@ -379,7 +379,7 @@ CREATE INDEX analysis_deliveries_user_created ON app.analysis_deliveries (user_i
 | A. 계정·소유권 (완료 2026-07-04) | users/invitations, argon2 로그인, admin 시드, groups.owner_user_id, `get_owned_group_or_404` 전면 적용, 초대 가입 플로우, 관리자 사용자 목록(최소) | 초대→가입→로그인→본인 그룹만 접근. 타인 그룹 slug 접근 시 404. 기존 admin 그룹 무변경 동작 — 실 DB E2E 통과 |
 | B-0a. 공유 분석 캐시 (완료 2026-07-04) | §2.9 — analysis_cache, analysis_deliveries, prompt_presets(§2.6, C에서 앞당김 — 캐시 키의 전제), 직접 프롬프트 그룹 캐시 우회 | 두 그룹이 같은 채널 구독 + 같은 프리셋 → 신규 영상 AI 호출 1회, 두 그룹 모두 분석 보유, deliveries 2행. 직접 프롬프트 그룹은 기존 경로 — 실 DB E2E 통과 |
 | B-0b. 중앙 채널 레지스트리 (완료 2026-07-08, 실 DB E2E 통과) | §2.9 + 별도 설계 문서 — channel_registry 중앙 폴링(채널당 1회), channel_subscriptions 역방향 매핑, global_settings 최소 골격(시스템 YouTube 키·폴링 하한), 그룹 키 폴백 | 두 그룹이 같은 채널 구독 → 중앙 틱 1회에 채널 API 조회 1회, 두 그룹 모두 신규 영상 보유. 기존 단일 운영자 배포는 설정 변경 없이 폴링 무중단 — 실 SK telecom 채널로 관통 검증 완료 |
-| B. 쿼터·관리자 콘솔 | plans/user_limits, 6개 강제 지점(분석 카운트는 deliveries 기준), 관리자 콘솔(사용자/초대/한도) | free 플랜 사용자가 한도 초과 생성 시 400. 관리자 오버라이드 반영 |
+| B. 쿼터·관리자 콘솔 (구현 완료 2026-07-10 — 비용 한도는 C로 이연) | plans/user_limits, 5개 개수 기반 강제 지점(분석 카운트는 deliveries 기준, monthly_cost는 C), 관리자 콘솔(사용자 정지·플랜·한도·임시비번), 마이페이지 | free 플랜 사용자가 한도 초과 생성 시 400. 관리자 오버라이드 반영. 설계 `2026-07-09-phase-b-quota-admin-console-design.md` |
 | C. AI 원장·전역 게이트웨이 | ai_usage 기록(시스템 몫 규칙 포함), global_settings, 설정 권한 분리(3.3), 예산 강제, 사용량 대시보드 | 캐시 미스 분석 1건 → 원장 1행(user_id=NULL, 토큰/비용). 예산 초과 그룹 skip. 사용자 화면에 AI 설정 비노출 |
 | D. 온보딩·운영 | 공용 봇 딥링크 연결, 사용자 그룹 자동 프로비저닝 마법사, YouTube 쿼터 카운터, 전 스키마 순회 마이그레이션 도구 | 신규 사용자가 UI만으로: 가입→그룹 생성→채널 추가→분석 결과 텔레그램 수신 |
 | E. 유료화 (본 설계 범위 외) | 결제 연동, 약관/개인정보처리방침, 플랜 업그레이드 | 시장/방식 확정 후 별도 설계 |
@@ -418,7 +418,7 @@ B에서는 개수 기반 한도만, C에서 비용 기반 한도를 완성한다
 
 | 항목 | 내용 | 수정 방향 |
 |------|------|-----------|
-| 전달 원장 중복 카운트 | analysis_deliveries에 (user_id, cache_id) 중복 방지가 없어, 같은 영상을 수동 재분석하면 전달 행이 추가로 쌓임. Phase B가 이 원장으로 일일 쿼터를 세면 재분석이 과카운트됨 | Phase B 쿼터 집계를 당일 distinct cache_id 기준으로 하거나, (user_id, cache_id) upsert로 전환 |
+| 전달 원장 중복 카운트 | analysis_deliveries에 (user_id, cache_id) 중복 방지가 없어, 같은 영상을 수동 재분석하면 전달 행이 추가로 쌓임. Phase B가 이 원장으로 일일 쿼터를 세면 재분석이 과카운트됨 | 완료(Phase B) — `UNIQUE(user_id, cache_id)` + `record_delivery` ON CONFLICT DO NOTHING. 기존 설치는 부팅 마이그레이션이 중복 정리 후 제약 추가 |
 | 프리셋 캐시 다중 워커 staleness | preset_service의 TTL 캐시·invalidate는 프로세스 로컬. 멀티 워커 배포 시 비활성화 반영이 최대 60초 지연(본문은 불변이라 내용 오염은 없음) | 멀티 워커 도입 시 TTL 단축 또는 공유 캐시로 전환 |
 | 캐시 완료 전 워커 사망 시 중복 비용 | run_and_save 커밋 후 complete_cached 전에 실패하면 캐시가 pending으로 남아 30분 뒤 재클레임·재분석(비용만, 정합성 무해) | 허용 (스펙 §8 타임아웃 정책과 일관) |
 | 중앙 채널 레지스트리 미구현 | B-0 스펙 중 channel_registry(폴링 채널당 1회)는 B-0b로 분리 — 분석 캐시와 독립적으로 동작 | 완료(2026-07-08). 설계 `2026-07-05-b0b-channel-registry-design.md`, 계획 `2026-07-05-b0b-central-channel-registry.md`, 실 DB E2E 통과 |

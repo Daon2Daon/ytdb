@@ -71,6 +71,7 @@ async def ensure_control_schema() -> None:
         prompt_preset,
         setting,
         user,
+        user_limit,
     )
 
     engine = get_engine()
@@ -85,3 +86,30 @@ async def ensure_control_schema() -> None:
                 f'REFERENCES "{APP_SCHEMA}".users(user_id)'
             )
         )
+        # Phase B 업그레이드: 기존 설치의 deliveries 중복 행 정리 후 UNIQUE 추가.
+        # create_all은 기존 테이블에 제약을 추가하지 않으므로 명시적으로 처리한다.
+        has_uq = (
+            await conn.execute(
+                text(
+                    "SELECT 1 FROM pg_constraint "
+                    "WHERE conname = 'uq_analysis_deliveries_user_cache'"
+                )
+            )
+        ).first()
+        if has_uq is None:
+            # 중복 중 가장 오래된 행(delivery_id 최소)만 유지
+            await conn.execute(
+                text(
+                    f'DELETE FROM "{APP_SCHEMA}".analysis_deliveries a '
+                    f'USING "{APP_SCHEMA}".analysis_deliveries b '
+                    "WHERE a.user_id = b.user_id AND a.cache_id = b.cache_id "
+                    "AND a.delivery_id > b.delivery_id"
+                )
+            )
+            await conn.execute(
+                text(
+                    f'ALTER TABLE "{APP_SCHEMA}".analysis_deliveries '
+                    "ADD CONSTRAINT uq_analysis_deliveries_user_cache "
+                    "UNIQUE (user_id, cache_id)"
+                )
+            )

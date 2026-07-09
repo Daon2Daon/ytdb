@@ -16,6 +16,7 @@ from app.routers.deps import get_group_or_404
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
 from app.services.channel_registry_service import remove_group_subscriptions, resync_group
 from app.services.default_settings import seed_default_settings
+from app.services.quota_service import QuotaExceeded, check_group_quota
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -46,6 +47,10 @@ async def create_group(
         schema_name = payload.schema_name or f"youtube_{slug}"
     else:
         # 일반 사용자: slug/schema 자동 생성 (스펙 §2.8). 입력값은 무시.
+        try:
+            await check_group_quota(session, user.user_id)
+        except QuotaExceeded as e:
+            raise HTTPException(status_code=400, detail=e.detail)
         slug = f"u{user.user_id}_{_secrets.token_hex(3)}"
         schema_name = f"youtube_{slug}"
     group = Group(

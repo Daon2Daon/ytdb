@@ -13,6 +13,7 @@ from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
 from app.services.channel_registry_service import resync_group as registry_resync_group
 from app.services.notify_service import _should_stamp_on_save
+from app.services.quota_service import limits_for_group_owner, validate_poll_interval
 from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
 
@@ -52,6 +53,26 @@ async def put_settings(
     group: Group = Depends(get_group_or_404),
 ) -> list[dict]:
     _check_category(category)
+
+    if category == "polling":
+        limits = await limits_for_group_owner(group)
+        if limits is not None:
+            for item in payload.items:
+                if item.key != "default_channel_interval_min":
+                    continue
+                try:
+                    interval = int(item.value)
+                except (TypeError, ValueError):
+                    continue  # 타입 오류는 기존 set_values 검증에 맡긴다
+                if not validate_poll_interval(limits, interval):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"폴링 주기는 플랜 하한({limits.min_poll_interval_min}분) "
+                            "이상이어야 합니다."
+                        ),
+                    )
+
     mgr = get_settings_manager()
 
     before_sendable = False

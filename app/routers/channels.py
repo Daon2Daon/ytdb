@@ -17,6 +17,12 @@ from app.services import channel_registry_service as registry
 from app.services.db_engine import data_plane_engine_manager as dpm
 from app.services.global_settings import resolve_youtube_key
 from app.services.monitor_service import MonitorService, poll_single_channel
+from app.services.quota_service import (
+    QuotaExceeded,
+    check_channel_quota,
+    limits_for_group_owner,
+    validate_poll_interval,
+)
 from app.services.settings_manager import get_settings_manager
 from app.services.youtube_api import YouTubeAPIError, YouTubeAPIClient
 
@@ -34,6 +40,26 @@ async def list_channels(group: Group = Depends(get_group_or_404)) -> list[Channe
 async def add_channel(
     payload: ChannelCreate, group: Group = Depends(get_group_or_404)
 ) -> Channel:
+    limits = await limits_for_group_owner(group)
+    if limits is not None:
+        async with get_sessionmaker()() as qs:
+            try:
+                await check_channel_quota(qs, group.owner_user_id)
+            except QuotaExceeded as e:
+                raise HTTPException(status_code=400, detail=e.detail)
+        # 유효 주기로 검증한다: payload 미지정 시 그룹 기본값이 적용되므로, 기본값이
+        # 플랜 하한 아래면(이후 하한 상향 등) 하한 우회를 막는다.
+        effective_interval = payload.poll_interval_min
+        if effective_interval is None:
+            effective_interval = (
+                await get_settings_manager().get_polling(group.group_id)
+            ).default_channel_interval_min
+        if not validate_poll_interval(limits, effective_interval):
+            raise HTTPException(
+                status_code=400,
+                detail=f"폴링 주기는 플랜 하한({limits.min_poll_interval_min}분) 이상이어야 합니다.",
+            )
+
     polling = await get_settings_manager().get_polling(group.group_id)
     api_key = await resolve_youtube_key(group.group_id)
     if not api_key:

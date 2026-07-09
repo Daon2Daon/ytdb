@@ -16,12 +16,13 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Optional, Sequence
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.control_db import get_sessionmaker
 from app.models.control.group import Group
+from app.models.control.user import User
 from app.models.pg.channel import Channel
 from app.models.pg.deleted_video import DeletedVideo
 from app.models.pg.video import Video
@@ -53,6 +54,11 @@ from app.services.notify_service import (
     notify_video,
 )
 from app.services.preset_service import ResolvedPrompts, resolve_prompts
+from app.services.quota_service import (
+    check_video_duration,
+    count_daily_deliveries,
+    limits_for_group_owner,
+)
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
@@ -293,9 +299,13 @@ async def reset_eligible_failed_videos(session: AsyncSession) -> int:
 async def _active_groups() -> List[Group]:
     sf = get_sessionmaker()
     async with sf() as session:
-        return list(
-            (await session.execute(select(Group).where(Group.is_active.is_(True)))).scalars().all()
+        stmt = (
+            select(Group)
+            .outerjoin(User, User.user_id == Group.owner_user_id)
+            .where(Group.is_active.is_(True))
+            .where(or_(Group.owner_user_id.is_(None), User.status == "active"))
         )
+        return list((await session.execute(stmt)).scalars().all())
 
 
 def _make_session_factory(engine: AsyncEngine, schema: str) -> MakeSession:
@@ -581,6 +591,32 @@ async def _run_analysis(
     title, channel_pk = video.title, video.channel_pk
     channel_name = channel.channel_name if channel else ""
 
+    limits = await limits_for_group_owner(group)
+    if not check_video_duration(limits, video.duration_seconds):
+        assert limits is not None
+        async with make_session() as sess:
+            async with sess.begin():
+                await sess.execute(
+                    update(Video)
+                    .where(Video.video_pk == video_pk)
+                    .values(
+                        analysis_status="skipped",
+                        analysis_error=(
+                            f"영상 길이 초과: {(video.duration_seconds or 0) // 60}분 "
+                            f"> 플랜 한도 {limits.max_video_minutes}분"
+                        ),
+                    )
+                )
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_SKIP,
+            message=f"영상 길이 초과(플랜 한도 {limits.max_video_minutes}분)",
+            channel_pk=video.channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
     if _should_use_cache(resolved.preset_id, custom_prompt):
         await _run_analysis_cached(
             group, make_session, video, channel_name, resolved,
@@ -779,6 +815,21 @@ async def _record_delivery_safe(group: Group, cache_id: Optional[int]) -> None:
         print(f"[{group.slug}] 전달 원장 기록 실패 (cache_id={cache_id}): {e}")
 
 
+async def _daily_quota_ok(group: Group) -> tuple[bool, str]:
+    """그룹 owner의 일일 분석 한도 검사. (통과 여부, 초과 사유)."""
+    limits = await limits_for_group_owner(group)
+    if limits is None:
+        return True, ""
+    async with get_sessionmaker()() as session:
+        current = await count_daily_deliveries(session, group.owner_user_id)
+    if current >= limits.max_analyses_per_day:
+        return False, (
+            f"일일 분석 한도 초과: 오늘 {current}건 / 한도 "
+            f"{limits.max_analyses_per_day}건 (KST 자정 초기화)"
+        )
+    return True, ""
+
+
 async def _analyze_group(group: Group) -> None:
     try:
         await dpm.ensure_schema(group)
@@ -787,6 +838,13 @@ async def _analyze_group(group: Group) -> None:
         return
 
     make_session = _make_session_factory(engine, group.schema_name)
+
+    # 일일 한도 초과 그룹은 클레임 자체를 건너뛴다 — 매 틱 claim→pending 되돌림 churn과
+    # job log 스팸(스케줄러 최소 1분 주기)을 피한다. 한도 도달 상태는 /api/me/usage·관리자
+    # 사용량으로 관찰 가능하며, 다음 KST 자정에 자동 재개된다.
+    ok, _reason = await _daily_quota_ok(group)
+    if not ok:
+        return
 
     async with make_session() as sess:
         async with sess.begin():

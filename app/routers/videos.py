@@ -31,7 +31,7 @@ from app.schemas.video import (
 from app.services.db_engine import data_plane_engine_manager as dpm
 from app.services.global_settings import resolve_youtube_key
 from app.services.job_logger import JOB_TYPE_NOTIFY, STATUS_SKIP, write_job_log
-from app.services.monitor_service import analyze_specific_video
+from app.services.monitor_service import _daily_quota_ok, analyze_specific_video
 from app.services.notify_service import (
     NOTIFY_SOURCE_TELEGRAM,
     NOTIFY_SOURCE_WEB,
@@ -45,6 +45,10 @@ from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 router = APIRouter(prefix="/api/groups/{slug}/videos", tags=["videos"])
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _INSTANT_CHANNEL_ID = "__instant__"
+
+
+async def _instant_quota_check(group: Group) -> tuple[bool, str]:
+    return await _daily_quota_ok(group)
 
 
 class AnalyzeNowRequest(BaseModel):
@@ -473,6 +477,10 @@ async def instant_analyze_video(
     video_id = _extract_video_id(payload.video_url)
     if not video_id:
         raise HTTPException(status_code=400, detail="유효한 YouTube 영상 URL/ID가 아닙니다.")
+
+    ok, reason = await _instant_quota_check(group)
+    if not ok:
+        raise HTTPException(status_code=400, detail=reason)
 
     polling = await get_settings_manager().get_polling(group.group_id)
     api_key = await resolve_youtube_key(group.group_id)
