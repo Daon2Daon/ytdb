@@ -97,3 +97,52 @@ class GlobalSettingItem(BaseModel):
 
 class GlobalSettingsUpdate(BaseModel):
     items: list[GlobalSettingItem]
+
+
+class AdminUserPatch(BaseModel):
+    status: Optional[str] = None      # 'active' | 'suspended'
+    plan_id: Optional[int] = None
+
+
+class UserLimitsIn(BaseModel):
+    """NULL 필드 = 플랜 값 사용."""
+
+    max_groups: Optional[int] = Field(default=None, ge=0)
+    max_channels_total: Optional[int] = Field(default=None, ge=0)
+    max_analyses_per_day: Optional[int] = Field(default=None, ge=0)
+    max_video_minutes: Optional[int] = Field(default=None, ge=0)
+    min_poll_interval_min: Optional[int] = Field(default=None, ge=1)
+    note: Optional[str] = None
+
+
+class UserLimitsOut(UserLimitsIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    updated_at: datetime
+
+
+class TempPasswordOut(BaseModel):
+    temp_password: str               # 평문은 이 응답에 1회만 노출
+
+
+class PlanPatch(BaseModel):
+    """slug/is_default는 불변(시드 정합성). 한도값만 편집."""
+
+    name: Optional[str] = None
+    max_groups: Optional[int] = Field(default=None, ge=0)
+    max_channels_total: Optional[int] = Field(default=None, ge=0)
+    max_analyses_per_day: Optional[int] = Field(default=None, ge=0)
+    max_video_minutes: Optional[int] = Field(default=None, ge=0)
+    min_poll_interval_min: Optional[int] = Field(default=None, ge=1)
+
+
+class AdminUserUsage(BaseModel):
+    group_count: int
+    channel_count: int
+    today_analyses: int
+    has_override: bool
+
+
+class AdminUserOutV2(AdminUserOut):
+    usage: Optional[AdminUserUsage] = None
