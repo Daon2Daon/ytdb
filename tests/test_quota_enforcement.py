@@ -122,3 +122,20 @@ def test_put_polling_settings_below_plan_floor_400(monkeypatch):
     )
     assert resp.status_code == 400
     assert "폴링 주기" in resp.json()["detail"]
+
+
+def test_instant_analyze_daily_quota_400(monkeypatch):
+    _as_user()
+    _as_group()
+
+    async def _deny(group):
+        return (False, "일일 분석 한도 초과: 오늘 10건 / 한도 10건 (KST 자정에 초기화)")
+
+    monkeypatch.setattr("app.routers.videos._instant_quota_check", _deny)
+    c = TestClient(app, raise_server_exceptions=False)
+    resp = c.post(
+        "/api/groups/g1/videos/instant",
+        json={"video_url": "https://youtu.be/dQw4w9WgXcQ"},
+    )
+    assert resp.status_code == 400
+    assert "일일 분석 한도" in resp.json()["detail"]
