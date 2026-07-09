@@ -56,3 +56,25 @@ class MeResponse(BaseModel):
     auth_enabled: bool
     authenticated: bool
     user: Optional[UserOut] = None
+
+
+class MyLimits(BaseModel):
+    max_groups: int
+    max_channels_total: int
+    max_analyses_per_day: int
+    max_video_minutes: int
+    min_poll_interval_min: int
+
+
+class MyUsage(BaseModel):
+    group_count: int
+    channel_count: int
+    today_analyses: int
+
+
+class MyUsageResponse(BaseModel):
+    plan_name: str
+    plan_slug: str
+    unlimited: bool = False          # admin/개발 모드
+    limits: Optional[MyLimits] = None
+    usage: MyUsage

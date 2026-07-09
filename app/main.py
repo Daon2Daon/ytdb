@@ -31,7 +31,7 @@ from app.routers import (
     tags,
     videos,
 )
-from app.routers.auth import require_user
+from app.routers.auth import me_router, require_user
 from app.services.db_engine import DBNotConfiguredError
 from app.services.scheduler import apply_pending_analysis_schedule, shutdown_scheduler, start_scheduler
 
@@ -86,6 +86,7 @@ async def db_not_configured_handler(_request: Request, exc: DBNotConfiguredError
 
 # 인증 라우터는 무인증(로그인/상태 확인). 나머지 데이터 라우터는 require_user로 보호.
 app.include_router(auth.router)
+app.include_router(me_router)
 app.include_router(share.router)  # 공개 공유 페이지(무인증)
 
 _protected = [Depends(require_user)]
