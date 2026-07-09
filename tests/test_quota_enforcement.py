@@ -139,3 +139,35 @@ def test_instant_analyze_daily_quota_400(monkeypatch):
     )
     assert resp.status_code == 400
     assert "일일 분석 한도" in resp.json()["detail"]
+
+
+def test_add_channel_default_interval_below_floor_400(monkeypatch):
+    """poll_interval_min 미지정 시 그룹 기본값이 플랜 하한 아래면 400 (하한 우회 차단)."""
+    _as_user()
+    _as_group()
+
+    async def _limits(group):
+        from app.services.quota_service import EffectiveLimits
+        return EffectiveLimits(
+            max_groups=1, max_channels_total=5, max_analyses_per_day=10,
+            max_video_minutes=60, min_poll_interval_min=60,
+            plan_slug="free", plan_name="Free", has_override=False,
+        )
+
+    async def _ok(session, user_id):
+        return None
+
+    class _Polling:
+        default_channel_interval_min = 30  # 플랜 하한(60) 아래
+
+    class _Mgr:
+        async def get_polling(self, group_id):
+            return _Polling()
+
+    monkeypatch.setattr("app.routers.channels.limits_for_group_owner", _limits)
+    monkeypatch.setattr("app.routers.channels.check_channel_quota", _ok)
+    monkeypatch.setattr("app.routers.channels.get_settings_manager", lambda: _Mgr())
+    c = TestClient(app, raise_server_exceptions=False)
+    resp = c.post("/api/groups/g1/channels", json={"channel_input": "@x"})
+    assert resp.status_code == 400
+    assert "폴링 주기" in resp.json()["detail"]

@@ -47,7 +47,14 @@ async def add_channel(
                 await check_channel_quota(qs, group.owner_user_id)
             except QuotaExceeded as e:
                 raise HTTPException(status_code=400, detail=e.detail)
-        if not validate_poll_interval(limits, payload.poll_interval_min):
+        # 유효 주기로 검증한다: payload 미지정 시 그룹 기본값이 적용되므로, 기본값이
+        # 플랜 하한 아래면(이후 하한 상향 등) 하한 우회를 막는다.
+        effective_interval = payload.poll_interval_min
+        if effective_interval is None:
+            effective_interval = (
+                await get_settings_manager().get_polling(group.group_id)
+            ).default_channel_interval_min
+        if not validate_poll_interval(limits, effective_interval):
             raise HTTPException(
                 status_code=400,
                 detail=f"폴링 주기는 플랜 하한({limits.min_poll_interval_min}분) 이상이어야 합니다.",

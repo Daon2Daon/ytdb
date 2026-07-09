@@ -839,31 +839,19 @@ async def _analyze_group(group: Group) -> None:
 
     make_session = _make_session_factory(engine, group.schema_name)
 
+    # 일일 한도 초과 그룹은 클레임 자체를 건너뛴다 — 매 틱 claim→pending 되돌림 churn과
+    # job log 스팸(스케줄러 최소 1분 주기)을 피한다. 한도 도달 상태는 /api/me/usage·관리자
+    # 사용량으로 관찰 가능하며, 다음 KST 자정에 자동 재개된다.
+    ok, _reason = await _daily_quota_ok(group)
+    if not ok:
+        return
+
     async with make_session() as sess:
         async with sess.begin():
             await reset_stale_processing_videos(sess, STALE_PROCESSING_RESET_MINUTES)
             await reset_eligible_failed_videos(sess)
             claimed = await claim_pending_video_pks(sess, 1)
     if not claimed:
-        return
-
-    ok, reason = await _daily_quota_ok(group)
-    if not ok:
-        # claim한 영상을 pending으로 되돌리고 skip 기록 — 내일(KST) 자동 재개.
-        async with make_session() as sess:
-            async with sess.begin():
-                await sess.execute(
-                    update(Video)
-                    .where(Video.video_pk == claimed[0])
-                    .values(analysis_status="pending")
-                )
-        await write_job_log(
-            make_session,
-            job_type=JOB_TYPE_VIDEO_ANALYZE,
-            status=STATUS_SKIP,
-            message=reason,
-            video_pk=claimed[0],
-        )
         return
 
     await _run_analysis(group, make_session, claimed[0])
