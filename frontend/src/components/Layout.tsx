@@ -54,6 +54,7 @@ export default function Layout() {
               {user?.role === 'admin' && (
                 <a href="/admin" className="text-xs text-amber-600 hover:underline">관리자</a>
               )}
+              <a href="/me" className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">마이페이지</a>
               <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
             </div>
           )}
@@ -82,6 +83,7 @@ export default function Layout() {
             {user?.role === 'admin' && (
               <a href="/admin" className="text-xs text-amber-600 hover:underline">관리자</a>
             )}
+            <a href="/me" className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">마이페이지</a>
             <button onClick={logout} className="text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">로그아웃</button>
           </div>
         )}
