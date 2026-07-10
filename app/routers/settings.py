@@ -45,7 +45,8 @@ def _check_category(category: str) -> None:
 ADMIN_ONLY_CATEGORIES = {"database", "ai_gateway"}
 # user에게 허용되는 키만 나열(화이트리스트) — 그 외 키는 GET 제외·PUT 400
 USER_FIELD_ALLOWLIST: dict[str, set[str]] = {"prompts": {"preset_id"}}
-# user에게 차단되는 키(블랙리스트) — 나머지는 허용
+# user에게 차단되는 키(블랙리스트) — 나머지는 허용.
+# 불변식: 화이트리스트가 블랙리스트보다 우선하므로 한 카테고리가 두 dict에 동시에 있으면 안 된다.
 USER_FIELD_BLOCKLIST: dict[str, set[str]] = {
     "polling": {"youtube_api_key"},
     "notification": {"bot_token", "chat_ids"},
@@ -68,7 +69,7 @@ def _filter_items_for_user(category: str, user: CurrentUser, items: list[dict]) 
     return [i for i in items if i["key"] not in block]
 
 
-def _reject_blocked_puts(category: str, user: CurrentUser, items) -> None:
+def _reject_blocked_puts(category: str, user: CurrentUser, items: list[SettingItem]) -> None:
     if user.is_admin:
         return
     allow = USER_FIELD_ALLOWLIST.get(category)
@@ -80,6 +81,7 @@ def _reject_blocked_puts(category: str, user: CurrentUser, items) -> None:
             raise HTTPException(status_code=400, detail=f"수정 권한이 없는 항목: {item.key}")
 
 
+# 주의: 이 라우트는 @router.get("/{category}")보다 먼저 선언되어야 한다 (FastAPI 선언 순서 매칭).
 @router.get("/prompts/presets")
 async def list_active_presets(group: Group = Depends(get_group_or_404)) -> list[dict]:
     """활성 프리셋 id/이름/설명 — 사용자 프리셋 선택용(본문 비노출)."""
@@ -169,7 +171,9 @@ async def put_settings(
         await registry_resync_group(group)
         if app_settings.SCHEDULER_ENABLED:
             await apply_pending_analysis_schedule()
-    return await mgr.list_for_api(group.group_id, category)
+    # PUT 응답도 GET과 동일하게 user 필드 필터 적용 — 차단 필드 값 유출 방지 (§3.3)
+    items = await mgr.list_for_api(group.group_id, category)
+    return _filter_items_for_user(category, user, items)
 
 
 @router.get("/ai_gateway/models", response_model=list[str])

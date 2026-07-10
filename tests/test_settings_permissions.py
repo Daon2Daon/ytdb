@@ -98,6 +98,65 @@ def test_admin_keeps_full_access(monkeypatch):
     assert c.get("/api/groups/g1/settings/ai_gateway").status_code == 200
 
 
+def test_user_put_response_filters_blocked_fields(monkeypatch):
+    """user PUT 성공(200) 응답 본문에도 차단 필드가 유출되지 않아야 한다 (§3.3)."""
+    _as(USER)
+
+    async def _fake_list(group_id, category):
+        return [
+            {"key": "preset_id", "value": "1", "value_type": "int"},
+            {"key": "analysis_prompt", "value": "secret prompt body", "value_type": "string"},
+        ]
+
+    async def _fake_set(group_id, category, items):
+        return None
+
+    class _Mgr:
+        list_for_api = staticmethod(_fake_list)
+        set_values = staticmethod(_fake_set)
+
+    monkeypatch.setattr("app.routers.settings.get_settings_manager", lambda: _Mgr())
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.put(
+        "/api/groups/g1/settings/prompts",
+        json={"items": [{"key": "preset_id", "value": "1", "value_type": "int"}]},
+    )
+    assert r.status_code == 200
+    keys = {i["key"] for i in r.json()}
+    assert keys == {"preset_id"}
+    assert "analysis_prompt" not in keys
+
+
 def test_presets_route_registered():
     paths = {r.path for r in app.routes}
     assert "/api/groups/{slug}/settings/prompts/presets" in paths
+
+
+def test_presets_route_reachable(monkeypatch):
+    """/prompts/presets가 /{category}에 삼켜지지 않고 실제로 매칭되는지 검증."""
+    _as(USER)
+
+    class _FakeResult:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return []
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def execute(self, stmt):
+            return _FakeResult()
+
+    monkeypatch.setattr(
+        "app.routers.settings.get_sessionmaker", lambda: (lambda: _FakeSession())
+    )
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.get("/api/groups/g1/settings/prompts/presets")
+    assert r.status_code == 200
+    assert r.json() == []
