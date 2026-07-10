@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 
+from app.control_db import get_sessionmaker
 from app.models.control.group import Group
+from app.models.control.prompt_preset import PromptPreset
+from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
@@ -37,13 +41,73 @@ def _check_category(category: str) -> None:
         )
 
 
+# §3.3 설정 카테고리 권한 (설계 §6). admin은 전체, user는 아래 제한.
+ADMIN_ONLY_CATEGORIES = {"database", "ai_gateway"}
+# user에게 허용되는 키만 나열(화이트리스트) — 그 외 키는 GET 제외·PUT 400
+USER_FIELD_ALLOWLIST: dict[str, set[str]] = {"prompts": {"preset_id"}}
+# user에게 차단되는 키(블랙리스트) — 나머지는 허용
+USER_FIELD_BLOCKLIST: dict[str, set[str]] = {
+    "polling": {"youtube_api_key"},
+    "notification": {"bot_token", "chat_ids"},
+}
+
+
+def _check_user_category(category: str, user: CurrentUser) -> None:
+    if not user.is_admin and category in ADMIN_ONLY_CATEGORIES:
+        # 타 카테고리 존재를 노출하지 않도록 미존재와 동일 취급 (§3.3 은닉)
+        raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다.")
+
+
+def _filter_items_for_user(category: str, user: CurrentUser, items: list[dict]) -> list[dict]:
+    if user.is_admin:
+        return items
+    allow = USER_FIELD_ALLOWLIST.get(category)
+    if allow is not None:
+        return [i for i in items if i["key"] in allow]
+    block = USER_FIELD_BLOCKLIST.get(category, set())
+    return [i for i in items if i["key"] not in block]
+
+
+def _reject_blocked_puts(category: str, user: CurrentUser, items) -> None:
+    if user.is_admin:
+        return
+    allow = USER_FIELD_ALLOWLIST.get(category)
+    block = USER_FIELD_BLOCKLIST.get(category, set())
+    for item in items:
+        if allow is not None and item.key not in allow:
+            raise HTTPException(status_code=400, detail=f"수정 권한이 없는 항목: {item.key}")
+        if item.key in block:
+            raise HTTPException(status_code=400, detail=f"수정 권한이 없는 항목: {item.key}")
+
+
+@router.get("/prompts/presets")
+async def list_active_presets(group: Group = Depends(get_group_or_404)) -> list[dict]:
+    """활성 프리셋 id/이름/설명 — 사용자 프리셋 선택용(본문 비노출)."""
+    async with get_sessionmaker()() as session:
+        rows = (
+            await session.execute(
+                select(PromptPreset)
+                .where(PromptPreset.is_active.is_(True))
+                .order_by(PromptPreset.preset_id)
+            )
+        ).scalars().all()
+    return [
+        {"preset_id": p.preset_id, "name": p.name, "description": p.description or ""}
+        for p in rows
+    ]
+
+
 @router.get("/{category}", response_model=list[SettingItem])
 async def get_settings(
-    category: str, group: Group = Depends(get_group_or_404)
+    category: str,
+    group: Group = Depends(get_group_or_404),
+    user: CurrentUser = Depends(require_user),
 ) -> list[dict]:
     _check_category(category)
+    _check_user_category(category, user)
     mgr = get_settings_manager()
-    return await mgr.list_for_api(group.group_id, category)
+    items = await mgr.list_for_api(group.group_id, category)
+    return _filter_items_for_user(category, user, items)
 
 
 @router.put("/{category}", response_model=list[SettingItem])
@@ -51,8 +115,11 @@ async def put_settings(
     category: str,
     payload: SettingsUpdate,
     group: Group = Depends(get_group_or_404),
+    user: CurrentUser = Depends(require_user),
 ) -> list[dict]:
     _check_category(category)
+    _check_user_category(category, user)
+    _reject_blocked_puts(category, user, payload.items)
 
     if category == "polling":
         limits = await limits_for_group_owner(group)
@@ -106,8 +173,13 @@ async def put_settings(
 
 
 @router.get("/ai_gateway/models", response_model=list[str])
-async def list_ai_gateway_models(group: Group = Depends(get_group_or_404)) -> list[str]:
+async def list_ai_gateway_models(
+    group: Group = Depends(get_group_or_404),
+    user: CurrentUser = Depends(require_user),
+) -> list[str]:
     """저장된 ai_gateway(base_url/api_key)로 모델 목록을 조회한다."""
+    if not user.is_admin:
+        raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다.")
     mgr = get_settings_manager()
     cfg = await mgr.get_ai_gateway(group.group_id)
     if not cfg.base_url or not cfg.api_key:
