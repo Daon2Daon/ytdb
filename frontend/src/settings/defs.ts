@@ -77,7 +77,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
   digest: [],
 }
 
-// §3.3 설정 권한 (백엔드와 동일 규칙 — UI 은닉용, 강제는 서버가 담당)
+// §3.3 설정 권한 (백엔드와 동일 규칙 — UI 은닉용, 강제는 서버가 담당) — 원본: app/routers/settings.py ADMIN_ONLY_CATEGORIES/USER_FIELD_BLOCKLIST
 const ADMIN_ONLY_CATEGORIES = new Set(['database', 'ai_gateway'])
 const USER_FIELD_BLOCKLIST: Record<string, Set<string>> = {
   polling: new Set(['youtube_api_key']),

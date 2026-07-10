@@ -30,6 +30,7 @@ export default function Admin() {
   const [planEdits, setPlanEdits] = useState<Record<number, Partial<PlanInfo>>>({})
   const [usage, setUsage] = useState<AdminUsageResponse | null>(null)
   const [usageWindow, setUsageWindow] = useState('this_month')
+  const [usageError, setUsageError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -45,8 +46,9 @@ export default function Admin() {
   const loadUsage = useCallback(async () => {
     try {
       setUsage(await adminApi.usage(usageWindow))
+      setUsageError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setUsageError((e as Error).message)
     }
   }, [usageWindow])
 
@@ -470,6 +472,7 @@ export default function Admin() {
             <option value="30d">최근 30일</option>
           </select>
         </div>
+        {usageError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{usageError}</p>}
         {usage && usage.null_cost_row_count > 0 && (
           <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             단가 미등록 호출 {usage.null_cost_row_count}건 — 전역설정의 ai_model_prices에 단가를 등록하세요.

@@ -20,6 +20,8 @@ from app.control_db import get_sessionmaker
 from app.models.control.global_setting import GlobalSetting
 from app.services.settings_manager import (
     SettingsSecretError,
+    _as_float as _f,
+    _as_int as _i,
     _fernet_from_key,
     get_settings_manager,
 )
@@ -169,20 +171,6 @@ async def get_ai_model_prices() -> dict:
     async with get_sessionmaker()() as session:
         raw = await get_global(session, GLOBAL_AI_MODEL_PRICES)
     return _parse_model_prices(raw)
-
-
-def _f(v, default: float) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return default
-
-
-def _i(v, default: int) -> int:
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return default
 
 
 async def resolve_ai_gateway(group_id: int) -> "AIGatewaySettings":

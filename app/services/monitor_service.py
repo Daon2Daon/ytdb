@@ -33,10 +33,10 @@ from app.services.analysis_cache_service import (
     fail_cached,
     record_delivery_for,
 )
-from app.services.ai_usage_service import record_usage
+from app.services.ai_usage_service import budget_ok_for_group, record_usage
 from app.services.analyzer import build_analysis_pipeline, result_from_cache, save_analysis_to_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
-from app.services.global_settings import resolve_youtube_key
+from app.services.global_settings import resolve_ai_gateway, resolve_youtube_key
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
     JOB_TYPE_NOTIFY,
@@ -629,8 +629,6 @@ async def _run_analysis(
     # 월 예산 게이트 (설계 §7 표 4행): 직접 프롬프트 분석은 owner 귀속 비용.
     # skipped는 재클레임되지 않아 핫루프 없음(duration 게이트와 동일 패턴).
     # 현재 직접 프롬프트는 admin 전용(§3.3)이라 실질 방어선이 아닌 방어적 완결성.
-    from app.services.ai_usage_service import budget_ok_for_group
-
     b_ok, b_reason = await budget_ok_for_group(group)
     if not b_ok:
         async with make_session() as sess:
@@ -733,8 +731,6 @@ async def _run_analysis_cached(
     label: str,
 ) -> None:
     """공유 캐시 경유 분석. 적중=복사, 선점=1회 분석+캐시 기록, 진행중=다음 틱 연기."""
-    from app.services.global_settings import resolve_ai_gateway
-
     ai = await resolve_ai_gateway(group.group_id)
     video_pk = video.video_pk
     assert resolved.preset_id is not None

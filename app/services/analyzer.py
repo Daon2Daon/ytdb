@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.pg.tag import ALLOWED_TAG_TYPES, DEFAULT_TAG_TYPE, Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.services.global_settings import resolve_ai_gateway
 from app.services.llm_client import LiteLLMClient, LiteLLMError
-from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import AIGatewaySettings
 from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
@@ -378,7 +378,6 @@ async def build_analysis_pipeline(
     호출 측이 이미 해석했다면 resolved로 넘겨 중복 조회를 피한다.
     """
     from app.services.preset_service import ResolvedPrompts, resolve_prompts
-    from app.services.global_settings import resolve_ai_gateway
 
     ai = await resolve_ai_gateway(group_id)
     if resolved is None:

@@ -378,6 +378,7 @@ async def usage_summary(
 
     rows_q = (
         await session.execute(
+            # columns: user_id, email, model, purpose, calls, input_tokens, output_tokens, cost_usd, null_cost_calls
             select(
                 AIUsage.user_id,
                 User.email,

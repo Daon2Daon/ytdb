@@ -20,6 +20,7 @@ from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group, record_usage
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.global_settings import resolve_ai_gateway
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
     STATUS_FAIL,
@@ -386,8 +387,6 @@ async def synthesize_with_llm(
     period_days: int = 7,
     owner_user_id: Optional[int] = None,
 ) -> DigestGenerated:
-    from app.services.global_settings import resolve_ai_gateway
-
     ai = await resolve_ai_gateway(group_id)
     from app.services.preset_service import resolve_prompts
 
