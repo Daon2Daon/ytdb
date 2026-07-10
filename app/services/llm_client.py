@@ -52,16 +52,50 @@ def _pick_text_from_gemini(payload: Dict[str, Any]) -> str:
         return ""
 
 
+def _extract_gemini_usage(payload: Dict[str, Any]) -> tuple[int | None, int | None]:
+    """Gemini native 응답의 usageMetadata → (input, output). 실패 시 (None, None).
+
+    output은 candidatesTokenCount + thoughtsTokenCount(thinking 모델) 합 — 과금 기준.
+    """
+    try:
+        um = payload.get("usageMetadata") or {}
+        inp = um.get("promptTokenCount")
+        out = um.get("candidatesTokenCount")
+        if out is not None:
+            out = int(out) + int(um.get("thoughtsTokenCount") or 0)
+        return (int(inp) if inp is not None else None, out)
+    except Exception:
+        return (None, None)
+
+
+def _extract_chat_usage(payload: Dict[str, Any]) -> tuple[int | None, int | None]:
+    """OpenAI 호환 응답의 usage → (input, output). 실패 시 (None, None)."""
+    try:
+        u = payload.get("usage") or {}
+        inp = u.get("prompt_tokens")
+        out = u.get("completion_tokens")
+        return (
+            int(inp) if inp is not None else None,
+            int(out) if out is not None else None,
+        )
+    except Exception:
+        return (None, None)
+
+
 @dataclass(frozen=True)
 class AnalyzerResult:
     data: Dict[str, Any]
     raw_text: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 @dataclass(frozen=True)
 class ChatResult:
     content: str
     raw: Dict[str, Any]
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class LiteLLMClient:
@@ -152,11 +186,18 @@ class LiteLLMClient:
             except Exception:
                 pass
             raise LiteLLMError(f"Gemini native 분석 실패: {resp.status_code} - {detail}")
-        raw_text = _pick_text_from_gemini(resp.json())
+        payload = resp.json()
+        raw_text = _pick_text_from_gemini(payload)
         if not raw_text:
             raise LiteLLMError("Gemini 응답에서 텍스트를 찾지 못했습니다.")
+        in_tok, out_tok = _extract_gemini_usage(payload)
         try:
-            return AnalyzerResult(data=json.loads(_strip_code_fence(raw_text)), raw_text=raw_text)
+            return AnalyzerResult(
+                data=json.loads(_strip_code_fence(raw_text)),
+                raw_text=raw_text,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+            )
         except Exception as e:
             raise LiteLLMError(f"Gemini 구조화 출력 JSON 파싱 실패: {e}") from e
 
@@ -190,4 +231,8 @@ class LiteLLMClient:
             content = payload["choices"][0]["message"]["content"]
         except Exception as e:
             raise LiteLLMError("chat completions 응답 파싱 실패") from e
-        return ChatResult(content=content or "", raw=payload)
+        in_tok, out_tok = _extract_chat_usage(payload)
+        return ChatResult(
+            content=content or "", raw=payload,
+            input_tokens=in_tok, output_tokens=out_tok,
+        )
