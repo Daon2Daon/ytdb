@@ -25,6 +25,7 @@ from app.schemas.auth import (
     SignupRequest,
     UserOut,
 )
+from app.services.ai_usage_service import month_cost_usd
 from app.services.auth_service import hash_password, is_auth_enabled, set_users_exist, verify_password
 from app.services.quota_service import (
     count_daily_deliveries,
@@ -176,6 +177,7 @@ async def my_usage(
         group_count=await count_owned_groups(session, user.user_id),
         channel_count=await count_owned_channels(session, user.user_id),
         today_analyses=await count_daily_deliveries(session, user.user_id),
+        month_cost_usd=float(await month_cost_usd(session, user.user_id)),
     )
     if limits is None:
         # admin 또는 개발 모드 — 무제한
@@ -191,6 +193,7 @@ async def my_usage(
             max_analyses_per_day=limits.max_analyses_per_day,
             max_video_minutes=limits.max_video_minutes,
             min_poll_interval_min=limits.min_poll_interval_min,
+            monthly_cost_budget_usd=limits.monthly_cost_budget_usd,
         ),
         usage=usage,
     )

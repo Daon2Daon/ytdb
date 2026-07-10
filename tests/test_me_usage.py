@@ -43,9 +43,14 @@ def test_me_usage_shape(monkeypatch):
     monkeypatch.setattr("app.routers.auth.count_owned_groups", _n)
     monkeypatch.setattr("app.routers.auth.count_owned_channels", _n)
     monkeypatch.setattr("app.routers.auth.count_daily_deliveries", _n)
+    monkeypatch.setattr("app.routers.auth.month_cost_usd", _n)
 
     c = TestClient(app, raise_server_exceptions=False)
     data = c.get("/api/me/usage").json()
     assert data["plan_name"] == "Free"
     assert data["limits"]["max_groups"] == 1
     assert data["usage"]["group_count"] == 3
+    assert data["usage"]["month_cost_usd"] == 3
+    assert data["limits"]["monthly_cost_budget_usd"] is None or isinstance(
+        data["limits"]["monthly_cost_budget_usd"], (int, float)
+    )
