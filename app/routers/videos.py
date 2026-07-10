@@ -28,6 +28,7 @@ from app.schemas.video import (
     VideoDetail,
     VideoListItem,
 )
+from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group
 from app.services.db_engine import data_plane_engine_manager as dpm
 from app.services.global_settings import resolve_youtube_key
 from app.services.job_logger import JOB_TYPE_NOTIFY, STATUS_SKIP, write_job_log
@@ -49,6 +50,12 @@ _INSTANT_CHANNEL_ID = "__instant__"
 
 async def _instant_quota_check(group: Group) -> tuple[bool, str]:
     return await _daily_quota_ok(group)
+
+
+async def _budget_gate(group) -> None:
+    ok, reason = await budget_ok_for_group(group)
+    if not ok:
+        raise BudgetExceeded(reason, limit=0, current=0)
 
 
 class AnalyzeNowRequest(BaseModel):
@@ -290,6 +297,14 @@ async def analyze_video_now(
     group: Group = Depends(get_group_or_404),
 ) -> dict:
     """영상 1건을 스케줄 대기 없이 백그라운드에서 즉시 분석한다."""
+    custom = payload.custom_prompt if payload else None
+    if custom and custom.strip():
+        # 커스텀 프롬프트는 캐시 우회 = owner 귀속 비용 (설계 §7).
+        # 프리셋/무프롬프트 분석은 예산 게이트 대상이 아니다.
+        try:
+            await _budget_gate(group)
+        except BudgetExceeded as e:
+            raise HTTPException(status_code=400, detail=e.detail)
     async with dpm.group_session(group) as session:
         async with session.begin():
             result = await session.execute(
@@ -299,7 +314,6 @@ async def analyze_video_now(
             )
             if (result.rowcount or 0) == 0:
                 raise HTTPException(status_code=404, detail="영상을 찾을 수 없습니다.")
-    custom = payload.custom_prompt if payload else None
     background.add_task(analyze_specific_video, group, video_pk, custom)
     return {"status": "started", "video_pk": video_pk}
 

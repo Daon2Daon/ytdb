@@ -18,7 +18,7 @@ from app.models.pg.digest import Digest
 from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
-from app.services.ai_usage_service import record_usage
+from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group, record_usage
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
@@ -532,6 +532,12 @@ async def generate_digest_for_group(
     save: bool = True,
     as_of: Optional[datetime] = None,
 ) -> Digest:
+    # 월 예산 게이트 (설계 §7): 다이제스트는 owner 귀속 비용 — 초과 시 생성 자체를 막는다.
+    # 수동 API는 라우터가 400으로, 스케줄 틱은 아래 run_digest_tick_once가 skip으로 변환.
+    ok, reason = await budget_ok_for_group(group)
+    if not ok:
+        raise BudgetExceeded(reason, limit=0, current=0)
+
     await dpm.ensure_schema(group)
     engine = await dpm.get_engine_for_group(group)
     make_session = lambda: dpm.session_for_group(engine, group.schema_name)
@@ -804,6 +810,10 @@ async def run_digest_tick_once() -> None:
                         ),
                         duration_ms=timer.elapsed_ms,
                     )
+                except BudgetExceeded as e:
+                    # 예산은 owner당 group 전역 — 남은 config도 모두 초과이므로 그룹 skip.
+                    print(f"[digest] {group.slug} 월 예산 초과로 skip: {e.detail}")
+                    break
                 except Exception as e:
                     await write_job_log(
                         make_session,

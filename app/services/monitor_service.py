@@ -626,6 +626,30 @@ async def _run_analysis(
         return
 
     # ── 기존 경로 (직접 프롬프트 / 커스텀 오버라이드) ──────────────────────────
+    # 월 예산 게이트 (설계 §7 표 4행): 직접 프롬프트 분석은 owner 귀속 비용.
+    # skipped는 재클레임되지 않아 핫루프 없음(duration 게이트와 동일 패턴).
+    # 현재 직접 프롬프트는 admin 전용(§3.3)이라 실질 방어선이 아닌 방어적 완결성.
+    from app.services.ai_usage_service import budget_ok_for_group
+
+    b_ok, b_reason = await budget_ok_for_group(group)
+    if not b_ok:
+        async with make_session() as sess:
+            async with sess.begin():
+                await sess.execute(
+                    update(Video)
+                    .where(Video.video_pk == video_pk)
+                    .values(analysis_status="skipped", analysis_error=b_reason)
+                )
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_SKIP,
+            message=b_reason,
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
     pipeline = await build_analysis_pipeline(
         group.group_id, analysis_prompt_override=custom_prompt, resolved=resolved
     )
