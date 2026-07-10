@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { adminApi, type AdminUser, type Invite, type PlanInfo, type UserLimits } from '../api/admin'
+import { adminApi, type AdminUsageResponse, type AdminUser, type Invite, type PlanInfo, type UserLimits } from '../api/admin'
 
 const emptyLimitsForm = {
   max_groups: '',
@@ -28,6 +28,8 @@ export default function Admin() {
   const [editingLimits, setEditingLimits] = useState<number | null>(null)
   const [limitsForm, setLimitsForm] = useState<LimitsForm>(emptyLimitsForm)
   const [planEdits, setPlanEdits] = useState<Record<number, Partial<PlanInfo>>>({})
+  const [usage, setUsage] = useState<AdminUsageResponse | null>(null)
+  const [usageWindow, setUsageWindow] = useState('this_month')
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +41,16 @@ export default function Admin() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const loadUsage = useCallback(async () => {
+    try {
+      setUsage(await adminApi.usage(usageWindow))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [usageWindow])
+
+  useEffect(() => { loadUsage() }, [loadUsage])
 
   const createInvite = async () => {
     try {
@@ -442,6 +454,62 @@ export default function Admin() {
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">AI 사용량</h2>
+          <select
+            value={usageWindow}
+            onChange={(e) => setUsageWindow(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+          >
+            <option value="this_month">이번 달</option>
+            <option value="last_month">지난달</option>
+            <option value="30d">최근 30일</option>
+          </select>
+        </div>
+        {usage && usage.null_cost_row_count > 0 && (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            단가 미등록 호출 {usage.null_cost_row_count}건 — 전역설정의 ai_model_prices에 단가를 등록하세요.
+          </p>
+        )}
+        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 border-b">
+                <th className="px-3 py-2">사용자</th><th className="px-3 py-2">모델</th>
+                <th className="px-3 py-2">purpose</th><th className="px-3 py-2 text-right">호출</th>
+                <th className="px-3 py-2 text-right">입력 토큰</th><th className="px-3 py-2 text-right">출력 토큰</th>
+                <th className="px-3 py-2 text-right">비용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage && usage.rows.length === 0 && (
+                <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-400">사용 내역이 없습니다.</td></tr>
+              )}
+              {usage?.rows.map((r, idx) => (
+                <tr key={idx} className="border-b last:border-0">
+                  <td className="px-3 py-2">{r.user_id == null ? '시스템' : (r.email ?? `user ${r.user_id}`)}</td>
+                  <td className="px-3 py-2">{r.model}</td>
+                  <td className="px-3 py-2">{r.purpose}</td>
+                  <td className="px-3 py-2 text-right">{r.calls.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">{r.input_tokens.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">{r.output_tokens.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">{r.cost_usd == null ? '—' : `$${r.cost_usd.toFixed(4)}`}</td>
+                </tr>
+              ))}
+            </tbody>
+            {usage && (
+              <tfoot>
+                <tr className="border-t font-medium">
+                  <td className="px-3 py-2" colSpan={6}>총 비용</td>
+                  <td className="px-3 py-2 text-right">${usage.total_cost_usd.toFixed(4)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
       </section>
     </div>

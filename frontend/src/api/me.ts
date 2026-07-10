@@ -10,11 +10,13 @@ export interface MyUsageResponse {
     max_analyses_per_day: number
     max_video_minutes: number
     min_poll_interval_min: number
+    monthly_cost_budget_usd: number | null
   } | null
   usage: {
     group_count: number
     channel_count: number
     today_analyses: number
+    month_cost_usd: number
   }
 }
 

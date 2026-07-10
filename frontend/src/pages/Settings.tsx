@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Navigate, NavLink } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
-import { settingsApi, type SettingItem } from '../api/settings'
-import { SETTING_DEFS, SETTING_CATEGORIES } from '../settings/defs'
+import { useAuth } from '../auth/useAuth'
+import { settingsApi, type SettingItem, type PromptPreset } from '../api/settings'
+import { SETTING_DEFS, visibleCategories, visibleFields } from '../settings/defs'
 import SettingsForm from '../components/SettingsForm'
 import DigestConfigsEditor from '../components/DigestConfigsEditor'
 import Spinner from '../components/Spinner'
@@ -10,15 +11,19 @@ import ErrorBanner from '../components/ErrorBanner'
 
 export default function Settings() {
   const { activeSlug } = useGroup()
+  const { user } = useAuth()
   const { category } = useParams<{ category: string }>()
   const [items, setItems] = useState<SettingItem[]>([])
   const [models, setModels] = useState<string[]>([])
+  const [presets, setPresets] = useState<PromptPreset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [modelMsg, setModelMsg] = useState<string | null>(null)
 
+  const categories = visibleCategories(user?.role)
+  const isPresetMode = user?.role !== 'admin' && category === 'prompts'
   const defs = category ? SETTING_DEFS[category] : undefined
   const isDigest = category === 'digest'
 
@@ -37,12 +42,15 @@ export default function Settings() {
           setModelMsg((e as Error).message)
         }
       }
+      if (isPresetMode) {
+        setPresets(await settingsApi(activeSlug).promptPresets())
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [activeSlug, category, defs])
+  }, [activeSlug, category, defs, isPresetMode])
 
   useEffect(() => { load() }, [load])
 
@@ -60,9 +68,9 @@ export default function Settings() {
     }
   }
 
-  if (!category || (!defs && !isDigest)) return <Navigate to={`/g/${activeSlug}/settings/${SETTING_CATEGORIES[0].key}`} replace />
+  if (!category || (!defs && !isDigest)) return <Navigate to={`/g/${activeSlug}/settings/${categories[0].key}`} replace />
 
-  const label = SETTING_CATEGORIES.find((c) => c.key === category)?.label ?? category
+  const label = categories.find((c) => c.key === category)?.label ?? category
 
   return (
     <div className="space-y-4">
@@ -73,7 +81,7 @@ export default function Settings() {
 
       {/* 카테고리 탭: 사이드바를 1개 항목으로 줄이는 대신 여기서 전환한다. */}
       <div className="flex flex-wrap gap-1 border-b border-gray-200">
-        {SETTING_CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <NavLink
             key={c.key}
             to={`/g/${activeSlug}/settings/${c.key}`}
@@ -102,11 +110,73 @@ export default function Settings() {
           )}
           {isDigest ? (
             <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} />
+          ) : isPresetMode ? (
+            <PromptPresetSelector
+              key={category}
+              presets={presets}
+              items={items}
+              saving={saving}
+              onSave={handleSave}
+            />
           ) : (
-            <SettingsForm key={category} defs={defs!} items={items} models={models} saving={saving} onSave={handleSave} />
+            <SettingsForm
+              key={category}
+              defs={visibleFields(user?.role, category, defs!)}
+              items={items}
+              models={models}
+              saving={saving}
+              onSave={handleSave}
+            />
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function PromptPresetSelector({
+  presets, items, saving, onSave,
+}: {
+  presets: PromptPreset[]
+  items: SettingItem[]
+  saving: boolean
+  onSave: (items: SettingItem[]) => void
+}) {
+  const current = items.find((i) => i.key === 'preset_id')?.value ?? ''
+  const [selected, setSelected] = useState(current)
+
+  const handleSave = () =>
+    onSave([{ key: 'preset_id', value: selected === '' ? null : selected, value_type: 'int', is_secret: false }])
+
+  const selectedPreset = presets.find((p) => String(p.preset_id) === selected)
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-5 space-y-5 max-w-2xl">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">프롬프트 프리셋</label>
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">선택 안 함</option>
+          {presets.map((p) => (
+            <option key={p.preset_id} value={String(p.preset_id)}>{p.name}</option>
+          ))}
+        </select>
+        {selectedPreset?.description && (
+          <p className="text-xs text-gray-400 mt-1">{selectedPreset.description}</p>
+        )}
+      </div>
+      <div className="pt-2">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+        >
+          {saving ? '저장 중...' : '저장'}
+        </button>
+      </div>
     </div>
   )
 }
