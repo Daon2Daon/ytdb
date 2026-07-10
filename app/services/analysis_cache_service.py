@@ -137,9 +137,17 @@ async def claim_or_get_cached(video_id: str, preset_id: int, model: str) -> Clai
         return outcome
 
 
-async def complete_cached(cache_id: int, analysis: Dict[str, Any]) -> None:
+async def complete_cached(
+    cache_id: int,
+    analysis: Dict[str, Any],
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+) -> None:
     async with get_sessionmaker()() as session:
-        await mark_completed(session, cache_id, analysis)
+        await mark_completed(
+            session, cache_id, analysis,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+        )
         await session.commit()
 
 

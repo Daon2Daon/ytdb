@@ -18,6 +18,7 @@ from app.models.pg.digest import Digest
 from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.services.ai_usage_service import record_usage
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
@@ -383,6 +384,7 @@ async def synthesize_with_llm(
     previous_digest: str = "없음",
     digest_prompt: str = "",
     period_days: int = 7,
+    owner_user_id: Optional[int] = None,
 ) -> DigestGenerated:
     from app.services.global_settings import resolve_ai_gateway
 
@@ -418,6 +420,15 @@ async def synthesize_with_llm(
             temperature=0.2,
             max_tokens=min(ai.max_tokens or 4096, 4096),
             response_format={"type": "json_object"},
+        )
+        # 다이제스트는 그룹 개인화 호출 — 그룹 owner 몫으로 원장 기록 (스펙 §2.4)
+        await record_usage(
+            user_id=owner_user_id,
+            group_id=group_id,
+            purpose="digest",
+            model=model,
+            input_tokens=chat.input_tokens,
+            output_tokens=chat.output_tokens,
         )
         data = json.loads(chat.content)
         headline = str(data.get("headline") or "").strip()
@@ -570,6 +581,7 @@ async def generate_digest_for_group(
                 previous_digest=previous_digest,
                 digest_prompt=digest_cfg.digest_prompt,
                 period_days=days,
+                owner_user_id=group.owner_user_id,
             )
         except Exception as e:
             generated = _fallback_generated(agg, period_start, period_end, days)
