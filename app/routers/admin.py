@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 
@@ -42,6 +43,11 @@ from app.schemas.admin import (
 )
 from app.services.auth_service import generate_invite_token, hash_password
 from app.services.global_settings import (
+    GLOBAL_AI_API_KEY,
+    GLOBAL_AI_BASE_URL,
+    GLOBAL_AI_DIGEST_MODEL,
+    GLOBAL_AI_MODEL_PRICES,
+    GLOBAL_AI_PRIMARY_MODEL,
     GLOBAL_CENTRAL_POLL_FLOOR_MIN,
     GLOBAL_YOUTUBE_API_KEY,
     SECRET_KEYS,
@@ -56,7 +62,15 @@ router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )
 
-_GLOBAL_KEYS = (GLOBAL_YOUTUBE_API_KEY, GLOBAL_CENTRAL_POLL_FLOOR_MIN)
+_GLOBAL_KEYS = (
+    GLOBAL_YOUTUBE_API_KEY,
+    GLOBAL_CENTRAL_POLL_FLOOR_MIN,
+    GLOBAL_AI_BASE_URL,
+    GLOBAL_AI_API_KEY,
+    GLOBAL_AI_PRIMARY_MODEL,
+    GLOBAL_AI_DIGEST_MODEL,
+    GLOBAL_AI_MODEL_PRICES,
+)
 
 
 def _signup_url(token: str) -> str:
@@ -245,6 +259,13 @@ async def put_global_settings(
                 raise HTTPException(
                     status_code=400, detail="central_poll_floor_min은 양의 정수여야 합니다."
                 )
+        if item.key == GLOBAL_AI_MODEL_PRICES:
+            try:
+                parsed = _json.loads(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="ai_model_prices는 JSON이어야 합니다.")
+            if not isinstance(parsed, dict):
+                raise HTTPException(status_code=400, detail="ai_model_prices는 JSON 객체여야 합니다.")
         await set_global(session, item.key, value)
     await session.commit()
     return await list_global_settings(session)

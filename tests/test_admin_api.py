@@ -129,3 +129,11 @@ async def test_put_global_settings_poll_floor_must_be_positive_int(monkeypatch):
     ])
     await admin_router.put_global_settings(payload, session=_FakeSession())
     assert saved == {"central_poll_floor_min": "15"}
+
+
+def test_global_settings_includes_ai_keys():
+    from app.routers.admin import _GLOBAL_KEYS
+
+    assert "ai_base_url" in _GLOBAL_KEYS
+    assert "ai_api_key" in _GLOBAL_KEYS
+    assert "ai_model_prices" in _GLOBAL_KEYS
