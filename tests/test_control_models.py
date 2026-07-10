@@ -85,3 +85,19 @@ def test_analysis_delivery_unique_constraint():
     assert any(
         {col.name for col in uq.columns} == {"user_id", "cache_id"} for uq in uqs
     )
+
+
+def test_ai_usage_model_columns():
+    from app.models.control.ai_usage import AIUsage
+
+    cols = {c.name for c in AIUsage.__table__.columns}
+    assert cols == {
+        "usage_id", "user_id", "group_id", "purpose", "model",
+        "input_tokens", "output_tokens", "cost_usd", "video_pk", "created_at",
+    }
+    # user_id NULL = 시스템 몫(공유 캐시 분석). group_id는 FK 없음(원장 보존).
+    assert AIUsage.__table__.columns["user_id"].nullable is True
+    assert AIUsage.__table__.columns["group_id"].nullable is True
+    assert AIUsage.__table__.columns["cost_usd"].nullable is True
+    fk_cols = {fk.parent.name for fk in AIUsage.__table__.foreign_keys}
+    assert fk_cols == {"user_id"}

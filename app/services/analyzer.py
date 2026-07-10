@@ -114,6 +114,8 @@ class AnalysisPipelineResult:
     gateway_url: str
     prompt_version: str = PROMPT_VERSION
     raw_text: str = ""
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
 
 
 def _validate(data: Dict[str, Any]) -> None:
@@ -321,6 +323,8 @@ class AnalysisPipeline:
                 model_name=self._ai.primary_model,
                 gateway_url=self._ai.base_url,
                 raw_text=result.raw_text,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
             )
         except (LiteLLMError, AnalysisValidationError) as e:
             raise AnalysisFailedError(
