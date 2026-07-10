@@ -812,6 +812,13 @@ async def run_digest_tick_once() -> None:
                     )
                 except BudgetExceeded as e:
                     # 예산은 owner당 group 전역 — 남은 config도 모두 초과이므로 그룹 skip.
+                    await write_job_log(
+                        make_session,
+                        job_type=JOB_TYPE_DIGEST,
+                        status=STATUS_SKIP,
+                        message=f"{cfg.name or 'Digest'} 월 예산 초과로 skip: {e.detail}",
+                        duration_ms=timer.elapsed_ms,
+                    )
                     print(f"[digest] {group.slug} 월 예산 초과로 skip: {e.detail}")
                     break
                 except Exception as e:
