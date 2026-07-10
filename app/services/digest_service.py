@@ -384,8 +384,9 @@ async def synthesize_with_llm(
     digest_prompt: str = "",
     period_days: int = 7,
 ) -> DigestGenerated:
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group_id)
+    from app.services.global_settings import resolve_ai_gateway
+
+    ai = await resolve_ai_gateway(group_id)
     from app.services.preset_service import resolve_prompts
 
     prompts = await resolve_prompts(group_id)

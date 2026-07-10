@@ -378,9 +378,9 @@ async def build_analysis_pipeline(
     호출 측이 이미 해석했다면 resolved로 넘겨 중복 조회를 피한다.
     """
     from app.services.preset_service import ResolvedPrompts, resolve_prompts
+    from app.services.global_settings import resolve_ai_gateway
 
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group_id)
+    ai = await resolve_ai_gateway(group_id)
     if resolved is None:
         resolved = await resolve_prompts(group_id)
     llm = LiteLLMClient(settings=ai)

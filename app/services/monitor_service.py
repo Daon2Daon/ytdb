@@ -698,8 +698,9 @@ async def _run_analysis_cached(
     label: str,
 ) -> None:
     """공유 캐시 경유 분석. 적중=복사, 선점=1회 분석+캐시 기록, 진행중=다음 틱 연기."""
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group.group_id)
+    from app.services.global_settings import resolve_ai_gateway
+
+    ai = await resolve_ai_gateway(group.group_id)
     video_pk = video.video_pk
     assert resolved.preset_id is not None
 
