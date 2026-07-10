@@ -51,3 +51,58 @@ def test_budget_exceeded_detail():
     exc = BudgetExceeded("월 AI 예산 초과", limit=5.0, current=5.2)
     assert exc.limit == 5.0 and exc.current == 5.2
     assert "월 AI 예산 초과" in str(exc)
+
+
+import pytest
+
+from app.services.ai_usage_service import check_monthly_budget, record_usage
+
+
+async def test_record_usage_swallows_errors(monkeypatch):
+    """원장 기록 실패는 분석을 깨뜨리지 않는다 — 예외를 삼키고 경고만."""
+    from app.services import ai_usage_service as aus
+
+    def _boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(aus, "get_sessionmaker", _boom)
+    # 예외가 밖으로 새면 테스트 실패
+    await record_usage(
+        user_id=None, group_id=1, purpose="analysis", model="m",
+        input_tokens=10, output_tokens=20,
+    )
+
+
+async def test_check_monthly_budget_exceeded(monkeypatch):
+    from app.services import ai_usage_service as aus
+    from app.services.quota_service import EffectiveLimits
+
+    LIMITS = EffectiveLimits(
+        max_groups=1, max_channels_total=5, max_analyses_per_day=10,
+        max_video_minutes=60, min_poll_interval_min=60,
+        plan_slug="free", plan_name="Free", has_override=False,
+        monthly_cost_budget_usd=5.0,
+    )
+
+    async def _limits(session, user_id):
+        return LIMITS
+
+    async def _cost(session, user_id):
+        from decimal import Decimal
+        return Decimal("5.1")
+
+    monkeypatch.setattr(aus, "effective_limits", _limits)
+    monkeypatch.setattr(aus, "month_cost_usd", _cost)
+    with pytest.raises(aus.BudgetExceeded) as ei:
+        await check_monthly_budget(None, user_id=2)
+    assert "월 AI 예산 초과" in ei.value.detail
+
+
+async def test_check_monthly_budget_unlimited(monkeypatch):
+    from app.services import ai_usage_service as aus
+
+    async def _none(session, user_id):
+        return None
+
+    monkeypatch.setattr(aus, "effective_limits", _none)
+    await check_monthly_budget(None, user_id=1)  # admin — 통과

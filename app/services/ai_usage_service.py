@@ -60,3 +60,84 @@ def compute_cost_usd(
         ) / Decimal(1_000_000)
     except (KeyError, TypeError, InvalidOperation):
         return None
+
+
+from sqlalchemy import func as sa_func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.control_db import get_sessionmaker
+from app.models.control.ai_usage import AIUsage
+from app.services.quota_service import effective_limits
+
+
+async def record_usage(
+    *,
+    user_id: Optional[int],
+    group_id: Optional[int],
+    purpose: str,
+    model: str,
+    input_tokens: Optional[int],
+    output_tokens: Optional[int],
+    video_pk: Optional[int] = None,
+) -> None:
+    """원장 1행 기록 + 단가 환산. best-effort — 모든 예외를 삼킨다."""
+    try:
+        from app.services.global_settings import get_ai_model_prices
+
+        prices = await get_ai_model_prices()
+        cost = compute_cost_usd(model, input_tokens, output_tokens, prices)
+        async with get_sessionmaker()() as session:
+            async with session.begin():
+                await session.execute(
+                    pg_insert(AIUsage).values(
+                        user_id=user_id,
+                        group_id=group_id,
+                        purpose=purpose,
+                        model=model,
+                        input_tokens=input_tokens or 0,
+                        output_tokens=output_tokens or 0,
+                        cost_usd=cost,
+                        video_pk=video_pk,
+                    )
+                )
+    except Exception as e:  # noqa: BLE001 — 원장 실패가 본 작업을 깨뜨리면 안 됨
+        print(f"[ai_usage] 원장 기록 실패(무시): {e}")
+
+
+async def month_cost_usd(session: AsyncSession, user_id: int) -> Decimal:
+    """당월(KST) 본인 귀속 비용 합. cost_usd NULL 행은 0 취급."""
+    since = kst_month_start_utc(datetime.now(timezone.utc))
+    return (
+        await session.execute(
+            select(sa_func.coalesce(sa_func.sum(AIUsage.cost_usd), 0))
+            .where(AIUsage.user_id == user_id, AIUsage.created_at >= since)
+        )
+    ).scalar_one()
+
+
+async def check_monthly_budget(session: AsyncSession, user_id: int) -> None:
+    """월 예산 검사. admin/예산 미설정은 통과. 초과 시 BudgetExceeded."""
+    limits = await effective_limits(session, user_id)
+    if limits is None or limits.monthly_cost_budget_usd is None:
+        return
+    current = float(await month_cost_usd(session, user_id))
+    if current >= limits.monthly_cost_budget_usd:
+        raise BudgetExceeded(
+            f"월 AI 예산 초과: 당월 ${current:.4f} / 예산 "
+            f"${limits.monthly_cost_budget_usd:.2f} (KST 월초 초기화)",
+            limit=limits.monthly_cost_budget_usd,
+            current=current,
+        )
+
+
+async def budget_ok_for_group(group) -> tuple[bool, str]:
+    """스케줄러/틱용: 그룹 owner 예산 검사. (통과 여부, 초과 사유)."""
+    if group.owner_user_id is None:
+        return True, ""
+    async with get_sessionmaker()() as session:
+        try:
+            await check_monthly_budget(session, group.owner_user_id)
+        except BudgetExceeded as e:
+            return False, e.detail
+    return True, ""
