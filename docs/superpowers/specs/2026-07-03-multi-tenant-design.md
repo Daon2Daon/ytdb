@@ -341,7 +341,7 @@ CREATE INDEX analysis_deliveries_user_created ON app.analysis_deliveries (user_i
 | max_channels_total | 채널 추가 API | 400 + 안내 |
 | max_analyses_per_day | 스케줄러 pending claim 시 + 단일 URL 분석 API | 그룹 skip / 400. 당일 집계는 `analysis_deliveries`의 COUNT (§2.9 — 캐시 히트/미스 무관 "전달 건수" 기준) |
 | max_video_minutes | 분석 파이프라인 진입 전 duration 검사 | 영상 상태를 skip 처리(사유 기록) |
-| monthly_cost_budget_usd | 스케줄러 claim 시 + 단일 분석 API. 당월 `SUM(cost_usd)` | 그룹 skip + 사용자에게 노출(마이페이지) |
+| monthly_cost_budget_usd | 다이제스트 생성(스케줄 skip/수동 400) + 커스텀 프롬프트 재분석 400 + 직접 프롬프트 스케줄 skipped — 프리셋 캐시 분석은 시스템 몫이라 차단하지 않음(설계 2026-07-10 §7, 승인된 편차). 당월 `SUM(cost_usd)`은 본인 귀속분만 | 그룹 skip + 사용자에게 노출(마이페이지) |
 | min_poll_interval_min | 채널/폴링 설정 저장 시 검증 | 400 |
 
 집계 쿼리는 (user_id, created_at) 인덱스로 충분. 호출량이 커지면 일/월 롤업 테이블 추가(추후).
@@ -380,7 +380,7 @@ CREATE INDEX analysis_deliveries_user_created ON app.analysis_deliveries (user_i
 | B-0a. 공유 분석 캐시 (완료 2026-07-04) | §2.9 — analysis_cache, analysis_deliveries, prompt_presets(§2.6, C에서 앞당김 — 캐시 키의 전제), 직접 프롬프트 그룹 캐시 우회 | 두 그룹이 같은 채널 구독 + 같은 프리셋 → 신규 영상 AI 호출 1회, 두 그룹 모두 분석 보유, deliveries 2행. 직접 프롬프트 그룹은 기존 경로 — 실 DB E2E 통과 |
 | B-0b. 중앙 채널 레지스트리 (완료 2026-07-08, 실 DB E2E 통과) | §2.9 + 별도 설계 문서 — channel_registry 중앙 폴링(채널당 1회), channel_subscriptions 역방향 매핑, global_settings 최소 골격(시스템 YouTube 키·폴링 하한), 그룹 키 폴백 | 두 그룹이 같은 채널 구독 → 중앙 틱 1회에 채널 API 조회 1회, 두 그룹 모두 신규 영상 보유. 기존 단일 운영자 배포는 설정 변경 없이 폴링 무중단 — 실 SK telecom 채널로 관통 검증 완료 |
 | B. 쿼터·관리자 콘솔 (구현 완료 2026-07-10 — 비용 한도는 C로 이연) | plans/user_limits, 5개 개수 기반 강제 지점(분석 카운트는 deliveries 기준, monthly_cost는 C), 관리자 콘솔(사용자 정지·플랜·한도·임시비번), 마이페이지 | free 플랜 사용자가 한도 초과 생성 시 400. 관리자 오버라이드 반영. 설계 `2026-07-09-phase-b-quota-admin-console-design.md` |
-| C. AI 원장·전역 게이트웨이 | ai_usage 기록(시스템 몫 규칙 포함), global_settings, 설정 권한 분리(3.3), 예산 강제, 사용량 대시보드 | 캐시 미스 분석 1건 → 원장 1행(user_id=NULL, 토큰/비용). 예산 초과 그룹 skip. 사용자 화면에 AI 설정 비노출 |
+| C. AI 원장·전역 게이트웨이 (구현 완료 2026-07-11 — 설계 2026-07-10-phase-c-ai-usage-global-gateway-design.md) | ai_usage 기록(시스템 몫 규칙 포함), global_settings, 설정 권한 분리(3.3), 예산 강제, 사용량 대시보드 | 캐시 미스 분석 1건 → 원장 1행(user_id=NULL, 토큰/비용). 예산 초과 그룹 skip. 사용자 화면에 AI 설정 비노출 |
 | D. 온보딩·운영 | 공용 봇 딥링크 연결, 사용자 그룹 자동 프로비저닝 마법사, YouTube 쿼터 카운터, 전 스키마 순회 마이그레이션 도구 | 신규 사용자가 UI만으로: 가입→그룹 생성→채널 추가→분석 결과 텔레그램 수신 |
 | E. 유료화 (본 설계 범위 외) | 결제 연동, 약관/개인정보처리방침, 플랜 업그레이드 | 시장/방식 확정 후 별도 설계 |
 
