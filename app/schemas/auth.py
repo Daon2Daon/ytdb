@@ -64,12 +64,14 @@ class MyLimits(BaseModel):
     max_analyses_per_day: int
     max_video_minutes: int
     min_poll_interval_min: int
+    monthly_cost_budget_usd: Optional[float] = None
 
 
 class MyUsage(BaseModel):
     group_count: int
     channel_count: int
     today_analyses: int
+    month_cost_usd: float = 0.0
 
 
 class MyUsageResponse(BaseModel):

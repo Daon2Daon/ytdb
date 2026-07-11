@@ -31,6 +31,10 @@ export default function MyPage() {
               <tr><td className="py-1 text-gray-500">오늘 분석</td>
                 <td>{data.usage.today_analyses}{data.limits && ` / ${data.limits.max_analyses_per_day}`}
                   <span className="text-xs text-gray-400 ml-1">(KST 자정 초기화)</span></td></tr>
+              <tr><td className="py-1 text-gray-500">당월 AI 비용</td>
+                <td>${data.usage.month_cost_usd.toFixed(4)}
+                  {data.limits?.monthly_cost_budget_usd != null && ` / $${data.limits.monthly_cost_budget_usd}`}
+                  <span className="text-xs text-gray-400 ml-1">(KST 월초 초기화)</span></td></tr>
               {data.limits && (<>
                 <tr><td className="py-1 text-gray-500">영상 길이 한도</td>
                   <td>{data.limits.max_video_minutes}분</td></tr>

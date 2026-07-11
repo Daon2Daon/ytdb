@@ -37,6 +37,7 @@ class EffectiveLimits:
     plan_slug: str
     plan_name: str
     has_override: bool
+    monthly_cost_budget_usd: Optional[float] = None  # None = 예산 무제한
 
 
 def kst_day_start_utc(now: datetime) -> datetime:
@@ -80,6 +81,12 @@ def _merge_limits(plan: Plan, override: Optional[UserLimit]) -> EffectiveLimits:
                 return int(v)
         return int(getattr(plan, field))
 
+    def pick_budget() -> Optional[float]:
+        if override is not None and override.monthly_cost_budget_usd is not None:
+            return float(override.monthly_cost_budget_usd)
+        v = plan.monthly_cost_budget_usd
+        return float(v) if v is not None else None
+
     return EffectiveLimits(
         max_groups=pick("max_groups"),
         max_channels_total=pick("max_channels_total"),
@@ -89,6 +96,7 @@ def _merge_limits(plan: Plan, override: Optional[UserLimit]) -> EffectiveLimits:
         plan_slug=plan.slug,
         plan_name=plan.name,
         has_override=override is not None,
+        monthly_cost_budget_usd=pick_budget(),
     )
 
 

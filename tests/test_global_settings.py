@@ -164,3 +164,68 @@ async def test_bootstrap_seed_survives_missing_fernet(monkeypatch):
 
     # 가드가 있으면 예외 없이 리턴, 없으면 SettingsSecretError가 테스트를 실패시킨다.
     await gs.bootstrap_global_settings()
+
+
+def test_ai_global_keys_registered():
+    from app.services.global_settings import (
+        GLOBAL_AI_API_KEY,
+        GLOBAL_AI_BASE_URL,
+        GLOBAL_AI_DIGEST_MODEL,
+        GLOBAL_AI_MODEL_PRICES,
+        GLOBAL_AI_PRIMARY_MODEL,
+        SECRET_KEYS,
+    )
+
+    assert GLOBAL_AI_API_KEY in SECRET_KEYS          # 암호화 저장
+    assert GLOBAL_AI_MODEL_PRICES not in SECRET_KEYS # 단가표는 평문 JSON
+    assert GLOBAL_AI_BASE_URL == "ai_base_url"
+    assert GLOBAL_AI_PRIMARY_MODEL == "ai_primary_model"
+    assert GLOBAL_AI_DIGEST_MODEL == "ai_digest_model"
+
+
+async def test_resolve_ai_gateway_group_overrides_global(monkeypatch):
+    """그룹 명시값 > 전역 > 코드 기본값."""
+    from app.services import global_settings as gs
+
+    async def _typed(group_id, category):
+        # 그룹은 base_url만 명시
+        return {"base_url": "http://group:4000", "api_key": "", "primary_model": ""}
+
+    class _Mgr:
+        get_typed = staticmethod(_typed)
+
+    monkeypatch.setattr(gs, "get_settings_manager", lambda: _Mgr())
+
+    async def _global(session, key):
+        return {
+            "ai_base_url": "http://global:4000",
+            "ai_api_key": "gk",
+            "ai_primary_model": "gemini/global-model",
+            "ai_digest_model": "",
+        }.get(key)
+
+    monkeypatch.setattr(gs, "get_global", _global)
+
+    class _S:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return None
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: (lambda: _S()))
+
+    ai = await gs.resolve_ai_gateway(7)
+    assert ai.base_url == "http://group:4000"        # 그룹 명시값 우선
+    assert ai.api_key == "gk"                        # 전역 폴백
+    assert ai.primary_model == "gemini/global-model" # 전역 폴백
+    assert ai.digest_model == ""                     # 전역도 빈값 → 기본값(빈값)
+
+
+def test_get_ai_model_prices_parsing():
+    from app.services.global_settings import _parse_model_prices
+
+    assert _parse_model_prices('{"gemini/": {"input": 0.1, "output": 0.4}}') == {
+        "gemini/": {"input": 0.1, "output": 0.4}
+    }
+    assert _parse_model_prices("") == {}
+    assert _parse_model_prices(None) == {}
+    assert _parse_model_prices("not json") == {}
+    assert _parse_model_prices('["list"]') == {}

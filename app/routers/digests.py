@@ -9,11 +9,18 @@ from app.models.control.group import Group
 from app.models.pg.digest import Digest
 from app.routers.deps import get_group_or_404
 from app.schemas.digest import DigestGenerateRequest, DigestOut
+from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
 from app.services.digest_service import generate_digest_for_group
 from app.services.settings_manager import get_settings_manager
 
 router = APIRouter(prefix="/api/groups/{slug}/digests", tags=["digests"])
+
+
+async def _budget_gate(group) -> None:
+    ok, reason = await budget_ok_for_group(group)
+    if not ok:
+        raise BudgetExceeded(reason, limit=0, current=0)
 
 
 @router.get("", response_model=list[DigestOut])
@@ -55,6 +62,10 @@ async def delete_digest(digest_pk: int, group: Group = Depends(get_group_or_404)
 async def generate_digest(
     payload: DigestGenerateRequest, group: Group = Depends(get_group_or_404)
 ) -> Digest:
+    try:
+        await _budget_gate(group)
+    except BudgetExceeded as e:
+        raise HTTPException(status_code=400, detail=e.detail)
     mgr = get_settings_manager()
     if payload.digest_config_id:
         cfg = await mgr.get_digest_config_by_id(group.group_id, payload.digest_config_id)

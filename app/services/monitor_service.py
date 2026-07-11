@@ -33,9 +33,10 @@ from app.services.analysis_cache_service import (
     fail_cached,
     record_delivery_for,
 )
+from app.services.ai_usage_service import budget_ok_for_group, record_usage
 from app.services.analyzer import build_analysis_pipeline, result_from_cache, save_analysis_to_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
-from app.services.global_settings import resolve_youtube_key
+from app.services.global_settings import resolve_ai_gateway, resolve_youtube_key
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
     JOB_TYPE_NOTIFY,
@@ -625,6 +626,28 @@ async def _run_analysis(
         return
 
     # ── 기존 경로 (직접 프롬프트 / 커스텀 오버라이드) ──────────────────────────
+    # 월 예산 게이트 (설계 §7 표 4행): 직접 프롬프트 분석은 owner 귀속 비용.
+    # skipped는 재클레임되지 않아 핫루프 없음(duration 게이트와 동일 패턴).
+    # 현재 직접 프롬프트는 admin 전용(§3.3)이라 실질 방어선이 아닌 방어적 완결성.
+    b_ok, b_reason = await budget_ok_for_group(group)
+    if not b_ok:
+        async with make_session() as sess:
+            async with sess.begin():
+                await sess.execute(
+                    update(Video)
+                    .where(Video.video_pk == video_pk)
+                    .values(analysis_status="skipped", analysis_error=b_reason)
+                )
+        await write_job_log(
+            make_session,
+            job_type=JOB_TYPE_VIDEO_ANALYZE,
+            status=STATUS_SKIP,
+            message=b_reason,
+            channel_pk=channel_pk,
+            video_pk=video_pk,
+        )
+        return
+
     pipeline = await build_analysis_pipeline(
         group.group_id, analysis_prompt_override=custom_prompt, resolved=resolved
     )
@@ -633,7 +656,7 @@ async def _run_analysis(
         with timer:
             async with make_session() as sess:
                 async with sess.begin():
-                    await pipeline.run_and_save(
+                    result = await pipeline.run_and_save(
                         session=sess,
                         video_pk=video_pk,
                         video_url=video.video_url,
@@ -641,6 +664,16 @@ async def _run_analysis(
                         published_at_str=video.published_at.isoformat(),
                         duration_seconds=video.duration_seconds,
                     )
+        # 직접/커스텀 프롬프트 분석은 캐시 우회 = 그룹 owner 몫 (스펙 §4 표 1행)
+        await record_usage(
+            user_id=group.owner_user_id,
+            group_id=group.group_id,
+            purpose="analysis",
+            model=result.model_name,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            video_pk=video_pk,
+        )
         await write_job_log(
             make_session,
             job_type=JOB_TYPE_VIDEO_ANALYZE,
@@ -698,8 +731,7 @@ async def _run_analysis_cached(
     label: str,
 ) -> None:
     """공유 캐시 경유 분석. 적중=복사, 선점=1회 분석+캐시 기록, 진행중=다음 틱 연기."""
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group.group_id)
+    ai = await resolve_ai_gateway(group.group_id)
     video_pk = video.video_pk
     assert resolved.preset_id is not None
 
@@ -773,7 +805,20 @@ async def _run_analysis_cached(
                         published_at_str=video.published_at.isoformat(),
                         duration_seconds=video.duration_seconds,
                     )
-        await complete_cached(outcome.cache_id, result.data)
+        await complete_cached(
+            outcome.cache_id, result.data,
+            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+        )
+        # 캐시 미스 실호출은 시스템 몫(user_id=NULL) 1회 기록 (스펙 §2.4 귀속 원칙)
+        await record_usage(
+            user_id=None,
+            group_id=group.group_id,
+            purpose="analysis",
+            model=ai.primary_model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            video_pk=video_pk,
+        )
         await _record_delivery_safe(group, outcome.cache_id)
         await write_job_log(
             make_session,

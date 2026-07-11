@@ -8,6 +8,12 @@ export interface SettingItem {
   description?: string | null
 }
 
+export interface PromptPreset {
+  preset_id: number
+  name: string
+  description: string | null
+}
+
 export function settingsApi(slug: string) {
   const c = groupClient(slug)
   return {
@@ -15,5 +21,6 @@ export function settingsApi(slug: string) {
     put: (category: string, items: SettingItem[]) =>
       c.put<SettingItem[]>(`/settings/${category}`, { items }),
     gatewayModels: () => c.get<string[]>(`/settings/ai_gateway/models`),
+    promptPresets: () => c.get<PromptPreset[]>(`/settings/prompts/presets`),
   }
 }

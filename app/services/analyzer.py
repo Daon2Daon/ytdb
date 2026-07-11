@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.pg.tag import ALLOWED_TAG_TYPES, DEFAULT_TAG_TYPE, Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.services.global_settings import resolve_ai_gateway
 from app.services.llm_client import LiteLLMClient, LiteLLMError
-from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import AIGatewaySettings
 from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
@@ -114,6 +114,8 @@ class AnalysisPipelineResult:
     gateway_url: str
     prompt_version: str = PROMPT_VERSION
     raw_text: str = ""
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
 
 
 def _validate(data: Dict[str, Any]) -> None:
@@ -321,6 +323,8 @@ class AnalysisPipeline:
                 model_name=self._ai.primary_model,
                 gateway_url=self._ai.base_url,
                 raw_text=result.raw_text,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
             )
         except (LiteLLMError, AnalysisValidationError) as e:
             raise AnalysisFailedError(
@@ -375,8 +379,7 @@ async def build_analysis_pipeline(
     """
     from app.services.preset_service import ResolvedPrompts, resolve_prompts
 
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group_id)
+    ai = await resolve_ai_gateway(group_id)
     if resolved is None:
         resolved = await resolve_prompts(group_id)
     llm = LiteLLMClient(settings=ai)

@@ -146,3 +146,26 @@ class AdminUserUsage(BaseModel):
 
 class AdminUserOutV2(AdminUserOut):
     usage: Optional[AdminUserUsage] = None
+
+
+class AdminUsageRow(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    user_id: Optional[int] = None     # None = 시스템 몫(공유 캐시 분석)
+    email: Optional[str] = None
+    model: str
+    purpose: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Optional[float] = None  # 전 행 단가 미상이면 None
+    null_cost_calls: int = 0          # 단가 미상 호출 수(경고 표시용)
+
+
+class AdminUsageResponse(BaseModel):
+    window: str
+    start: datetime
+    end: datetime
+    rows: list[AdminUsageRow]
+    total_cost_usd: float
+    null_cost_row_count: int          # 단가 미상 원장 행 총수 (스펙 §2.4 경고)

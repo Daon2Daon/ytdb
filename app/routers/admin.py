@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as app_settings
 from app.control_db import get_session
+from app.models.control.ai_usage import AIUsage
 from app.models.control.analysis_delivery import AnalysisDelivery
 from app.models.control.channel_subscription import ChannelSubscription
 from app.models.control.group import Group
@@ -22,6 +24,8 @@ from app.models.control.user import User
 from app.models.control.user_limit import UserLimit
 from app.routers.auth import CurrentUser, require_admin
 from app.schemas.admin import (
+    AdminUsageResponse,
+    AdminUsageRow,
     AdminUserOut,
     AdminUserOutV2,
     AdminUserPatch,
@@ -40,8 +44,14 @@ from app.schemas.admin import (
     UserLimitsIn,
     UserLimitsOut,
 )
+from app.services.ai_usage_service import kst_month_start_utc
 from app.services.auth_service import generate_invite_token, hash_password
 from app.services.global_settings import (
+    GLOBAL_AI_API_KEY,
+    GLOBAL_AI_BASE_URL,
+    GLOBAL_AI_DIGEST_MODEL,
+    GLOBAL_AI_MODEL_PRICES,
+    GLOBAL_AI_PRIMARY_MODEL,
     GLOBAL_CENTRAL_POLL_FLOOR_MIN,
     GLOBAL_YOUTUBE_API_KEY,
     SECRET_KEYS,
@@ -56,7 +66,15 @@ router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )
 
-_GLOBAL_KEYS = (GLOBAL_YOUTUBE_API_KEY, GLOBAL_CENTRAL_POLL_FLOOR_MIN)
+_GLOBAL_KEYS = (
+    GLOBAL_YOUTUBE_API_KEY,
+    GLOBAL_CENTRAL_POLL_FLOOR_MIN,
+    GLOBAL_AI_BASE_URL,
+    GLOBAL_AI_API_KEY,
+    GLOBAL_AI_PRIMARY_MODEL,
+    GLOBAL_AI_DIGEST_MODEL,
+    GLOBAL_AI_MODEL_PRICES,
+)
 
 
 def _signup_url(token: str) -> str:
@@ -245,6 +263,13 @@ async def put_global_settings(
                 raise HTTPException(
                     status_code=400, detail="central_poll_floor_min은 양의 정수여야 합니다."
                 )
+        if item.key == GLOBAL_AI_MODEL_PRICES:
+            try:
+                parsed = _json.loads(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="ai_model_prices는 JSON이어야 합니다.")
+            if not isinstance(parsed, dict):
+                raise HTTPException(status_code=400, detail="ai_model_prices는 JSON 객체여야 합니다.")
         await set_global(session, item.key, value)
     await session.commit()
     return await list_global_settings(session)
@@ -333,3 +358,56 @@ async def patch_plan(
     await session.commit()
     await session.refresh(plan)
     return plan
+
+
+@router.get("/usage", response_model=AdminUsageResponse)
+async def usage_summary(
+    window: str = "this_month",
+    session: AsyncSession = Depends(get_session),
+) -> AdminUsageResponse:
+    now = datetime.now(timezone.utc)
+    if window == "this_month":
+        start, end = kst_month_start_utc(now), now
+    elif window == "last_month":
+        end = kst_month_start_utc(now)
+        start = kst_month_start_utc(end - timedelta(seconds=1))
+    elif window == "30d":
+        start, end = now - timedelta(days=30), now
+    else:
+        raise HTTPException(status_code=400, detail="window는 this_month|last_month|30d")
+
+    rows_q = (
+        await session.execute(
+            # columns: user_id, email, model, purpose, calls, input_tokens, output_tokens, cost_usd, null_cost_calls
+            select(
+                AIUsage.user_id,
+                User.email,
+                AIUsage.model,
+                AIUsage.purpose,
+                sa_func.count(AIUsage.usage_id),
+                sa_func.coalesce(sa_func.sum(AIUsage.input_tokens), 0),
+                sa_func.coalesce(sa_func.sum(AIUsage.output_tokens), 0),
+                sa_func.sum(AIUsage.cost_usd),
+                sa_func.count(AIUsage.usage_id).filter(AIUsage.cost_usd.is_(None)),
+            )
+            .outerjoin(User, User.user_id == AIUsage.user_id)
+            .where(AIUsage.created_at >= start, AIUsage.created_at < end)
+            .group_by(AIUsage.user_id, User.email, AIUsage.model, AIUsage.purpose)
+            .order_by(AIUsage.user_id.asc().nulls_first(), AIUsage.model)
+        )
+    ).all()
+
+    out_rows = [
+        AdminUsageRow(
+            user_id=r[0], email=r[1], model=r[2], purpose=r[3], calls=r[4],
+            input_tokens=r[5], output_tokens=r[6],
+            cost_usd=float(r[7]) if r[7] is not None else None,
+            null_cost_calls=r[8],
+        )
+        for r in rows_q
+    ]
+    return AdminUsageResponse(
+        window=window, start=start, end=end, rows=out_rows,
+        total_cost_usd=sum(r.cost_usd or 0.0 for r in out_rows),
+        null_cost_row_count=sum(r.null_cost_calls for r in out_rows),
+    )

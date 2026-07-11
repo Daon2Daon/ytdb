@@ -123,3 +123,23 @@ async def test_record_delivery_is_conflict_free():
     assert len(captured) == 1
     sql = str(captured[0].compile(compile_kwargs={"literal_binds": False}))
     assert "ON CONFLICT" in sql
+
+
+async def test_complete_cached_passes_tokens(monkeypatch):
+    """complete_cached가 토큰을 mark_completed로 전달한다 (Phase C 배선)."""
+    from app.services import analysis_cache_service as acs
+
+    captured = {}
+
+    async def _fake_mark(session, cache_id, analysis, input_tokens=None, output_tokens=None):
+        captured.update(cache_id=cache_id, input_tokens=input_tokens, output_tokens=output_tokens)
+
+    class _S:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return None
+        async def commit(self): pass
+
+    monkeypatch.setattr(acs, "mark_completed", _fake_mark)
+    monkeypatch.setattr(acs, "get_sessionmaker", lambda: (lambda: _S()))
+    await acs.complete_cached(9, {"a": 1}, input_tokens=11, output_tokens=22)
+    assert captured == {"cache_id": 9, "input_tokens": 11, "output_tokens": 22}

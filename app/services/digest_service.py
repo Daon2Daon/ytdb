@@ -18,7 +18,9 @@ from app.models.pg.digest import Digest
 from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group, record_usage
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.global_settings import resolve_ai_gateway
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
     STATUS_FAIL,
@@ -383,9 +385,9 @@ async def synthesize_with_llm(
     previous_digest: str = "없음",
     digest_prompt: str = "",
     period_days: int = 7,
+    owner_user_id: Optional[int] = None,
 ) -> DigestGenerated:
-    mgr = get_settings_manager()
-    ai = await mgr.get_ai_gateway(group_id)
+    ai = await resolve_ai_gateway(group_id)
     from app.services.preset_service import resolve_prompts
 
     prompts = await resolve_prompts(group_id)
@@ -417,6 +419,15 @@ async def synthesize_with_llm(
             temperature=0.2,
             max_tokens=min(ai.max_tokens or 4096, 4096),
             response_format={"type": "json_object"},
+        )
+        # 다이제스트는 그룹 개인화 호출 — 그룹 owner 몫으로 원장 기록 (스펙 §2.4)
+        await record_usage(
+            user_id=owner_user_id,
+            group_id=group_id,
+            purpose="digest",
+            model=model,
+            input_tokens=chat.input_tokens,
+            output_tokens=chat.output_tokens,
         )
         data = json.loads(chat.content)
         headline = str(data.get("headline") or "").strip()
@@ -520,6 +531,12 @@ async def generate_digest_for_group(
     save: bool = True,
     as_of: Optional[datetime] = None,
 ) -> Digest:
+    # 월 예산 게이트 (설계 §7): 다이제스트는 owner 귀속 비용 — 초과 시 생성 자체를 막는다.
+    # 수동 API는 라우터가 400으로, 스케줄 틱은 아래 run_digest_tick_once가 skip으로 변환.
+    ok, reason = await budget_ok_for_group(group)
+    if not ok:
+        raise BudgetExceeded(reason, limit=0, current=0)
+
     await dpm.ensure_schema(group)
     engine = await dpm.get_engine_for_group(group)
     make_session = lambda: dpm.session_for_group(engine, group.schema_name)
@@ -569,6 +586,7 @@ async def generate_digest_for_group(
                 previous_digest=previous_digest,
                 digest_prompt=digest_cfg.digest_prompt,
                 period_days=days,
+                owner_user_id=group.owner_user_id,
             )
         except Exception as e:
             generated = _fallback_generated(agg, period_start, period_end, days)
@@ -791,6 +809,17 @@ async def run_digest_tick_once() -> None:
                         ),
                         duration_ms=timer.elapsed_ms,
                     )
+                except BudgetExceeded as e:
+                    # 예산은 owner당 group 전역 — 남은 config도 모두 초과이므로 그룹 skip.
+                    await write_job_log(
+                        make_session,
+                        job_type=JOB_TYPE_DIGEST,
+                        status=STATUS_SKIP,
+                        message=f"{cfg.name or 'Digest'} 월 예산 초과로 skip: {e.detail}",
+                        duration_ms=timer.elapsed_ms,
+                    )
+                    print(f"[digest] {group.slug} 월 예산 초과로 skip: {e.detail}")
+                    break
                 except Exception as e:
                     await write_job_log(
                         make_session,

@@ -83,3 +83,14 @@ def test_quota_exceeded_detail():
     exc = QuotaExceeded("그룹 한도 초과", limit=1, current=1)
     assert exc.limit == 1 and exc.current == 1
     assert "그룹 한도 초과" in str(exc)
+
+
+def test_merge_limits_includes_budget():
+    from decimal import Decimal
+
+    lim = _merge_limits(_plan(monthly_cost_budget_usd=Decimal("5")), None)
+    assert lim.monthly_cost_budget_usd == 5.0
+
+    ul = UserLimit(user_id=2, monthly_cost_budget_usd=Decimal("0"))
+    lim2 = _merge_limits(_plan(monthly_cost_budget_usd=Decimal("5")), ul)
+    assert lim2.monthly_cost_budget_usd == 0.0  # 오버라이드 0도 존중

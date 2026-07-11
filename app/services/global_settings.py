@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from cryptography.fernet import InvalidToken
@@ -19,6 +20,8 @@ from app.control_db import get_sessionmaker
 from app.models.control.global_setting import GlobalSetting
 from app.services.settings_manager import (
     SettingsSecretError,
+    _as_float as _f,
+    _as_int as _i,
     _fernet_from_key,
     get_settings_manager,
 )
@@ -27,7 +30,14 @@ GLOBAL_YOUTUBE_API_KEY = "youtube_api_key"
 GLOBAL_CENTRAL_POLL_FLOOR_MIN = "central_poll_floor_min"
 DEFAULT_CENTRAL_POLL_FLOOR_MIN = 10
 
-SECRET_KEYS = frozenset({GLOBAL_YOUTUBE_API_KEY})
+# Phase C: 전역 AI 게이트웨이 (스펙 §5). tagging_model은 미사용이라 전역화 제외.
+GLOBAL_AI_BASE_URL = "ai_base_url"
+GLOBAL_AI_API_KEY = "ai_api_key"
+GLOBAL_AI_PRIMARY_MODEL = "ai_primary_model"
+GLOBAL_AI_DIGEST_MODEL = "ai_digest_model"
+GLOBAL_AI_MODEL_PRICES = "ai_model_prices"  # JSON: {"모델prefix": {"input": n, "output": n}} ($/1M)
+
+SECRET_KEYS = frozenset({GLOBAL_YOUTUBE_API_KEY, GLOBAL_AI_API_KEY})
 
 
 def _get_fernet():
@@ -112,6 +122,9 @@ async def bootstrap_global_settings() -> None:
     from app.models.control.group import Group
     from app.models.control.user import User
 
+    # 전역 AI 게이트웨이 시드는 YouTube 키의 early-return과 무관하게 항상 먼저 실행.
+    await _seed_global_ai_from_admin_groups()
+
     sf = get_sessionmaker()
     async with sf() as session:
         existing = await get_global(session, GLOBAL_YOUTUBE_API_KEY)
@@ -141,3 +154,102 @@ async def bootstrap_global_settings() -> None:
         # FERNET_KEY 없는 배포 — 부팅을 막지 않는다. 폴링은 그룹 키 폴백으로 계속
         # 동작하고, 시스템 키는 관리자가 FERNET_KEY 설정 후 API로 넣으면 된다.
         print(f"[bootstrap] 시스템 키 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
+
+
+def _parse_model_prices(raw: Optional[str]) -> dict:
+    """단가표 JSON 파싱. 형식 오류는 빈 dict(=단가 없음, cost NULL 경고로 표면화)."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+async def get_ai_model_prices() -> dict:
+    async with get_sessionmaker()() as session:
+        raw = await get_global(session, GLOBAL_AI_MODEL_PRICES)
+    return _parse_model_prices(raw)
+
+
+async def resolve_ai_gateway(group_id: int) -> "AIGatewaySettings":
+    """유효 AI 게이트웨이 해석: 그룹 명시값 → 전역 → 코드 기본값 (스펙 §5).
+
+    settings_manager.get_ai_gateway와 달리 raw(get_typed)로 그룹 '명시 여부'를
+    판별한다 — get_ai_gateway는 기본값을 채워 반환하므로 폴백 판단이 불가능.
+    """
+    from app.services.settings_types import AIGatewaySettings
+
+    d = await get_settings_manager().get_typed(group_id, "ai_gateway")
+    async with get_sessionmaker()() as session:
+        g_base = await get_global(session, GLOBAL_AI_BASE_URL)
+        g_key = await get_global(session, GLOBAL_AI_API_KEY)
+        g_primary = await get_global(session, GLOBAL_AI_PRIMARY_MODEL)
+        g_digest = await get_global(session, GLOBAL_AI_DIGEST_MODEL)
+
+    def pick(group_val, global_val, default: str) -> str:
+        v = str(group_val or "").strip()
+        if v:
+            return v
+        v = (global_val or "").strip()
+        return v if v else default
+
+    return AIGatewaySettings(
+        base_url=pick(d.get("base_url"), g_base, "http://litellm:4000"),
+        api_key=pick(d.get("api_key"), g_key, ""),
+        primary_model=pick(d.get("primary_model"), g_primary, "gemini/gemini-2.5-flash"),
+        tagging_model=str(d.get("tagging_model") or "gemini/gemini-2.5-flash"),
+        digest_model=pick(d.get("digest_model"), g_digest, ""),
+        temperature=_f(d.get("temperature"), 0.3),
+        max_tokens=_i(d.get("max_tokens"), 8192),
+        daily_budget_usd=_f(d.get("daily_budget_usd"), 2.0),
+    )
+
+
+async def _seed_global_ai_from_admin_groups() -> None:
+    """전역 AI 게이트웨이 미시드 시 admin 그룹 설정에서 1회 시드. 멱등.
+
+    bootstrap_global_settings의 YouTube 키 시드와 같은 철학 — 기존 단일 운영자
+    배포가 업그레이드 직후 설정 변경 없이 동작. 단가표는 시드하지 않음(관리자 입력).
+    """
+    from app.models.control.group import Group
+    from app.models.control.user import User
+
+    sf = get_sessionmaker()
+    async with sf() as session:
+        if await get_global(session, GLOBAL_AI_BASE_URL) or await get_global(
+            session, GLOBAL_AI_API_KEY
+        ):
+            return
+        groups = list(
+            (
+                await session.execute(
+                    select(Group)
+                    .join(User, User.user_id == Group.owner_user_id)
+                    .where(User.role == "admin", Group.is_active.is_(True))
+                    .order_by(Group.group_id)
+                )
+            ).scalars().all()
+        )
+    for group in groups:
+        d = await get_settings_manager().get_typed(group.group_id, "ai_gateway")
+        base = str(d.get("base_url") or "").strip()
+        key = str(d.get("api_key") or "").strip()
+        if not (base and key):
+            continue
+        try:
+            async with sf() as session:
+                async with session.begin():
+                    await set_global(session, GLOBAL_AI_BASE_URL, base)
+                    await set_global(session, GLOBAL_AI_API_KEY, key)
+                    primary = str(d.get("primary_model") or "").strip()
+                    digest = str(d.get("digest_model") or "").strip()
+                    if primary:
+                        await set_global(session, GLOBAL_AI_PRIMARY_MODEL, primary)
+                    if digest:
+                        await set_global(session, GLOBAL_AI_DIGEST_MODEL, digest)
+            print(f"[bootstrap] 전역 AI 게이트웨이를 그룹 {group.slug} 설정에서 시드했습니다.")
+        except SettingsSecretError as e:
+            print(f"[bootstrap] 전역 AI 키 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
+        return

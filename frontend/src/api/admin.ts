@@ -55,6 +55,27 @@ export interface InviteCreated extends Invite {
   signup_url: string
 }
 
+export interface AdminUsageRow {
+  user_id: number | null
+  email: string | null
+  model: string
+  purpose: string
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number | null
+  null_cost_calls: number
+}
+
+export interface AdminUsageResponse {
+  window: string
+  start: string
+  end: string
+  rows: AdminUsageRow[]
+  total_cost_usd: number
+  null_cost_row_count: number
+}
+
 export const adminApi = {
   users: () => rootApi.get<AdminUser[]>('/admin/users'),
   plans: () => rootApi.get<PlanInfo[]>('/admin/plans'),
@@ -74,4 +95,6 @@ export const adminApi = {
     rootApi.post<{ temp_password: string }>(`/admin/users/${userId}/temp-password`),
   patchPlan: (planId: number, body: Partial<Omit<PlanInfo, 'plan_id' | 'slug' | 'is_default'>>) =>
     rootApi.patch<PlanInfo>(`/admin/plans/${planId}`, body),
+  usage: (window: string) =>
+    rootApi.get<AdminUsageResponse>(`/admin/usage?window=${window}`),
 }
