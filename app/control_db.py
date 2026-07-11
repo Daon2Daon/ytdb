@@ -71,6 +71,8 @@ async def ensure_control_schema() -> None:
         plan,
         prompt_preset,
         setting,
+        telegram_destination,
+        telegram_link_token,
         user,
         user_limit,
     )
