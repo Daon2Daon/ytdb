@@ -12,12 +12,13 @@ import {
 
 /**
  * 온보딩 상태 조합 훅 (GroupProvider 컨텍스트 내부에서만 사용).
- * 로딩 중이면 null.
+ * 로딩 중이거나 조회 실패 시 null — 실패를 count 0으로 오표시(완료 스텝을 미완처럼)하지 않고 카드를 숨긴다.
  */
 export function useOnboardingState(): OnboardingState | null {
   const { groups, activeSlug } = useGroup()
   const [channelCount, setChannelCount] = useState<number | null>(null)
   const [destinationCount, setDestinationCount] = useState<number | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -28,7 +29,7 @@ export function useOnboardingState(): OnboardingState | null {
     channelApi(activeSlug)
       .list()
       .then((cs) => alive && setChannelCount(cs.length))
-      .catch(() => alive && setChannelCount(0))
+      .catch(() => alive && setFailed(true))
     return () => {
       alive = false
     }
@@ -39,13 +40,13 @@ export function useOnboardingState(): OnboardingState | null {
     meApi
       .telegramDestinations()
       .then((ds) => alive && setDestinationCount(ds.length))
-      .catch(() => alive && setDestinationCount(0))
+      .catch(() => alive && setFailed(true))
     return () => {
       alive = false
     }
   }, [])
 
-  if (channelCount === null || destinationCount === null) return null
+  if (failed || channelCount === null || destinationCount === null) return null
   return { groupCount: groups.length, channelCount, destinationCount }
 }
 
