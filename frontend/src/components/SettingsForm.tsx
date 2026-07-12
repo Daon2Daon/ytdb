@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FieldDef } from '../settings/defs'
 import { initialValue, toSaveItem, type FormValue } from '../settings/convert'
 import type { SettingItem } from '../api/settings'
+import { meApi, type TelegramDestination } from '../api/me'
 import TemplateBuilder, { type MessageTemplate } from './TemplateBuilder'
 
 interface Props {
@@ -122,6 +123,8 @@ function Field({
           )}
           {models.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
+      ) : def.type === 'dest_select' ? (
+        <DestSelect value={value as string} onChange={onChange} />
       ) : def.type === 'chatlist' ? (
         <ChatList value={value as string[]} onChange={onChange} />
       ) : def.type === 'time' ? (
@@ -235,5 +238,41 @@ function ChatList({ value, onChange }: { value: string[]; onChange: (v: string[]
       ))}
       <button type="button" onClick={add} className="text-sm text-blue-600 hover:underline">+ Chat ID 추가</button>
     </div>
+  )
+}
+
+function DestSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [dests, setDests] = useState<TelegramDestination[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    meApi
+      .telegramDestinations()
+      .then((ds) => alive && setDests(ds))
+      .catch(() => alive && setDests([]))
+      .finally(() => alive && setLoaded(true))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // 현재 저장된 dest_id가 목록에 없으면(연결 해제 등) 선택값을 유지하기 위한 안내 옵션.
+  const orphan = value && loaded && !dests.some((d) => String(d.dest_id) === value)
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">미지정(자동)</option>
+      {dests.map((d) => (
+        <option key={d.dest_id} value={String(d.dest_id)}>
+          {d.title ?? `연결 #${d.dest_id}`}
+        </option>
+      ))}
+      {orphan && <option value={value}>연결 #{value} (현재값)</option>}
+    </select>
   )
 }

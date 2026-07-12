@@ -37,7 +37,10 @@ GLOBAL_AI_PRIMARY_MODEL = "ai_primary_model"
 GLOBAL_AI_DIGEST_MODEL = "ai_digest_model"
 GLOBAL_AI_MODEL_PRICES = "ai_model_prices"  # JSON: {"모델prefix": {"input": n, "output": n}} ($/1M)
 
-SECRET_KEYS = frozenset({GLOBAL_YOUTUBE_API_KEY, GLOBAL_AI_API_KEY})
+# Phase D-1: 공용 텔레그램 봇 (스펙 §2)
+GLOBAL_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+
+SECRET_KEYS = frozenset({GLOBAL_YOUTUBE_API_KEY, GLOBAL_AI_API_KEY, GLOBAL_TELEGRAM_BOT_TOKEN})
 
 
 def _get_fernet():
@@ -122,8 +125,10 @@ async def bootstrap_global_settings() -> None:
     from app.models.control.group import Group
     from app.models.control.user import User
 
-    # 전역 AI 게이트웨이 시드는 YouTube 키의 early-return과 무관하게 항상 먼저 실행.
+    # 전역 AI 게이트웨이·공용 텔레그램 봇 토큰 시드는 YouTube 키의 early-return과
+    # 무관하게 항상 먼저 실행.
     await _seed_global_ai_from_admin_groups()
+    await _seed_telegram_bot_token()
 
     sf = get_sessionmaker()
     async with sf() as session:
@@ -253,3 +258,29 @@ async def _seed_global_ai_from_admin_groups() -> None:
         except SettingsSecretError as e:
             print(f"[bootstrap] 전역 AI 키 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
         return
+
+
+async def get_global_telegram_bot_token() -> str:
+    """자체 세션으로 공용 봇 토큰을 읽는다. 미설정이면 ''."""
+    async with get_sessionmaker()() as session:
+        return (await get_global(session, GLOBAL_TELEGRAM_BOT_TOKEN)) or ""
+
+
+async def _seed_telegram_bot_token() -> None:
+    """env DEFAULT_TELEGRAM_BOT_TOKEN이 있고 전역 미시드면 1회 시드. 멱등 (스펙 §2)."""
+    from app.config import settings as app_cfg
+
+    env_token = (app_cfg.DEFAULT_TELEGRAM_BOT_TOKEN or "").strip()
+    if not env_token:
+        return
+    sf = get_sessionmaker()
+    async with sf() as session:
+        if await get_global(session, GLOBAL_TELEGRAM_BOT_TOKEN):
+            return
+    try:
+        async with sf() as session:
+            async with session.begin():
+                await set_global(session, GLOBAL_TELEGRAM_BOT_TOKEN, env_token)
+        print("[bootstrap] 공용 텔레그램 봇 토큰을 env에서 시드했습니다.")
+    except SettingsSecretError as e:
+        print(f"[bootstrap] 봇 토큰 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")

@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -62,9 +63,16 @@ async def lifespan(app: FastAPI):
     if app_settings.SCHEDULER_ENABLED:
         start_scheduler()
         await apply_pending_analysis_schedule()
+
+    from app.services.telegram_link_service import run_telegram_updates_worker
+
+    tg_task = asyncio.create_task(run_telegram_updates_worker())
     try:
         yield
     finally:
+        tg_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await tg_task
         shutdown_scheduler()
 
 

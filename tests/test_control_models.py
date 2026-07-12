@@ -101,3 +101,21 @@ def test_ai_usage_model_columns():
     assert AIUsage.__table__.columns["cost_usd"].nullable is True
     fk_cols = {fk.parent.name for fk in AIUsage.__table__.foreign_keys}
     assert fk_cols == {"user_id"}
+
+
+def test_telegram_destination_model():
+    from app.models.control.telegram_destination import TelegramDestination
+    from sqlalchemy import UniqueConstraint
+
+    cols = {c.name for c in TelegramDestination.__table__.columns}
+    assert cols == {"dest_id", "user_id", "chat_kind", "chat_id", "title", "is_active", "linked_at"}
+    uqs = [c for c in TelegramDestination.__table__.constraints if isinstance(c, UniqueConstraint)]
+    assert any({col.name for col in uq.columns} == {"user_id", "chat_id"} for uq in uqs)
+
+
+def test_telegram_link_token_model():
+    from app.models.control.telegram_link_token import TelegramLinkToken
+
+    cols = {c.name for c in TelegramLinkToken.__table__.columns}
+    assert cols == {"token", "user_id", "expires_at", "used_at"}
+    assert TelegramLinkToken.__table__.columns["used_at"].nullable is True

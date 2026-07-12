@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+$")
 
@@ -80,3 +81,18 @@ class MyUsageResponse(BaseModel):
     unlimited: bool = False          # admin/개발 모드
     limits: Optional[MyLimits] = None
     usage: MyUsage
+
+
+class TelegramLinkResponse(BaseModel):
+    deep_link: str
+    expires_in_sec: int
+
+
+class TelegramDestinationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    dest_id: int
+    chat_kind: str
+    title: Optional[str] = None
+    is_active: bool
+    linked_at: datetime

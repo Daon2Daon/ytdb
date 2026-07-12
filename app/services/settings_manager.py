@@ -261,6 +261,8 @@ class SettingsManager:
             message_template=_parse_message_template(d),
             notify_baseline_at=_as_dt(d.get("notify_baseline_at")),
             dispatch_scope=_normalize_dispatch_scope(d.get("dispatch_scope")),
+            # 음수/비정상 값은 PUT 검증이 막고, 발송 시 resolve가 재조회로 방어 — 로드는 관대하게
+            dest_id=_as_int(d.get("dest_id"), 0) or None,
         )
 
     async def get_digest_configs(self, group_id: int) -> list[DigestScheduleConfig]:

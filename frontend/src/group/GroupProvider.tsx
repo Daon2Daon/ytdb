@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams, useNavigate, Outlet } from 'react-router-dom'
+import { useParams, useNavigate, Navigate, Outlet } from 'react-router-dom'
 import { groupApi } from '../api/groups'
 import type { Group } from '../api/types'
 import { GroupContext } from './useGroup'
@@ -30,13 +30,8 @@ export default function GroupProvider() {
   }, [loading, groups, slug, navigate])
 
   if (loading) return <Spinner />
-  if (groups.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
-        운영 중인 모니터링 그룹이 없습니다. 그룹을 먼저 생성하세요.
-      </div>
-    )
-  }
+  // 그룹 0개: 루트의 온보딩 랜딩(ZeroGroupLanding)으로 일원화.
+  if (groups.length === 0) return <Navigate to="/" replace />
 
   const activeGroup = groups.find((g) => g.slug === slug)
   return (

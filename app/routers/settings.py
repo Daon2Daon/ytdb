@@ -10,13 +10,14 @@ from sqlalchemy import select
 from app.control_db import get_sessionmaker
 from app.models.control.group import Group
 from app.models.control.prompt_preset import PromptPreset
+from app.models.control.telegram_destination import TelegramDestination
 from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
 from app.services.channel_registry_service import resync_group as registry_resync_group
-from app.services.notify_service import _should_stamp_on_save
+from app.services.notify_service import _should_stamp_on_save, resolve_notify_target
 from app.services.quota_service import limits_for_group_owner, validate_poll_interval
 from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
@@ -81,6 +82,12 @@ def _reject_blocked_puts(category: str, user: CurrentUser, items: list[SettingIt
             raise HTTPException(status_code=400, detail=f"수정 권한이 없는 항목: {item.key}")
 
 
+async def _dest_owned_and_active(dest_id: int, owner_user_id: int) -> bool:
+    async with get_sessionmaker()() as session:
+        dest = await session.get(TelegramDestination, dest_id)
+        return bool(dest is not None and dest.user_id == owner_user_id and dest.is_active)
+
+
 # 주의: 이 라우트는 @router.get("/{category}")보다 먼저 선언되어야 한다 (FastAPI 선언 순서 매칭).
 @router.get("/prompts/presets")
 async def list_active_presets(group: Group = Depends(get_group_or_404)) -> list[dict]:
@@ -142,11 +149,32 @@ async def put_settings(
                         ),
                     )
 
+    if category == "notification":
+        for item in payload.items:
+            if item.key != "dest_id":
+                continue
+            raw = str(item.value or "").strip()
+            if raw in ("", "0"):
+                continue  # 클리어 허용
+            try:
+                did = int(raw)
+            except ValueError:
+                continue  # 타입 오류는 set_values 검증에 맡김
+            if group.owner_user_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="이 그룹은 직접 봇 설정을 사용합니다(텔레그램 연결 선택 불가).",
+                )
+            if not await _dest_owned_and_active(did, group.owner_user_id):
+                raise HTTPException(status_code=400, detail="유효하지 않은 텔레그램 연결입니다.")
+
     mgr = get_settings_manager()
 
     before_sendable = False
     if category == "notification":
-        before_sendable = (await mgr.get_notification(group.group_id)).is_sendable
+        _before = await mgr.get_notification(group.group_id)
+        _before = await resolve_notify_target(group.owner_user_id, _before)
+        before_sendable = _before.is_sendable
 
     await mgr.set_values(
         group.group_id,
@@ -156,6 +184,7 @@ async def put_settings(
 
     if category == "notification":
         after = await mgr.get_notification(group.group_id)
+        after = await resolve_notify_target(group.owner_user_id, after)
         if _should_stamp_on_save(
             before_sendable=before_sendable, after_sendable=after.is_sendable
         ):

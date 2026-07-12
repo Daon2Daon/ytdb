@@ -1,7 +1,7 @@
 export type FieldType =
   | 'string' | 'int' | 'float' | 'textarea' | 'bool'
   | 'select' | 'model_select' | 'chatlist' | 'int_days' | 'int_hours'
-  | 'time' | 'timelist' | 'template_builder'
+  | 'time' | 'timelist' | 'template_builder' | 'dest_select'
 
 export interface FieldDef {
   key: string
@@ -58,6 +58,7 @@ export const SETTING_DEFS: Record<string, FieldDef[]> = {
   ],
   notification: [
     { key: 'enabled', label: '알림 활성화', type: 'bool' },
+    { key: 'dest_id', label: '발송 대상(텔레그램 연결)', type: 'dest_select', help: '마이페이지에서 연결한 텔레그램으로 발송합니다. 미지정이면 첫 연결로 자동 발송' },
     { key: 'bot_token', label: '텔레그램 봇 토큰', secret: true },
     { key: 'chat_ids', label: 'Chat ID 목록', type: 'chatlist' },
     { key: 'parse_mode', label: 'parse_mode', type: 'select', options: ['HTML', 'MarkdownV2', 'None'], help: '일반적으로 HTML 권장' },

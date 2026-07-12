@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from dataclasses import replace as _dc_replace
 from datetime import datetime, timezone
 from html import escape
 from typing import Callable, Optional
@@ -16,10 +17,13 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.control_db import get_sessionmaker as _ctrl_sessionmaker
+from app.models.control.telegram_destination import TelegramDestination
 from app.models.pg.channel import Channel
 from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.services.global_settings import get_global_telegram_bot_token
 from app.services.job_logger import (
     JOB_TYPE_NOTIFY,
     STATUS_FAIL,
@@ -395,6 +399,49 @@ async def send_telegram(
         raise RuntimeError(f"텔레그램 발송 실패(chat_id={chat_id}): {resp.status_code} - {resp.text}")
 
 
+# 주의: 틱 루프에서 그룹당 호출됨 — 직접설정 그룹은 즉시 반환(쿼리 0), dest 기반 그룹만 쿼리 발생(현 규모 무해)
+async def resolve_notify_target(
+    owner_user_id: Optional[int], notif: NotificationSettings
+) -> NotificationSettings:
+    """발송 대상 3단계 해석 (설계 §5). bot_token/chat_ids를 채운 사본을 반환하므로
+    기존 발송 코드(is_sendable·chat 루프)가 무변경으로 동작한다.
+
+    1. 그룹 bot_token+chat_ids 직접 설정 → 그대로 (기존 그룹 무중단)
+    2. dest_id 명시 → (전역 봇, 해당 destination)
+    3. owner의 첫 active destination(dest_id 오름차순) → 자동 폴백
+    해석 불가 시 원본 반환(is_sendable False → 기존 '데이터만 기록' 동작).
+    """
+    if notif.bot_token and notif.chat_ids:
+        return notif
+    if owner_user_id is None:
+        return notif
+    global_token = await get_global_telegram_bot_token()
+    if not global_token:
+        return notif
+    dest = None
+    async with _ctrl_sessionmaker()() as session:
+        if notif.dest_id:
+            cand = await session.get(TelegramDestination, notif.dest_id)
+            if cand is not None and cand.user_id == owner_user_id and cand.is_active:
+                dest = cand
+        if dest is None:
+            # dest_id 미지정 또는 무효(삭제/비활성) → 첫 active로 자연 폴백 (설계 §5)
+            dest = (
+                await session.execute(
+                    select(TelegramDestination)
+                    .where(
+                        TelegramDestination.user_id == owner_user_id,
+                        TelegramDestination.is_active.is_(True),
+                    )
+                    .order_by(TelegramDestination.dest_id)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+    if dest is None:
+        return notif
+    return _dc_replace(notif, bot_token=global_token, chat_ids=[str(dest.chat_id)])
+
+
 async def notify_video(
     notif: NotificationSettings,
     video: Video,
@@ -572,6 +619,7 @@ async def run_notify_tick_once() -> None:
     for group in groups:
         try:
             notif = await mgr.get_notification(group.group_id)
+            notif = await resolve_notify_target(group.owner_user_id, notif)
             if not notif.is_sendable:
                 continue
             try:
@@ -662,6 +710,7 @@ async def backfill_notify_baselines() -> int:
     now_iso = datetime.now(timezone.utc).isoformat()
     for group in groups:
         notif = await mgr.get_notification(group.group_id)
+        notif = await resolve_notify_target(group.owner_user_id, notif)
         if _needs_baseline_backfill(
             sendable=notif.is_sendable, baseline=notif.notify_baseline_at
         ):

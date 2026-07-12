@@ -30,7 +30,7 @@ from app.services.job_logger import (
     write_job_log,
 )
 from app.services.llm_client import LiteLLMClient
-from app.services.notify_service import send_telegram
+from app.services.notify_service import resolve_notify_target, send_telegram
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import DigestScheduleConfig, period_label_from_days, period_type_from_days
 from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
@@ -504,8 +504,10 @@ async def _send_digest_telegram(
     slug: str,
     share_token: Optional[str],
     share_link_enabled: bool,
+    owner_user_id: Optional[int] = None,
 ) -> None:
     notif = await get_settings_manager().get_notification(group_id)
+    notif = await resolve_notify_target(owner_user_id, notif)
     if not notif.is_sendable:
         return
     text = build_digest_telegram_text(
@@ -798,6 +800,7 @@ async def run_digest_tick_once() -> None:
                                 slug=group.slug,
                                 share_token=digest.share_token,
                                 share_link_enabled=share.share_link_enabled,
+                                owner_user_id=group.owner_user_id,
                             )
                     await write_job_log(
                         make_session,

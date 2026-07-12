@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.control_db import get_session, get_sessionmaker
 from app.models.control.invitation import Invitation
+from app.models.control.telegram_destination import TelegramDestination
 from app.models.control.user import User
 from app.schemas.auth import (
     LoginRequest,
@@ -23,15 +24,24 @@ from app.schemas.auth import (
     MyUsage,
     MyUsageResponse,
     SignupRequest,
+    TelegramDestinationOut,
+    TelegramLinkResponse,
     UserOut,
 )
 from app.services.ai_usage_service import month_cost_usd
 from app.services.auth_service import hash_password, is_auth_enabled, set_users_exist, verify_password
+from app.services.global_settings import get_global_telegram_bot_token
 from app.services.quota_service import (
     count_daily_deliveries,
     count_owned_channels,
     count_owned_groups,
     effective_limits,
+)
+from app.services.telegram_link_service import (
+    LINK_TOKEN_TTL_SEC,
+    build_deep_link,
+    get_bot_username,
+    issue_link_token,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -197,3 +207,49 @@ async def my_usage(
         ),
         usage=usage,
     )
+
+
+@me_router.post("/telegram/link-token", response_model=TelegramLinkResponse)
+async def create_telegram_link_token(
+    user: CurrentUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> TelegramLinkResponse:
+    bot_token = await get_global_telegram_bot_token()
+    if not bot_token:
+        raise HTTPException(status_code=400, detail="관리자가 공용 봇을 설정해야 합니다.")
+    username = await get_bot_username(bot_token)
+    if not username:
+        raise HTTPException(status_code=400, detail="봇 정보 조회에 실패했습니다. 잠시 후 다시 시도하세요.")
+    token, _ = await issue_link_token(session, user.user_id)
+    await session.commit()
+    return TelegramLinkResponse(
+        deep_link=build_deep_link(username, token), expires_in_sec=LINK_TOKEN_TTL_SEC
+    )
+
+
+@me_router.get("/telegram/destinations", response_model=list[TelegramDestinationOut])
+async def list_telegram_destinations(
+    user: CurrentUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[TelegramDestination]:
+    rows = (
+        await session.execute(
+            select(TelegramDestination)
+            .where(TelegramDestination.user_id == user.user_id)
+            .order_by(TelegramDestination.dest_id)
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+@me_router.delete("/telegram/destinations/{dest_id}", status_code=204)
+async def delete_telegram_destination(
+    dest_id: int,
+    user: CurrentUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    dest = await session.get(TelegramDestination, dest_id)
+    if dest is None or dest.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="연결을 찾을 수 없습니다.")
+    await session.delete(dest)
+    await session.commit()
