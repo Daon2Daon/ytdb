@@ -32,12 +32,13 @@ export default function MyPage() {
   }
 
   async function handleLinkClick() {
+    if (linking) return
     setTgError(null)
+    setLinking(true)
     try {
       const resp = await meApi.telegramLinkToken()
       window.open(resp.deep_link, '_blank')
       const baseCount = destinations.length
-      setLinking(true)
       let attempts = 0
       pollRef.current = setInterval(async () => {
         attempts += 1
@@ -56,6 +57,7 @@ export default function MyPage() {
         }
       }, POLL_INTERVAL_MS)
     } catch (e) {
+      stopPolling()
       setTgError((e as Error).message)
     }
   }
