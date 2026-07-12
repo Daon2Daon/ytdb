@@ -399,6 +399,7 @@ async def send_telegram(
         raise RuntimeError(f"텔레그램 발송 실패(chat_id={chat_id}): {resp.status_code} - {resp.text}")
 
 
+# 주의: 틱 루프에서 그룹당 호출됨 — 직접설정 그룹은 즉시 반환(쿼리 0), dest 기반 그룹만 쿼리 발생(현 규모 무해)
 async def resolve_notify_target(
     owner_user_id: Optional[int], notif: NotificationSettings
 ) -> NotificationSettings:

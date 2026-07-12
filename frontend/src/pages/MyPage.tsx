@@ -63,6 +63,7 @@ export default function MyPage() {
   }
 
   async function handleUnlink(destId: number) {
+    setTgError(null)
     try {
       await meApi.deleteTelegramDestination(destId)
       await loadDestinations()

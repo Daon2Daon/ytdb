@@ -74,6 +74,8 @@ export function toSaveItem(def: FieldDef, value: FormValue): SettingItem {
   }
   if (def.type === 'dest_select') {
     // 미지정('')은 백엔드에서 clear로 처리(빈 문자열 그대로 전송).
+    // value_type을 명시적으로 'int'로 고정 — 아래 폴백(def.type==='int' 체크)을 타면
+    // dest_select는 'int'가 아니므로 'string'으로 새어나가 백엔드 int 파싱과 어긋난다.
     return { key: def.key, value: value as string, value_type: 'int', is_secret: false }
   }
   const value_type = def.type === 'int' ? 'int' : def.type === 'float' ? 'float' : 'string'

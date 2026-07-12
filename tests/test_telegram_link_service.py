@@ -97,3 +97,23 @@ async def test_handle_update_replies_on_invalid_token(monkeypatch):
         "chat": {"id": 9, "type": "private"}, "from": {"first_name": "x"}, "text": "/start bad",
     }}, bot_token="BT")
     assert "만료" in sent["text"]
+
+
+async def test_handle_update_bare_start_sends_guidance(monkeypatch):
+    from app.services import telegram_link_service as tls
+
+    async def _boom(*a, **k):
+        raise AssertionError("consume는 호출되면 안 됨")
+
+    sent = {}
+
+    async def _fake_send(bot_token, chat_id, text):
+        sent.update(chat_id=chat_id, text=text)
+
+    monkeypatch.setattr(tls, "_consume_in_session", _boom)
+    monkeypatch.setattr(tls, "_send_bot_message", _fake_send)
+    await tls.handle_update({"message": {
+        "chat": {"id": 42, "type": "private"}, "from": {"first_name": "x"}, "text": "/start",
+    }}, bot_token="BT")
+    assert sent["chat_id"] == 42
+    assert "마이페이지" in sent["text"]
