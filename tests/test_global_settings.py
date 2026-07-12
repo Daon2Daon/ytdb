@@ -229,3 +229,10 @@ def test_get_ai_model_prices_parsing():
     assert _parse_model_prices(None) == {}
     assert _parse_model_prices("not json") == {}
     assert _parse_model_prices('["list"]') == {}
+
+
+def test_telegram_bot_token_key_registered():
+    from app.services.global_settings import GLOBAL_TELEGRAM_BOT_TOKEN, SECRET_KEYS
+
+    assert GLOBAL_TELEGRAM_BOT_TOKEN == "telegram_bot_token"
+    assert GLOBAL_TELEGRAM_BOT_TOKEN in SECRET_KEYS  # Fernet 암호화 저장

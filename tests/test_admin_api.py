@@ -137,3 +137,9 @@ def test_global_settings_includes_ai_keys():
     assert "ai_base_url" in _GLOBAL_KEYS
     assert "ai_api_key" in _GLOBAL_KEYS
     assert "ai_model_prices" in _GLOBAL_KEYS
+
+
+def test_global_settings_includes_telegram_bot_token():
+    from app.routers.admin import _GLOBAL_KEYS
+
+    assert "telegram_bot_token" in _GLOBAL_KEYS
