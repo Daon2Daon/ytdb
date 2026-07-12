@@ -20,6 +20,23 @@ export interface MyUsageResponse {
   }
 }
 
+export interface TelegramDestination {
+  dest_id: number
+  chat_kind: string
+  title: string | null
+  is_active: boolean
+  linked_at: string
+}
+
+export interface TelegramLinkResponse {
+  deep_link: string
+  expires_in_sec: number
+}
+
 export const meApi = {
   usage: () => rootApi.get<MyUsageResponse>('/me/usage'),
+  telegramLinkToken: () => rootApi.post<TelegramLinkResponse>('/me/telegram/link-token', {}),
+  telegramDestinations: () => rootApi.get<TelegramDestination[]>('/me/telegram/destinations'),
+  deleteTelegramDestination: (destId: number) =>
+    rootApi.del<void>(`/me/telegram/destinations/${destId}`),
 }
