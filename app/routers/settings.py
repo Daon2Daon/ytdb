@@ -17,7 +17,7 @@ from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
 from app.services.channel_registry_service import resync_group as registry_resync_group
-from app.services.notify_service import _should_stamp_on_save
+from app.services.notify_service import _should_stamp_on_save, resolve_notify_target
 from app.services.quota_service import limits_for_group_owner, validate_poll_interval
 from app.services.scheduler import apply_pending_analysis_schedule
 from app.services.settings_manager import get_settings_manager
@@ -172,7 +172,9 @@ async def put_settings(
 
     before_sendable = False
     if category == "notification":
-        before_sendable = (await mgr.get_notification(group.group_id)).is_sendable
+        _before = await mgr.get_notification(group.group_id)
+        _before = await resolve_notify_target(group.owner_user_id, _before)
+        before_sendable = _before.is_sendable
 
     await mgr.set_values(
         group.group_id,
@@ -182,6 +184,7 @@ async def put_settings(
 
     if category == "notification":
         after = await mgr.get_notification(group.group_id)
+        after = await resolve_notify_target(group.owner_user_id, after)
         if _should_stamp_on_save(
             before_sendable=before_sendable, after_sendable=after.is_sendable
         ):

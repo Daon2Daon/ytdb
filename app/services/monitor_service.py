@@ -53,6 +53,7 @@ from app.services.notify_service import (
     NOTIFY_SOURCE_WEB,
     mark_video_notified,
     notify_video,
+    resolve_notify_target,
 )
 from app.services.preset_service import ResolvedPrompts, resolve_prompts
 from app.services.quota_service import (
@@ -427,6 +428,7 @@ async def _notify_after_analysis(
     chat_id 미설정/비활성이면 조용히 건너뛴다(데이터만 기록).
     """
     notif = await get_settings_manager().get_notification(group.group_id)
+    notif = await resolve_notify_target(group.owner_user_id, notif)
     if not notif.is_sendable:
         return
 
