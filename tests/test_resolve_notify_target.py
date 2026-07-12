@@ -44,6 +44,15 @@ async def test_priority2_dest_id(monkeypatch):
     assert out.is_sendable  # enabled 기본 True + 채워진 대상
 
 
+async def test_priority2_invalid_dest_id_falls_through_to_first_active(monkeypatch):
+    """dest_id 지정+무효(삭제/비활성) → 첫 active destination으로 자연 폴백 (설계 §5)."""
+    _patch_db(monkeypatch, get_result=None, first_active=DEST)
+    notif = NotificationSettings(dest_id=999)  # 존재하지 않는 dest_id
+    out = await resolve_notify_target(2, notif)
+    assert out.chat_ids == ["999"]  # 폴백 성공 — 원본 반환 아님
+    assert out.bot_token == "GBT"
+
+
 async def test_priority3_first_active_fallback(monkeypatch):
     _patch_db(monkeypatch, get_result=None, first_active=DEST)
     notif = NotificationSettings()  # dest_id 미지정
