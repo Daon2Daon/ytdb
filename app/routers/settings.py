@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.control_db import get_sessionmaker
 from app.models.control.group import Group
 from app.models.control.prompt_preset import PromptPreset
+from app.models.control.telegram_destination import TelegramDestination
 from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
@@ -81,6 +82,12 @@ def _reject_blocked_puts(category: str, user: CurrentUser, items: list[SettingIt
             raise HTTPException(status_code=400, detail=f"수정 권한이 없는 항목: {item.key}")
 
 
+async def _dest_owned_and_active(dest_id: int, owner_user_id: int) -> bool:
+    async with get_sessionmaker()() as session:
+        dest = await session.get(TelegramDestination, dest_id)
+        return bool(dest is not None and dest.user_id == owner_user_id and dest.is_active)
+
+
 # 주의: 이 라우트는 @router.get("/{category}")보다 먼저 선언되어야 한다 (FastAPI 선언 순서 매칭).
 @router.get("/prompts/presets")
 async def list_active_presets(group: Group = Depends(get_group_or_404)) -> list[dict]:
@@ -141,6 +148,25 @@ async def put_settings(
                             "이상이어야 합니다."
                         ),
                     )
+
+    if category == "notification":
+        for item in payload.items:
+            if item.key != "dest_id":
+                continue
+            raw = str(item.value or "").strip()
+            if raw in ("", "0"):
+                continue  # 클리어 허용
+            try:
+                did = int(raw)
+            except ValueError:
+                continue  # 타입 오류는 set_values 검증에 맡김
+            if group.owner_user_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="이 그룹은 직접 봇 설정을 사용합니다(텔레그램 연결 선택 불가).",
+                )
+            if not await _dest_owned_and_active(did, group.owner_user_id):
+                raise HTTPException(status_code=400, detail="유효하지 않은 텔레그램 연결입니다.")
 
     mgr = get_settings_manager()
 

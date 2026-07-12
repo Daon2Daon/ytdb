@@ -55,6 +55,9 @@ class NotificationSettings:
     # 발송 범위: scheduled 모드에서만 적용.
     # after_activation=활성화 이후 게시분만, all=과거 분석분 포함 전체 순차 발송.
     dispatch_scope: str = "after_activation"  # after_activation | all
+    # 공용 봇 발송 대상(app.telegram_destinations.dest_id). None=미지정.
+    # 해석 우선순위는 notify_service.resolve_notify_target 참조 (설계 §5).
+    dest_id: Optional[int] = None
 
     @property
     def is_sendable(self) -> bool:
