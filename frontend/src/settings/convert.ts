@@ -72,6 +72,10 @@ export function toSaveItem(def: FieldDef, value: FormValue): SettingItem {
   if (def.secret) {
     return { key: def.key, value: value as string, value_type: 'string', is_secret: true }
   }
+  if (def.type === 'dest_select') {
+    // 미지정('')은 백엔드에서 clear로 처리(빈 문자열 그대로 전송).
+    return { key: def.key, value: value as string, value_type: 'int', is_secret: false }
+  }
   const value_type = def.type === 'int' ? 'int' : def.type === 'float' ? 'float' : 'string'
   return { key: def.key, value: value as string, value_type, is_secret: false }
 }

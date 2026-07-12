@@ -9,6 +9,7 @@ import type { Stats, DBHealthResponse, GatewayHealthResponse, Video } from '../a
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 import StatusBadge from '../components/StatusBadge'
+import OnboardingChecklist from '../components/OnboardingChecklist'
 
 function StatCard({ label, value, color }: { label: string; value: number | string; color?: string }) {
   return (
@@ -57,6 +58,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">대시보드</h1>
+
+      <OnboardingChecklist />
 
       {error && <ErrorBanner message={error} onRetry={load} />}
 
