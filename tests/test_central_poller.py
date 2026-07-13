@@ -53,6 +53,11 @@ def wired(monkeypatch):
     monkeypatch.setattr(cp, "fetch_channel_updates", fake_fetch)
     monkeypatch.setattr(cp, "_fan_out_group", fake_fan_out)
     monkeypatch.setattr(cp, "_mark_polled", fake_mark)
+
+    async def fake_gate():
+        return (cp.yq.GATE_OK, 0, 10000)
+
+    monkeypatch.setattr(cp.yq, "system_gate_state", fake_gate)
     return calls
 
 
@@ -96,3 +101,34 @@ async def test_no_system_key_skips(wired, monkeypatch):
     monkeypatch.setattr(cp, "get_system_youtube_key", no_key)
     await cp.run_central_poll_once()
     assert wired.fetched == []
+
+
+async def test_soft_gate_skips_central_polling(wired, monkeypatch):
+    async def soft_gate():
+        return (cp.yq.GATE_SOFT, 8000, 10000)
+
+    monkeypatch.setattr(cp.yq, "system_gate_state", soft_gate)
+    await cp.run_central_poll_once()
+    assert wired.fetched == []  # 신규 폴링 없음
+
+
+async def test_hard_gate_skips_central_polling(wired, monkeypatch):
+    async def hard_gate():
+        return (cp.yq.GATE_HARD, 10000, 10000)
+
+    monkeypatch.setattr(cp.yq, "system_gate_state", hard_gate)
+    await cp.run_central_poll_once()
+    assert wired.fetched == []
+
+
+async def test_gate_transition_logged_once(wired, monkeypatch, capsys):
+    cp._last_gate_state = cp.yq.GATE_OK  # 테스트 격리
+
+    async def soft_gate():
+        return (cp.yq.GATE_SOFT, 8000, 10000)
+
+    monkeypatch.setattr(cp.yq, "system_gate_state", soft_gate)
+    await cp.run_central_poll_once()
+    await cp.run_central_poll_once()
+    out = capsys.readouterr().out
+    assert out.count("쿼터 게이트") == 1  # 전환 시 1회만

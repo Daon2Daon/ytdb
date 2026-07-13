@@ -41,12 +41,27 @@ from app.services.monitor_service import (
 )
 from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import PollingSettings
+from app.services import yt_quota_service as yq
 from app.services.youtube_api import YouTubeAPIClient, YouTubeQuotaExceededError
 from app.services.yt_parsing import parse_iso_datetime
 
 # 중앙 폴러 동시 채널 상한. 그룹별 max_concurrent_channels는 그룹 폴링용 설정이라
 # 부적합 — 전역 설정 키로 승격은 필요해질 때 (스펙 §3).
 CENTRAL_MAX_CONCURRENT_CHANNELS = 5
+
+_last_gate_state = yq.GATE_OK
+
+
+def _log_gate_transition(state: str, used: int, limit: int) -> None:
+    """상태 전환 시 1회만 stdout 경고 — 틱마다 스팸 방지 (스펙 §1.4)."""
+    global _last_gate_state
+    if state == _last_gate_state:
+        return
+    print(
+        f"[central-poll] 쿼터 게이트 {_last_gate_state} → {state}: "
+        f"시스템 키 당일 {used}/{limit} 유닛"
+    )
+    _last_gate_state = state
 
 
 async def _prepare_tick():
@@ -134,6 +149,11 @@ async def run_central_poll_once() -> None:
     system_key = await get_system_youtube_key()
     if not system_key:
         print("[central-poll] 시스템 YouTube 키 미설정 - 중앙 폴링 SKIP")
+        return
+
+    state, used, limit = await yq.system_gate_state()
+    _log_gate_transition(state, used, limit)
+    if state != yq.GATE_OK:
         return
 
     due, subs_by_channel, groups = await _prepare_tick()

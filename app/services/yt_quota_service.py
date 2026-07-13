@@ -4,7 +4,7 @@
 - pt_today: Google 쿼터 리셋(PT 자정) 기준 날짜. DST는 zoneinfo가 처리.
 - make_recorder: 호출마다 즉시 UPSERT. 기록 실패는 삼킨다 —
   원장 장애가 폴링/분석을 절대 깨뜨리지 않는다(ai_usage 패턴).
-- 게이트 판정(system_gate_state)은 후속 태스크에서 추가.
+- gate_state/system_gate_state: 시스템 키 당일 사용량 대비 80%/100% 게이트 판정 (스펙 §1.4).
 """
 
 from __future__ import annotations
@@ -20,6 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.control_db import get_sessionmaker
 from app.models.control.yt_quota_usage import YtQuotaUsage
+from app.services.global_settings import (
+    get_system_youtube_key,
+    get_youtube_daily_quota,
+)
 
 QuotaRecorder = Callable[[int], Awaitable[None]]
 
@@ -71,3 +75,33 @@ async def units_today(session: AsyncSession, key_fp: str) -> int:
         )
     ).scalar_one_or_none()
     return int(row or 0)
+
+
+GATE_OK = "ok"
+GATE_SOFT = "soft"   # ≥80%: 신규 중앙 폴링 skip (사용자 발 호출은 계속)
+GATE_HARD = "hard"   # ≥100%: 시스템 키 호출 전면 중단 (그룹 자체 키는 무영향)
+
+
+def gate_state(used: int, limit: int) -> str:
+    if used >= limit:
+        return GATE_HARD
+    if used >= limit * 0.8:
+        return GATE_SOFT
+    return GATE_OK
+
+
+async def system_gate_state() -> tuple[str, int, int]:
+    """(상태, 당일 사용량, 한도). 시스템 키 미설정이면 ok(중앙 폴링이 자체 skip)."""
+    key = await get_system_youtube_key()
+    if not key:
+        return GATE_OK, 0, 0
+    sf = get_sessionmaker()
+    async with sf() as session:
+        limit = await get_youtube_daily_quota(session)
+        used = await units_today(session, key_fingerprint(key))
+    return gate_state(used, limit), used, limit
+
+
+async def system_hard_blocked() -> bool:
+    state, _used, _limit = await system_gate_state()
+    return state == GATE_HARD

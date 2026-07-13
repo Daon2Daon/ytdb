@@ -95,6 +95,13 @@ async def test_resolve_youtube_key_falls_back_to_system(monkeypatch):
         return "system-key"
 
     monkeypatch.setattr(gs, "get_system_youtube_key", fake_system_key)
+
+    from app.services import yt_quota_service as yq
+
+    async def not_hard():
+        return False
+
+    monkeypatch.setattr(yq, "system_hard_blocked", not_hard)
     assert await gs.resolve_youtube_key(1) == "system-key"
 
 

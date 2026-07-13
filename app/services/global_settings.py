@@ -113,10 +113,22 @@ async def get_system_youtube_key() -> str:
 
 
 async def resolve_youtube_key(group_id: int) -> str:
-    """그룹 스코프 호출용: 그룹 polling 키 우선, 없으면 시스템 키. 둘 다 없으면 ''."""
+    """그룹 스코프 호출용: 그룹 polling 키 우선, 없으면 시스템 키. 둘 다 없으면 ''.
+
+    시스템 키 폴백은 하드 게이트(당일 100% 소진) 시 YouTubeQuotaExceededError.
+    그룹 자체 키는 게이트와 무관 (스펙 §1.4).
+    """
     polling = await get_settings_manager().get_polling(group_id)
     if polling.youtube_api_key:
         return polling.youtube_api_key
+    from app.services import yt_quota_service as yq  # 순환 임포트 회피
+
+    if await yq.system_hard_blocked():
+        from app.services.youtube_api import YouTubeQuotaExceededError
+
+        raise YouTubeQuotaExceededError(
+            "시스템 YouTube 키 일일 쿼터 소진 — PT 자정 리셋까지 시스템 키 사용 불가"
+        )
     return await get_system_youtube_key()
 
 
