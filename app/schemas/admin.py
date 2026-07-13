@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -162,6 +162,19 @@ class AdminUsageRow(BaseModel):
     null_cost_calls: int = 0          # 단가 미상 호출 수(경고 표시용)
 
 
+class YtQuotaEntry(BaseModel):
+    key_fp: str
+    units: int
+    pct: float                 # daily_quota 대비 백분율(소수 1자리)
+    is_system_key: bool
+
+
+class YtQuotaStatus(BaseModel):
+    usage_date: date           # PT 기준 오늘
+    daily_quota: int
+    entries: list[YtQuotaEntry]
+
+
 class AdminUsageResponse(BaseModel):
     window: str
     start: datetime
@@ -169,3 +182,4 @@ class AdminUsageResponse(BaseModel):
     rows: list[AdminUsageRow]
     total_cost_usd: float
     null_cost_row_count: int          # 단가 미상 원장 행 총수 (스펙 §2.4 경고)
+    youtube: Optional[YtQuotaStatus] = None   # D-2: 당일(PT) 키별 YouTube 쿼터

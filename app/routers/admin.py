@@ -22,6 +22,7 @@ from app.models.control.plan import Plan
 from app.models.control.prompt_preset import PromptPreset
 from app.models.control.user import User
 from app.models.control.user_limit import UserLimit
+from app.models.control.yt_quota_usage import YtQuotaUsage
 from app.routers.auth import CurrentUser, require_admin
 from app.schemas.admin import (
     AdminUsageResponse,
@@ -43,6 +44,8 @@ from app.schemas.admin import (
     TempPasswordOut,
     UserLimitsIn,
     UserLimitsOut,
+    YtQuotaEntry,
+    YtQuotaStatus,
 )
 from app.services.ai_usage_service import kst_month_start_utc
 from app.services.auth_service import generate_invite_token, hash_password
@@ -58,11 +61,14 @@ from app.services.global_settings import (
     GLOBAL_YOUTUBE_DAILY_QUOTA,
     SECRET_KEYS,
     get_global,
+    get_system_youtube_key,
+    get_youtube_daily_quota,
     set_global,
 )
 from app.services.preset_service import invalidate_preset_cache
 from app.services.quota_service import kst_day_start_utc
 from app.services.settings_manager import mask_secret
+from app.services.yt_quota_service import key_fingerprint, pt_today
 
 router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)]
@@ -84,6 +90,23 @@ _GLOBAL_KEYS = (
 def _signup_url(token: str) -> str:
     base = (app_settings.PUBLIC_BASE_URL or "").rstrip("/")
     return f"{base}/signup?token={token}"
+
+
+def build_yt_quota_entries(
+    rows: list[tuple[str, int]], daily_quota: int, system_fp: str
+) -> list[YtQuotaEntry]:
+    """(key_fp, units) 행 → 엔트리. 시스템 키 우선 정렬, pct는 소수 1자리."""
+    entries = [
+        YtQuotaEntry(
+            key_fp=fp,
+            units=units,
+            pct=round(units * 100.0 / daily_quota, 1) if daily_quota > 0 else 0.0,
+            is_system_key=(fp == system_fp),
+        )
+        for fp, units in rows
+    ]
+    entries.sort(key=lambda e: (not e.is_system_key, -e.units))
+    return entries
 
 
 @router.get("/users", response_model=list[AdminUserOutV2])
@@ -419,8 +442,27 @@ async def usage_summary(
         )
         for r in rows_q
     ]
+    # D-2: 당일(PT) YouTube 쿼터 현황
+    today_pt = pt_today()
+    yt_rows = (
+        await session.execute(
+            select(YtQuotaUsage.key_fp, YtQuotaUsage.units).where(
+                YtQuotaUsage.usage_date == today_pt
+            )
+        )
+    ).all()
+    daily_quota = await get_youtube_daily_quota(session)
+    system_key = await get_system_youtube_key()
+    system_fp = key_fingerprint(system_key) if system_key else ""
+    youtube = YtQuotaStatus(
+        usage_date=today_pt,
+        daily_quota=daily_quota,
+        entries=build_yt_quota_entries([(r[0], r[1]) for r in yt_rows], daily_quota, system_fp),
+    )
+
     return AdminUsageResponse(
         window=window, start=start, end=end, rows=out_rows,
         total_cost_usd=sum(r.cost_usd or 0.0 for r in out_rows),
         null_cost_row_count=sum(r.null_cost_calls for r in out_rows),
+        youtube=youtube,
     )

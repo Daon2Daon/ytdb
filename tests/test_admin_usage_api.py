@@ -37,3 +37,21 @@ def test_invalid_window_400():
     app.dependency_overrides[require_user] = _a
     c = TestClient(app, raise_server_exceptions=False)
     assert c.get("/api/admin/usage?window=yesterday").status_code == 400
+
+
+def test_build_yt_quota_entries_marks_system_key():
+    from app.routers.admin import build_yt_quota_entries
+
+    rows = [("aaa111bbb222", 8000), ("ccc333ddd444", 120)]
+    entries = build_yt_quota_entries(rows, daily_quota=10000, system_fp="aaa111bbb222")
+    assert entries[0].key_fp == "aaa111bbb222"
+    assert entries[0].is_system_key is True
+    assert entries[0].pct == 80.0
+    assert entries[1].is_system_key is False
+    assert entries[1].pct == 1.2
+
+
+def test_admin_usage_response_has_youtube_field():
+    from app.schemas.admin import AdminUsageResponse
+
+    assert "youtube" in AdminUsageResponse.model_fields
