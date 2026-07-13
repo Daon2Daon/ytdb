@@ -30,6 +30,10 @@ GLOBAL_YOUTUBE_API_KEY = "youtube_api_key"
 GLOBAL_CENTRAL_POLL_FLOOR_MIN = "central_poll_floor_min"
 DEFAULT_CENTRAL_POLL_FLOOR_MIN = 10
 
+# Phase D-2: YouTube 쿼터 원장 (스펙 §1.3)
+GLOBAL_YOUTUBE_DAILY_QUOTA = "youtube_daily_quota"
+DEFAULT_YOUTUBE_DAILY_QUOTA = 10000
+
 # Phase C: 전역 AI 게이트웨이 (스펙 §5). tagging_model은 미사용이라 전역화 제외.
 GLOBAL_AI_BASE_URL = "ai_base_url"
 GLOBAL_AI_API_KEY = "ai_api_key"
@@ -91,6 +95,15 @@ async def get_central_poll_floor_min(session: AsyncSession) -> int:
     except (TypeError, ValueError):
         return DEFAULT_CENTRAL_POLL_FLOOR_MIN
     return v if v > 0 else DEFAULT_CENTRAL_POLL_FLOOR_MIN
+
+
+async def get_youtube_daily_quota(session: AsyncSession) -> int:
+    raw = await get_global(session, GLOBAL_YOUTUBE_DAILY_QUOTA)
+    try:
+        v = int(raw) if raw is not None else DEFAULT_YOUTUBE_DAILY_QUOTA
+    except (TypeError, ValueError):
+        return DEFAULT_YOUTUBE_DAILY_QUOTA
+    return v if v > 0 else DEFAULT_YOUTUBE_DAILY_QUOTA
 
 
 async def get_system_youtube_key() -> str:

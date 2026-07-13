@@ -236,3 +236,18 @@ def test_telegram_bot_token_key_registered():
 
     assert GLOBAL_TELEGRAM_BOT_TOKEN == "telegram_bot_token"
     assert GLOBAL_TELEGRAM_BOT_TOKEN in SECRET_KEYS  # Fernet 암호화 저장
+
+
+async def test_get_youtube_daily_quota_default_and_clamp():
+    from types import SimpleNamespace as NS
+
+    # 행 없음 → 기본 10000
+    assert await gs.get_youtube_daily_quota(FakeSession([FakeResult(None)])) == 10000
+    # 비정상(비숫자/0 이하) → 기본
+    bad = NS(key="youtube_daily_quota", value="abc", value_enc=None, is_secret=False)
+    assert await gs.get_youtube_daily_quota(FakeSession([FakeResult(bad)])) == 10000
+    zero = NS(key="youtube_daily_quota", value="0", value_enc=None, is_secret=False)
+    assert await gs.get_youtube_daily_quota(FakeSession([FakeResult(zero)])) == 10000
+    # 정상값
+    ok = NS(key="youtube_daily_quota", value="50000", value_enc=None, is_secret=False)
+    assert await gs.get_youtube_daily_quota(FakeSession([FakeResult(ok)])) == 50000

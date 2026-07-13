@@ -55,6 +55,7 @@ from app.services.global_settings import (
     GLOBAL_CENTRAL_POLL_FLOOR_MIN,
     GLOBAL_TELEGRAM_BOT_TOKEN,
     GLOBAL_YOUTUBE_API_KEY,
+    GLOBAL_YOUTUBE_DAILY_QUOTA,
     SECRET_KEYS,
     get_global,
     set_global,
@@ -70,6 +71,7 @@ router = APIRouter(
 _GLOBAL_KEYS = (
     GLOBAL_YOUTUBE_API_KEY,
     GLOBAL_CENTRAL_POLL_FLOOR_MIN,
+    GLOBAL_YOUTUBE_DAILY_QUOTA,
     GLOBAL_AI_BASE_URL,
     GLOBAL_AI_API_KEY,
     GLOBAL_AI_PRIMARY_MODEL,
@@ -264,6 +266,15 @@ async def put_global_settings(
             if floor <= 0:
                 raise HTTPException(
                     status_code=400, detail="central_poll_floor_min은 양의 정수여야 합니다."
+                )
+        if item.key == GLOBAL_YOUTUBE_DAILY_QUOTA:
+            try:
+                quota = int(value)
+            except ValueError:
+                quota = 0
+            if quota <= 0:
+                raise HTTPException(
+                    status_code=400, detail="youtube_daily_quota는 양의 정수여야 합니다."
                 )
         if item.key == GLOBAL_AI_MODEL_PRICES:
             try:

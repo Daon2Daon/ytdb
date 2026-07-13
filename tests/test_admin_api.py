@@ -143,3 +143,34 @@ def test_global_settings_includes_telegram_bot_token():
     from app.routers.admin import _GLOBAL_KEYS
 
     assert "telegram_bot_token" in _GLOBAL_KEYS
+
+
+def test_global_settings_includes_youtube_daily_quota():
+    from app.routers import admin as admin_router
+
+    assert "youtube_daily_quota" in admin_router._GLOBAL_KEYS
+
+
+async def test_put_global_settings_youtube_daily_quota_must_be_positive_int(monkeypatch):
+    """youtube_daily_quota는 양의 정수만 허용 — 아니면 400."""
+    from fastapi import HTTPException
+
+    from app.routers import admin as admin_router
+    from app.schemas.admin import GlobalSettingItem, GlobalSettingsUpdate
+
+    saved = _patch_globals(monkeypatch, current_secret=None)
+
+    for bad in ("abc", "0", "-5"):
+        payload = GlobalSettingsUpdate(items=[
+            GlobalSettingItem(key="youtube_daily_quota", value=bad),
+        ])
+        with pytest.raises(HTTPException) as exc:
+            await admin_router.put_global_settings(payload, session=_FakeSession())
+        assert exc.value.status_code == 400
+    assert saved == {}
+
+    payload = GlobalSettingsUpdate(items=[
+        GlobalSettingItem(key="youtube_daily_quota", value="50000"),
+    ])
+    await admin_router.put_global_settings(payload, session=_FakeSession())
+    assert saved == {"youtube_daily_quota": "50000"}
