@@ -69,6 +69,7 @@ from app.services.youtube_api import (
     YouTubeAPIClient,
     YouTubeQuotaExceededError,
 )
+from app.services.yt_quota_service import make_recorder
 
 STALE_PROCESSING_RESET_MINUTES = 180
 FAILED_RETRY_MAX = 3
@@ -327,7 +328,11 @@ def _build_stats_map(metas) -> dict[str, tuple]:
 async def _poll_group(group: Group) -> None:
     mgr = get_settings_manager()
     polling = await mgr.get_polling(group.group_id)
-    api_key = await resolve_youtube_key(group.group_id)
+    try:
+        api_key = await resolve_youtube_key(group.group_id)
+    except YouTubeQuotaExceededError as e:
+        print(f"[{group.slug}] 시스템 키 쿼터 소진 - SKIP: {e}")
+        return
     if not api_key:
         print(f"[{group.slug}] YouTube API 키 미설정(그룹·시스템 모두) - 폴링 SKIP")
         return
@@ -349,7 +354,7 @@ async def _poll_group(group: Group) -> None:
 
     print(f"[{group.slug}] 폴링 시작: {len(due)}개 채널")
     sem = asyncio.Semaphore(int(polling.max_concurrent_channels or 5))
-    api_client = YouTubeAPIClient(polling)
+    api_client = YouTubeAPIClient(polling, recorder=make_recorder(polling.youtube_api_key))
 
     async def _one(channel: Channel) -> None:
         async with sem:
@@ -929,7 +934,11 @@ async def run_stats_refresh_once() -> None:
             polling = await mgr.get_polling(group.group_id)
             if int(polling.stats_refresh_days or 0) <= 0:
                 continue
-            api_key = await resolve_youtube_key(group.group_id)
+            try:
+                api_key = await resolve_youtube_key(group.group_id)
+            except YouTubeQuotaExceededError as e:
+                print(f"[{group.slug}] 시스템 키 쿼터 소진 - stats 갱신 SKIP: {e}")
+                continue
             if not api_key:
                 continue
             polling = replace(polling, youtube_api_key=api_key)
@@ -958,7 +967,7 @@ async def run_stats_refresh_once() -> None:
             if not id_to_pk:
                 continue
 
-            api_client = YouTubeAPIClient(polling)
+            api_client = YouTubeAPIClient(polling, recorder=make_recorder(polling.youtube_api_key))
             timer = JobTimer()
             updated = 0
             status = STATUS_SUCCESS
@@ -1019,7 +1028,11 @@ async def poll_single_channel(group: Group, channel_pk: int) -> None:
     """단일 채널을 즉시 폴링한다(수동 트리거용). _poll_group의 1채널 버전."""
     mgr = get_settings_manager()
     polling = await mgr.get_polling(group.group_id)
-    api_key = await resolve_youtube_key(group.group_id)
+    try:
+        api_key = await resolve_youtube_key(group.group_id)
+    except YouTubeQuotaExceededError as e:
+        print(f"[{group.slug}] 시스템 키 쿼터 소진 - 단건 폴링 SKIP: {e}")
+        return
     if not api_key:
         print(f"[{group.slug}] YouTube API 키 미설정(그룹·시스템 모두) - 단건 폴링 SKIP")
         return
@@ -1042,7 +1055,7 @@ async def poll_single_channel(group: Group, channel_pk: int) -> None:
         print(f"[{group.slug}] 채널 없음(channel_pk={channel_pk}) - 단건 폴링 SKIP")
         return
 
-    api_client = YouTubeAPIClient(polling)
+    api_client = YouTubeAPIClient(polling, recorder=make_recorder(polling.youtube_api_key))
     timer = JobTimer()
     try:
         with timer:

@@ -24,7 +24,12 @@ from app.services.quota_service import (
     validate_poll_interval,
 )
 from app.services.settings_manager import get_settings_manager
-from app.services.youtube_api import YouTubeAPIError, YouTubeAPIClient
+from app.services.youtube_api import (
+    YouTubeAPIError,
+    YouTubeAPIClient,
+    YouTubeQuotaExceededError,
+)
+from app.services.yt_quota_service import make_recorder
 
 router = APIRouter(prefix="/api/groups/{slug}/channels", tags=["channels"])
 
@@ -61,14 +66,17 @@ async def add_channel(
             )
 
     polling = await get_settings_manager().get_polling(group.group_id)
-    api_key = await resolve_youtube_key(group.group_id)
+    try:
+        api_key = await resolve_youtube_key(group.group_id)
+    except YouTubeQuotaExceededError as e:
+        raise HTTPException(status_code=400, detail=f"YouTube 쿼터 소진: {e}")
     if not api_key:
         raise HTTPException(
             status_code=400,
             detail="YouTube API 키가 없습니다. 그룹 polling 설정 또는 시스템 전역 키를 설정하세요.",
         )
     polling = replace(polling, youtube_api_key=api_key)
-    api = YouTubeAPIClient(polling)
+    api = YouTubeAPIClient(polling, recorder=make_recorder(api_key))
     try:
         meta = await api.resolve_channel(payload.channel_input)
     except YouTubeAPIError as e:

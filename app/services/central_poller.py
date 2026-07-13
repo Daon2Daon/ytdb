@@ -162,7 +162,10 @@ async def run_central_poll_once() -> None:
     print(f"[central-poll] 폴링 시작: {len(due)}개 채널")
 
     now = datetime.now(timezone.utc)
-    api_client = YouTubeAPIClient(PollingSettings(youtube_api_key=system_key))
+    api_client = YouTubeAPIClient(
+        PollingSettings(youtube_api_key=system_key),
+        recorder=yq.make_recorder(system_key),
+    )
     sem = asyncio.Semaphore(CENTRAL_MAX_CONCURRENT_CHANNELS)
     quota_hit = asyncio.Event()
 

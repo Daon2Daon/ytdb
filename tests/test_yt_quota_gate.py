@@ -93,3 +93,52 @@ async def test_resolve_youtube_key_group_key_unaffected_by_hard_gate(monkeypatch
 
     monkeypatch.setattr(yq, "system_hard_blocked", hard)
     assert await gs.resolve_youtube_key(1) == "group-key"
+
+
+def test_channels_router_maps_quota_error_to_400(monkeypatch):
+    """resolve_youtube_key가 쿼터 소진을 던지면 500이 아니라 400."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import channels as ch
+    from app.routers.auth import CurrentUser, require_user
+    from app.routers.deps import get_group_or_404
+    from app.services.auth_service import set_users_exist
+    from app.services.youtube_api import YouTubeQuotaExceededError
+
+    set_users_exist(True)
+    try:
+        async def _u():
+            return CurrentUser(user_id=1, email="a@x.com", display_name="A", role="admin")
+
+        async def _g():
+            # owner_user_id=None → limits_for_group_owner가 None(무제한)을 반환해
+            # resolve_youtube_key 이전의 쿼터 검사 블록을 DB 없이 우회한다.
+            return SimpleNamespace(
+                group_id=1, slug="g", schema_name="s", owner_user_id=None
+            )
+
+        app.dependency_overrides[require_user] = _u
+        app.dependency_overrides[get_group_or_404] = _g
+
+        # get_polling(line 63)이 resolve보다 먼저 실행되므로 DB 접근을 막는다.
+        async def _polling(group_id):
+            return SimpleNamespace(youtube_api_key="")
+
+        monkeypatch.setattr(
+            ch, "get_settings_manager",
+            lambda: SimpleNamespace(get_polling=_polling),
+        )
+
+        async def boom(group_id):
+            raise YouTubeQuotaExceededError("시스템 키 소진")
+
+        monkeypatch.setattr(ch, "resolve_youtube_key", boom)
+
+        c = TestClient(app, raise_server_exceptions=False)
+        resp = c.post("/api/groups/g/channels", json={"channel_input": "@x"})
+        assert resp.status_code == 400
+        assert "쿼터" in resp.json()["detail"]
+    finally:
+        set_users_exist(False)
+        app.dependency_overrides.clear()
