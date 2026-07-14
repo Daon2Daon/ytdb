@@ -36,6 +36,8 @@ from app.schemas.admin import (
     InviteCreate,
     InviteCreated,
     InviteOut,
+    MigrateSchemasResponse,
+    MigrationResultOut,
     PlanOut,
     PlanPatch,
     PresetCreate,
@@ -66,6 +68,7 @@ from app.services.global_settings import (
     set_global,
 )
 from app.services.preset_service import invalidate_preset_cache
+from app.services.schema_migrator import migrate_all_schemas, summarize
 from app.services.quota_service import kst_day_start_utc
 from app.services.settings_manager import mask_secret
 from app.services.yt_quota_service import key_fingerprint, pt_today
@@ -107,6 +110,16 @@ def build_yt_quota_entries(
     ]
     entries.sort(key=lambda e: (not e.is_system_key, -e.units))
     return entries
+
+
+@router.post("/migrate-schemas", response_model=MigrateSchemasResponse)
+async def migrate_schemas() -> MigrateSchemasResponse:
+    """전 그룹 스키마 순회 마이그레이션 — 동기 실행, 그룹별 리포트 반환."""
+    results = await migrate_all_schemas()
+    return MigrateSchemasResponse(
+        results=[MigrationResultOut(**vars(r)) for r in results],
+        summary=summarize(results),
+    )
 
 
 @router.get("/users", response_model=list[AdminUserOutV2])

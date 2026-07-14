@@ -64,6 +64,24 @@ async def lifespan(app: FastAPI):
         start_scheduler()
         await apply_pending_analysis_schedule()
 
+    from app.services.schema_migrator import migrate_all_schemas, summarize
+
+    async def _boot_migrate() -> None:
+        try:
+            results = await migrate_all_schemas()
+            s = summarize(results)
+            print(
+                f"[startup] 전 스키마 마이그레이션: ok={s['ok']} "
+                f"failed={s['failed']} skipped={s['skipped']}"
+            )
+            for r in results:
+                if r.status == "failed":
+                    print(f"[startup]   {r.slug}({r.schema_name}) 실패: {r.error}")
+        except Exception as e:  # noqa: BLE001 — 부팅을 절대 막지 않는다
+            print(f"[startup] 전 스키마 마이그레이션 실패(기동 계속): {e}")
+
+    mig_task = asyncio.create_task(_boot_migrate())
+
     from app.services.telegram_link_service import run_telegram_updates_worker
 
     tg_task = asyncio.create_task(run_telegram_updates_worker())
@@ -71,8 +89,11 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         tg_task.cancel()
+        mig_task.cancel()
         with suppress(asyncio.CancelledError):
             await tg_task
+        with suppress(asyncio.CancelledError):
+            await mig_task
         shutdown_scheduler()
 
 

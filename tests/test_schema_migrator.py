@@ -82,3 +82,63 @@ def test_summarize_counts():
         GroupMigrationResult(4, "d", "s4", "ok", None, 1),
     ]
     assert summarize(results) == {"ok": 2, "failed": 1, "skipped": 1}
+
+
+def test_migrate_schemas_route_registered():
+    from app.main import app
+
+    assert "/api/admin/migrate-schemas" in {r.path for r in app.routes}
+
+
+async def test_migrate_schemas_endpoint_returns_report(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import admin as admin_router
+    from app.routers.auth import CurrentUser, require_user
+    from app.services.auth_service import set_users_exist
+    from app.services.schema_migrator import GroupMigrationResult
+
+    set_users_exist(True)
+    try:
+        async def _a():
+            return CurrentUser(user_id=1, email="a@x.com", display_name="A", role="admin")
+
+        app.dependency_overrides[require_user] = _a
+
+        async def fake_migrate():
+            return [
+                GroupMigrationResult(1, "g1", "s1", "ok", None, 12),
+                GroupMigrationResult(2, "g2", "s2", "failed", "boom", 5),
+            ]
+
+        monkeypatch.setattr(admin_router, "migrate_all_schemas", fake_migrate)
+        c = TestClient(app, raise_server_exceptions=False)
+        resp = c.post("/api/admin/migrate-schemas")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["summary"] == {"ok": 1, "failed": 1, "skipped": 0}
+        assert body["results"][1]["error"] == "boom"
+    finally:
+        set_users_exist(False)
+        app.dependency_overrides.clear()
+
+
+def test_migrate_schemas_non_admin_403():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers.auth import CurrentUser, require_user
+    from app.services.auth_service import set_users_exist
+
+    set_users_exist(True)
+    try:
+        async def _u():
+            return CurrentUser(user_id=2, email="u@x.com", display_name="U", role="user")
+
+        app.dependency_overrides[require_user] = _u
+        c = TestClient(app, raise_server_exceptions=False)
+        assert c.post("/api/admin/migrate-schemas").status_code == 403
+    finally:
+        set_users_exist(False)
+        app.dependency_overrides.clear()

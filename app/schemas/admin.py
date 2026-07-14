@@ -183,3 +183,17 @@ class AdminUsageResponse(BaseModel):
     total_cost_usd: float
     null_cost_row_count: int          # 단가 미상 원장 행 총수 (스펙 §2.4 경고)
     youtube: Optional[YtQuotaStatus] = None   # D-2: 당일(PT) 키별 YouTube 쿼터
+
+
+class MigrationResultOut(BaseModel):
+    group_id: int
+    slug: str
+    schema_name: str
+    status: str            # 'ok' | 'failed' | 'skipped'
+    error: Optional[str] = None
+    duration_ms: int
+
+
+class MigrateSchemasResponse(BaseModel):
+    results: list[MigrationResultOut]
+    summary: dict[str, int]   # {'ok': n, 'failed': n, 'skipped': n}
