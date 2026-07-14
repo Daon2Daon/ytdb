@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { adminApi, type AdminUsageResponse, type AdminUser, type Invite, type PlanInfo, type UserLimits } from '../api/admin'
+import { adminApi, type AdminUsageResponse, type AdminUser, type Invite, type MigrateSchemasResponse, type PlanInfo, type UserLimits } from '../api/admin'
 
 const emptyLimitsForm = {
   max_groups: '',
@@ -31,6 +31,9 @@ export default function Admin() {
   const [usage, setUsage] = useState<AdminUsageResponse | null>(null)
   const [usageWindow, setUsageWindow] = useState('this_month')
   const [usageError, setUsageError] = useState<string | null>(null)
+  const [migrating, setMigrating] = useState(false)
+  const [migration, setMigration] = useState<MigrateSchemasResponse | null>(null)
+  const [migrationError, setMigrationError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -162,6 +165,19 @@ export default function Admin() {
       await load()
     } catch (e) {
       setError((e as Error).message)
+    }
+  }
+
+  const runMigration = async () => {
+    if (migrating) return
+    setMigrating(true)
+    setMigrationError(null)
+    try {
+      setMigration(await adminApi.migrateSchemas())
+    } catch (e) {
+      setMigrationError(e instanceof Error ? e.message : '실행 실패')
+    } finally {
+      setMigrating(false)
     }
   }
 
@@ -478,6 +494,40 @@ export default function Admin() {
             단가 미등록 호출 {usage.null_cost_row_count}건 — 전역설정의 ai_model_prices에 단가를 등록하세요.
           </p>
         )}
+        {usage?.youtube && (
+          <div className="bg-white rounded-xl shadow-sm p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-800">
+              YouTube 쿼터 (PT {usage.youtube.usage_date} · 한도 {usage.youtube.daily_quota.toLocaleString()})
+            </h3>
+            {usage.youtube.entries.length === 0 ? (
+              <p className="text-sm text-gray-400">오늘 기록된 호출이 없습니다.</p>
+            ) : (
+              <ul className="divide-y">
+                {usage.youtube.entries.map((e) => (
+                  <li key={e.key_fp} className="py-1.5 flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <code className="font-mono text-xs text-gray-600">{e.key_fp}</code>
+                      {e.is_system_key && (
+                        <span className="text-xs text-amber-600 border border-amber-200 bg-amber-50 rounded px-1">시스템 키</span>
+                      )}
+                    </span>
+                    <span
+                      className={
+                        e.pct >= 100
+                          ? 'text-red-600 font-bold'
+                          : e.pct >= 80
+                            ? 'text-amber-600 font-bold'
+                            : 'text-gray-600'
+                      }
+                    >
+                      {e.units.toLocaleString()} 유닛 ({e.pct}%)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -513,6 +563,57 @@ export default function Admin() {
               </tfoot>
             )}
           </table>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold text-gray-800">시스템 도구</h2>
+        <div className="bg-white rounded-xl shadow-sm p-4 space-y-3">
+          <button
+            onClick={runMigration}
+            disabled={migrating}
+            className="bg-blue-600 text-white rounded-lg px-4 py-1.5 text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {migrating ? '실행 중…' : '전 스키마 마이그레이션 실행'}
+          </button>
+          {migrationError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{migrationError}</p>
+          )}
+          {migration && (
+            <>
+              <p className="text-sm text-gray-700">
+                성공 {migration.summary.ok} · 실패 {migration.summary.failed} · 스킵 {migration.summary.skipped}
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b">
+                      <th className="px-3 py-2">그룹</th><th className="px-3 py-2">스키마</th>
+                      <th className="px-3 py-2">상태</th><th className="px-3 py-2 text-right">소요(ms)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {migration.results.map((r) => (
+                      <tr key={r.group_id} className="border-b last:border-0">
+                        <td className="px-3 py-2">{r.slug}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-gray-600">{r.schema_name}</td>
+                        <td className="px-3 py-2">
+                          {r.status === 'ok' ? (
+                            <span className="text-green-600">ok</span>
+                          ) : r.status === 'failed' ? (
+                            <span className="text-red-600">failed{r.error ? ` — ${r.error}` : ''}</span>
+                          ) : (
+                            <span className="text-gray-400">skipped</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">{r.duration_ms.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       </section>
     </div>
