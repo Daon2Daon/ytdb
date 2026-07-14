@@ -121,14 +121,18 @@ class DataPlaneEngineManager:
             self._ensure_locks[key] = lock
         return lock
 
-    async def ensure_schema(self, group: GroupRef) -> None:
-        """그룹 스키마와 데이터 평면 테이블을 멱등 생성한다."""
+    async def ensure_schema(self, group: GroupRef, *, force: bool = False) -> None:
+        """그룹 스키마와 데이터 평면 테이블을 멱등 생성한다.
+
+        force=True는 프로세스 캐시를 우회해 DDL을 재실행한다(마이그레이터용).
+        락은 유지 — 동시 실행 안전. 기존 호출부는 전부 기본값이라 동작 무변경.
+        """
         cfg = await self._cfg(group)
         key = (cfg.server_signature(), group.schema_name)
-        if key in self._initialized:
+        if not force and key in self._initialized:
             return
         async with self._ensure_lock(key):
-            if key in self._initialized:
+            if not force and key in self._initialized:
                 return
             engine = await self._shared_engine(cfg)
             bound = engine.execution_options(
