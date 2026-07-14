@@ -75,6 +75,7 @@ async def ensure_control_schema() -> None:
         telegram_link_token,
         user,
         user_limit,
+        yt_quota_usage,
     )
 
     engine = get_engine()

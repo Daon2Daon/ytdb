@@ -67,6 +67,33 @@ export interface AdminUsageRow {
   null_cost_calls: number
 }
 
+export interface YtQuotaEntry {
+  key_fp: string
+  units: number
+  pct: number
+  is_system_key: boolean
+}
+
+export interface YtQuotaStatus {
+  usage_date: string
+  daily_quota: number
+  entries: YtQuotaEntry[]
+}
+
+export interface MigrationResultOut {
+  group_id: number
+  slug: string
+  schema_name: string
+  status: 'ok' | 'failed' | 'skipped'
+  error: string | null
+  duration_ms: number
+}
+
+export interface MigrateSchemasResponse {
+  results: MigrationResultOut[]
+  summary: { ok: number; failed: number; skipped: number }
+}
+
 export interface AdminUsageResponse {
   window: string
   start: string
@@ -74,6 +101,7 @@ export interface AdminUsageResponse {
   rows: AdminUsageRow[]
   total_cost_usd: number
   null_cost_row_count: number
+  youtube: YtQuotaStatus | null
 }
 
 export const adminApi = {
@@ -97,4 +125,5 @@ export const adminApi = {
     rootApi.patch<PlanInfo>(`/admin/plans/${planId}`, body),
   usage: (window: string) =>
     rootApi.get<AdminUsageResponse>(`/admin/usage?window=${window}`),
+  migrateSchemas: () => rootApi.post<MigrateSchemasResponse>('/admin/migrate-schemas', {}),
 }

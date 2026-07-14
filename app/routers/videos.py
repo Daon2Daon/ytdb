@@ -40,7 +40,12 @@ from app.services.notify_service import (
     notify_video,
 )
 from app.services.settings_manager import get_settings_manager
-from app.services.youtube_api import YouTubeAPIClient, YouTubeAPIError
+from app.services.youtube_api import (
+    YouTubeAPIClient,
+    YouTubeAPIError,
+    YouTubeQuotaExceededError,
+)
+from app.services.yt_quota_service import make_recorder
 from app.services.yt_parsing import parse_duration_seconds, parse_iso_datetime
 
 router = APIRouter(prefix="/api/groups/{slug}/videos", tags=["videos"])
@@ -497,7 +502,10 @@ async def instant_analyze_video(
         raise HTTPException(status_code=400, detail=reason)
 
     polling = await get_settings_manager().get_polling(group.group_id)
-    api_key = await resolve_youtube_key(group.group_id)
+    try:
+        api_key = await resolve_youtube_key(group.group_id)
+    except YouTubeQuotaExceededError as e:
+        raise HTTPException(status_code=400, detail=f"YouTube 쿼터 소진: {e}")
     if not api_key:
         raise HTTPException(
             status_code=400,
@@ -522,7 +530,7 @@ async def instant_analyze_video(
                     video_pk=video_pk, video_id=video_id, existing=True, queued=True
                 )
 
-            api = YouTubeAPIClient(polling)
+            api = YouTubeAPIClient(polling, recorder=make_recorder(polling.youtube_api_key))
             try:
                 metas = await api.get_video_details([video_id])
             except YouTubeAPIError as e:

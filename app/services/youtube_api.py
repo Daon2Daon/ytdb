@@ -2,7 +2,7 @@
 
 - 입력값(URL/@handle/UC id)을 channel_id로 정규화 후 메타/업로드 플레이리스트 조회
 - 업로드 플레이리스트 최근 영상 조회, videos.list 상세 일괄 조회
-- 쿼터는 런타임 메모리에서 일자 기준으로만 관리(초기 버전)
+- 쿼터: 인스턴스 메모리 가드(2차 방어) + 선택적 recorder로 영속 기록(yt_quota_service)
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -88,7 +88,12 @@ def _first_thumb(snippet: Dict[str, Any]) -> str | None:
 
 
 class YouTubeAPIClient:
-    def __init__(self, polling: PollingSettings, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        polling: PollingSettings,
+        client: httpx.AsyncClient | None = None,
+        recorder: Callable[[int], Awaitable[None]] | None = None,
+    ) -> None:
         if not polling.youtube_api_key:
             raise YouTubeAPIError("YouTube API 키가 없습니다. (polling.youtube_api_key)")
         self._polling = polling
@@ -97,6 +102,7 @@ class YouTubeAPIClient:
         self._client = client or httpx.AsyncClient(timeout=20.0)
         self._quota_day: date | None = None
         self._quota_used = 0
+        self._recorder = recorder
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -115,6 +121,8 @@ class YouTubeAPIClient:
 
     async def _get(self, path: str, params: Dict[str, Any], quota_units: int) -> Dict[str, Any]:
         self._consume_quota(quota_units)
+        if self._recorder is not None:
+            await self._recorder(quota_units)
         resp = await self._client.get(
             f"{self._base_url}/{path.lstrip('/')}", params={**params, "key": self._api_key}
         )

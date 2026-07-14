@@ -30,6 +30,10 @@ GLOBAL_YOUTUBE_API_KEY = "youtube_api_key"
 GLOBAL_CENTRAL_POLL_FLOOR_MIN = "central_poll_floor_min"
 DEFAULT_CENTRAL_POLL_FLOOR_MIN = 10
 
+# Phase D-2: YouTube 쿼터 원장 (스펙 §1.3)
+GLOBAL_YOUTUBE_DAILY_QUOTA = "youtube_daily_quota"
+DEFAULT_YOUTUBE_DAILY_QUOTA = 10000
+
 # Phase C: 전역 AI 게이트웨이 (스펙 §5). tagging_model은 미사용이라 전역화 제외.
 GLOBAL_AI_BASE_URL = "ai_base_url"
 GLOBAL_AI_API_KEY = "ai_api_key"
@@ -93,6 +97,15 @@ async def get_central_poll_floor_min(session: AsyncSession) -> int:
     return v if v > 0 else DEFAULT_CENTRAL_POLL_FLOOR_MIN
 
 
+async def get_youtube_daily_quota(session: AsyncSession) -> int:
+    raw = await get_global(session, GLOBAL_YOUTUBE_DAILY_QUOTA)
+    try:
+        v = int(raw) if raw is not None else DEFAULT_YOUTUBE_DAILY_QUOTA
+    except (TypeError, ValueError):
+        return DEFAULT_YOUTUBE_DAILY_QUOTA
+    return v if v > 0 else DEFAULT_YOUTUBE_DAILY_QUOTA
+
+
 async def get_system_youtube_key() -> str:
     """자체 세션으로 시스템 YouTube 키를 읽는다. 미설정이면 ''."""
     async with get_sessionmaker()() as session:
@@ -100,10 +113,22 @@ async def get_system_youtube_key() -> str:
 
 
 async def resolve_youtube_key(group_id: int) -> str:
-    """그룹 스코프 호출용: 그룹 polling 키 우선, 없으면 시스템 키. 둘 다 없으면 ''."""
+    """그룹 스코프 호출용: 그룹 polling 키 우선, 없으면 시스템 키. 둘 다 없으면 ''.
+
+    시스템 키 폴백은 하드 게이트(당일 100% 소진) 시 YouTubeQuotaExceededError.
+    그룹 자체 키는 게이트와 무관 (스펙 §1.4).
+    """
     polling = await get_settings_manager().get_polling(group_id)
     if polling.youtube_api_key:
         return polling.youtube_api_key
+    from app.services import yt_quota_service as yq  # 순환 임포트 회피
+
+    if await yq.system_hard_blocked():
+        from app.services.youtube_api import YouTubeQuotaExceededError
+
+        raise YouTubeQuotaExceededError(
+            "시스템 YouTube 키 일일 쿼터 소진 — PT 자정 리셋까지 시스템 키 사용 불가"
+        )
     return await get_system_youtube_key()
 
 
