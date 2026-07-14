@@ -39,7 +39,10 @@ async def test_synthesize_records_user_attributed_usage(monkeypatch):
 
     monkeypatch.setattr(ds, "LiteLLMClient", _FakeClient)
     monkeypatch.setattr(ds, "record_usage", _fake_record)
-    monkeypatch.setattr("app.services.global_settings.resolve_ai_gateway", _fake_resolve)
+    # digest_service는 resolve_ai_gateway를 from-import로 직접 바인딩하므로
+    # global_settings 모듈이 아니라 ds 쪽 심볼을 패치해야 실제로 대체된다.
+    # (모듈 경로 패치는 무효 — DB 도달 가능할 때만 우연히 통과하던 잠복 버그)
+    monkeypatch.setattr(ds, "resolve_ai_gateway", _fake_resolve)
     monkeypatch.setattr("app.services.preset_service.resolve_prompts", _fake_prompts)
 
     agg = SimpleNamespace(
