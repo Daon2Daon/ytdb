@@ -70,11 +70,14 @@ export function NewGroupModal({ onClose }: { onClose: () => void }) {
 }
 
 export function EditGroupModal({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
   const { activeGroup, activeSlug, reloadGroups } = useGroup()
   const [name, setName] = useState(activeGroup?.name ?? '')
   const [isActive, setIsActive] = useState(activeGroup?.is_active ?? true)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // 삭제 확인 단계: null=미진입, string=사용자가 입력 중인 확인 텍스트
+  const [confirmText, setConfirmText] = useState<string | null>(null)
 
   const submit = async () => {
     if (!name.trim()) return
@@ -90,6 +93,23 @@ export function EditGroupModal({ onClose }: { onClose: () => void }) {
       setBusy(false)
     }
   }
+
+  const remove = async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await groupApi.remove(activeSlug)
+      onClose()
+      // reloadGroups 후 GroupProvider가 남은 첫 그룹 또는 루트로 보정한다.
+      await reloadGroups()
+      navigate('/', { replace: true })
+    } catch (e) {
+      setErr((e as Error).message)
+      setBusy(false)
+    }
+  }
+
+  const groupName = activeGroup?.name ?? ''
 
   return (
     <ModalShell title="그룹 수정" onClose={onClose}>
@@ -126,6 +146,42 @@ export function EditGroupModal({ onClose }: { onClose: () => void }) {
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
           {busy ? '저장 중...' : '저장'}
         </button>
+      </div>
+      <div className="border-t border-gray-200 pt-4">
+        {confirmText === null ? (
+          <button
+            onClick={() => setConfirmText('')}
+            className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50"
+          >
+            그룹 삭제
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-red-600 font-medium">
+              수집된 영상·분석 데이터가 모두 영구 삭제됩니다. 되돌릴 수 없습니다.
+            </p>
+            <label className="block text-xs text-gray-500">
+              계속하려면 그룹 명칭 <span className="font-bold text-gray-700">{groupName}</span> 을(를) 입력하세요.
+            </label>
+            <input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={groupName}
+              className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmText(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">취소</button>
+              <button
+                onClick={remove}
+                disabled={busy || confirmText !== groupName}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-60"
+              >
+                {busy ? '삭제 중...' : '영구 삭제'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </ModalShell>
   )
