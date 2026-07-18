@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { adminApi, type AdminUser, type Invite, type PlanInfo, type UserLimits } from '../../api/admin'
 
 const emptyLimitsForm = {
@@ -24,6 +24,22 @@ function expiryHint(iso: string): { label: string; className: string } {
   if (diff <= SEVEN_DAYS_MS) return { label: '임박', className: 'text-amber-600' }
   return { label: '유효', className: 'text-gray-400' }
 }
+
+function Badge({ tone, children }: { tone: 'green' | 'red' | 'amber' | 'gray'; children: string }) {
+  const tones = {
+    green: 'bg-green-50 text-green-700 border-green-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    gray: 'bg-gray-50 text-gray-600 border-gray-200',
+  }
+  return (
+    <span className={`text-xs border rounded-full px-2 py-0.5 whitespace-nowrap ${tones[tone]}`}>
+      {children}
+    </span>
+  )
+}
+
+const actionBtn = 'border border-gray-300 rounded-lg px-2.5 py-1 text-xs hover:bg-gray-50 whitespace-nowrap'
 
 /** 사용자 관리 + 초대(사용자를 만드는 입구라 같은 탭). */
 export default function UsersTab() {
@@ -142,177 +158,159 @@ export default function UsersTab() {
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
 
       <section className="space-y-3">
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b">
-                <th className="px-3 py-2">이메일</th><th className="px-3 py-2">이름</th>
-                <th className="px-3 py-2">역할</th><th className="px-3 py-2">상태</th>
-                <th className="px-3 py-2">플랜</th><th className="px-3 py-2">만료일 (UTC)</th>
-                <th className="px-3 py-2">최근 로그인</th>
-                <th className="px-3 py-2">사용량</th><th className="px-3 py-2">관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <Fragment key={u.user_id}>
-                  <tr className="border-b last:border-0">
-                    <td className="px-3 py-2">{u.email}</td>
-                    <td className="px-3 py-2">{u.display_name || '-'}</td>
-                    <td className="px-3 py-2">{u.role}</td>
-                    <td className="px-3 py-2">{u.status}</td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={u.plan_id}
-                        onChange={(e) => changePlan(u, Number(e.target.value))}
-                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs"
-                      >
-                        {plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{p.name}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="datetime-local"
-                          value={u.plan_expires_at ? u.plan_expires_at.slice(0, 16) : ''}
-                          onChange={(e) => changeExpiry(u, e.target.value)}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs"
-                        />
-                        {u.plan_expires_at && (
-                          <span className={`text-xs ${expiryHint(u.plan_expires_at).className}`}>
-                            {expiryHint(u.plan_expires_at).label}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-gray-400">
-                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '-'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-600">
-                      {u.usage
-                        ? `${u.usage.group_count}그룹 · ${u.usage.channel_count}채널 · 오늘 ${u.usage.today_analyses}건`
-                        : '-'}
-                      {u.usage?.has_override && (
-                        <span className="ml-1 text-xs text-amber-600">한도조정</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          onClick={() => toggleStatus(u)}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs hover:bg-gray-50"
-                        >
-                          {u.status === 'active' ? '정지' : '해제'}
-                        </button>
-                        <button
-                          onClick={() => issueTempPassword(u)}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs hover:bg-gray-50"
-                        >
-                          임시비번
-                        </button>
-                        <button
-                          onClick={() => editingLimits === u.user_id ? setEditingLimits(null) : startEditLimits(u)}
-                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs hover:bg-gray-50"
-                        >
-                          한도편집
-                        </button>
-                      </div>
-                      {tempPw[u.user_id] && (
-                        <p className="text-xs bg-green-50 border border-green-200 rounded-lg px-2 py-1 mt-1 break-all">
-                          임시 비밀번호: <code>{tempPw[u.user_id]}</code>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(tempPw[u.user_id])}
-                            className="ml-2 text-blue-600 hover:underline"
-                          >
-                            복사
-                          </button>
-                        </p>
-                      )}
-                    </td>
-                  </tr>
-                  {editingLimits === u.user_id && (
-                    <tr className="border-b bg-gray-50">
-                      <td colSpan={9} className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2 items-end">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">최대 그룹수</label>
-                            <input
-                              type="number"
-                              value={limitsForm.max_groups}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, max_groups: e.target.value })}
-                              placeholder="플랜값"
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">최대 채널수</label>
-                            <input
-                              type="number"
-                              value={limitsForm.max_channels_total}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, max_channels_total: e.target.value })}
-                              placeholder="플랜값"
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">일일 분석 한도</label>
-                            <input
-                              type="number"
-                              value={limitsForm.max_analyses_per_day}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, max_analyses_per_day: e.target.value })}
-                              placeholder="플랜값"
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">최대 영상 분(분)</label>
-                            <input
-                              type="number"
-                              value={limitsForm.max_video_minutes}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, max_video_minutes: e.target.value })}
-                              placeholder="플랜값"
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">최소 폴링 간격(분)</label>
-                            <input
-                              type="number"
-                              value={limitsForm.min_poll_interval_min}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, min_poll_interval_min: e.target.value })}
-                              placeholder="플랜값"
-                              className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-40">
-                            <label className="block text-xs text-gray-500 mb-1">메모</label>
-                            <input
-                              value={limitsForm.note}
-                              onChange={(e) => setLimitsForm({ ...limitsForm, note: e.target.value })}
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            />
-                          </div>
-                          <button
-                            onClick={() => saveLimits(u)}
-                            className="bg-blue-600 text-white rounded-lg px-4 py-1.5 text-sm hover:bg-blue-700"
-                          >
-                            저장
-                          </button>
-                          <button
-                            onClick={() => resetLimits(u)}
-                            className="border border-gray-300 rounded-lg px-4 py-1.5 text-sm hover:bg-gray-50"
-                          >
-                            플랜값으로 초기화
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {users.map((u) => (
+          <div key={u.user_id} className="bg-white rounded-xl shadow-sm p-4 space-y-3">
+            {/* 1행: 계정 식별 + 관리 버튼 */}
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="font-medium text-gray-900 break-all">{u.email}</span>
+                {u.display_name && <span className="text-sm text-gray-500">{u.display_name}</span>}
+                <Badge tone={u.role === 'admin' ? 'amber' : 'gray'}>{u.role}</Badge>
+                <Badge tone={u.status === 'active' ? 'green' : 'red'}>{u.status}</Badge>
+                {u.usage?.has_override && <Badge tone="amber">한도조정</Badge>}
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button onClick={() => toggleStatus(u)} className={actionBtn}>
+                  {u.status === 'active' ? '정지' : '해제'}
+                </button>
+                <button onClick={() => issueTempPassword(u)} className={actionBtn}>
+                  임시비번
+                </button>
+                <button
+                  onClick={() => editingLimits === u.user_id ? setEditingLimits(null) : startEditLimits(u)}
+                  className={actionBtn}
+                >
+                  한도편집
+                </button>
+              </div>
+            </div>
+
+            {/* 2행: 편집 컨트롤 (플랜·만료일) */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <label className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 whitespace-nowrap">플랜</span>
+                <select
+                  value={u.plan_id}
+                  onChange={(e) => changePlan(u, Number(e.target.value))}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                >
+                  {plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{p.name}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 whitespace-nowrap">만료일 (UTC)</span>
+                <input
+                  type="datetime-local"
+                  value={u.plan_expires_at ? u.plan_expires_at.slice(0, 16) : ''}
+                  onChange={(e) => changeExpiry(u, e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+                />
+                {u.plan_expires_at && (
+                  <span className={`text-xs whitespace-nowrap ${expiryHint(u.plan_expires_at).className}`}>
+                    {expiryHint(u.plan_expires_at).label}
+                  </span>
+                )}
+              </label>
+            </div>
+
+            {/* 3행: 조회 전용 메타 */}
+            <p className="text-xs text-gray-500">
+              {u.usage
+                ? `${u.usage.group_count}그룹 · ${u.usage.channel_count}채널 · 오늘 분석 ${u.usage.today_analyses}건`
+                : '사용량 정보 없음'}
+              {' · '}최근 로그인 {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '-'}
+            </p>
+
+            {tempPw[u.user_id] && (
+              <p className="text-xs bg-green-50 border border-green-200 rounded-lg px-2 py-1 break-all">
+                임시 비밀번호: <code>{tempPw[u.user_id]}</code>
+                <button
+                  onClick={() => navigator.clipboard.writeText(tempPw[u.user_id])}
+                  className="ml-2 text-blue-600 hover:underline"
+                >
+                  복사
+                </button>
+              </p>
+            )}
+
+            {editingLimits === u.user_id && (
+              <div className="border-t border-gray-100 pt-3">
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">최대 그룹수</label>
+                    <input
+                      type="number"
+                      value={limitsForm.max_groups}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, max_groups: e.target.value })}
+                      placeholder="플랜값"
+                      className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">최대 채널수</label>
+                    <input
+                      type="number"
+                      value={limitsForm.max_channels_total}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, max_channels_total: e.target.value })}
+                      placeholder="플랜값"
+                      className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">일일 분석 한도</label>
+                    <input
+                      type="number"
+                      value={limitsForm.max_analyses_per_day}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, max_analyses_per_day: e.target.value })}
+                      placeholder="플랜값"
+                      className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">최대 영상 분(분)</label>
+                    <input
+                      type="number"
+                      value={limitsForm.max_video_minutes}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, max_video_minutes: e.target.value })}
+                      placeholder="플랜값"
+                      className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">최소 폴링 간격(분)</label>
+                    <input
+                      type="number"
+                      value={limitsForm.min_poll_interval_min}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, min_poll_interval_min: e.target.value })}
+                      placeholder="플랜값"
+                      className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-40">
+                    <label className="block text-xs text-gray-500 mb-1">메모</label>
+                    <input
+                      value={limitsForm.note}
+                      onChange={(e) => setLimitsForm({ ...limitsForm, note: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => saveLimits(u)}
+                    className="bg-blue-600 text-white rounded-lg px-4 py-1.5 text-sm hover:bg-blue-700"
+                  >
+                    저장
+                  </button>
+                  <button
+                    onClick={() => resetLimits(u)}
+                    className="border border-gray-300 rounded-lg px-4 py-1.5 text-sm hover:bg-gray-50"
+                  >
+                    플랜값으로 초기화
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </section>
 
       <section className="space-y-3">

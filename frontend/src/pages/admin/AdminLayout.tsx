@@ -12,7 +12,7 @@ export const ADMIN_TABS = [
 export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto p-6 space-y-4">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">관리자</h1>
           <a href="/" className="text-sm text-blue-600 hover:underline">← 앱으로</a>
