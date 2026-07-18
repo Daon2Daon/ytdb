@@ -225,6 +225,24 @@ class DataPlaneEngineManager:
                 )
             self._initialized.add(key)
 
+    async def drop_schema(self, group: GroupRef) -> None:
+        """그룹 스키마를 영구 삭제한다(DROP SCHEMA CASCADE).
+
+        DB 설정이 없으면 스키마가 만들어진 적도 없으므로 조용히 건너뛴다.
+        호출부(그룹 삭제)는 자동 생성 스키마만 넘겨야 한다.
+        """
+        try:
+            cfg = await self._cfg(group)
+        except DBNotConfiguredError:
+            return
+        engine = await self._shared_engine(cfg)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(f'DROP SCHEMA IF EXISTS "{group.schema_name}" CASCADE')
+            )
+        # 같은 이름으로 재생성 시 ensure_schema가 스킵하지 않도록 캐시 제거.
+        self._initialized.discard((cfg.server_signature(), group.schema_name))
+
     async def dispose_current_loop(self) -> None:
         loop = asyncio.get_running_loop()
         per_loop = self._engines.pop(loop, None)
