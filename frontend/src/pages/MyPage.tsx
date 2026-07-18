@@ -84,6 +84,17 @@ export default function MyPage() {
           <h2 className="font-semibold text-gray-800">
             플랜: {data.plan_name}
             {data.unlimited && <span className="ml-2 text-xs text-gray-500">무제한</span>}
+            {data.plan_expires_at && (
+              <span
+                className={
+                  new Date(data.plan_expires_at).getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000
+                    ? 'ml-2 text-xs font-medium text-amber-600'
+                    : 'ml-2 text-xs text-gray-500'
+                }
+              >
+                (만료 {new Date(data.plan_expires_at).toLocaleDateString('ko-KR')} — 연장은 관리자에게 문의)
+              </span>
+            )}
           </h2>
           <table className="w-full text-sm">
             <tbody>

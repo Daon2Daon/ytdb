@@ -23,6 +23,10 @@ class User(Base):
     plan_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey(f"{APP_SCHEMA}.plans.plan_id"), nullable=False
     )
+    # Phase E-1: 유료 플랜 만료 관리. NULL=무기한(free·unlimited·기존 사용자).
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 만료 임박(D-7) 알림 1회 가드. 플랜/만료일 변경 시 리셋.
+    plan_expiry_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

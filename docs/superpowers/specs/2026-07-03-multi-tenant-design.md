@@ -382,7 +382,7 @@ CREATE INDEX analysis_deliveries_user_created ON app.analysis_deliveries (user_i
 | B. 쿼터·관리자 콘솔 (구현 완료 2026-07-10 — 비용 한도는 C로 이연) | plans/user_limits, 5개 개수 기반 강제 지점(분석 카운트는 deliveries 기준, monthly_cost는 C), 관리자 콘솔(사용자 정지·플랜·한도·임시비번), 마이페이지 | free 플랜 사용자가 한도 초과 생성 시 400. 관리자 오버라이드 반영. 설계 `2026-07-09-phase-b-quota-admin-console-design.md` |
 | C. AI 원장·전역 게이트웨이 (구현 완료 2026-07-11 — 설계 2026-07-10-phase-c-ai-usage-global-gateway-design.md) | ai_usage 기록(시스템 몫 규칙 포함), global_settings, 설정 권한 분리(3.3), 예산 강제, 사용량 대시보드 | 캐시 미스 분석 1건 → 원장 1행(user_id=NULL, 토큰/비용). 예산 초과 그룹 skip. 사용자 화면에 AI 설정 비노출 |
 | D. 온보딩·운영 (D-1 구현 완료 2026-07-11 — 공용 봇 딥링크 연결·온보딩 체크리스트, 설계 2026-07-11-phase-d1-telegram-link-onboarding-design.md. D-2 구현 완료 2026-07-14 — YouTube 쿼터 카운터·전 스키마 마이그레이션 도구, 설계 2026-07-13-phase-d2-yt-quota-schema-migrator-design.md) | 공용 봇 딥링크 연결, 사용자 그룹 자동 프로비저닝 마법사, YouTube 쿼터 카운터, 전 스키마 순회 마이그레이션 도구 | 신규 사용자가 UI만으로: 가입→그룹 생성→채널 추가→분석 결과 텔레그램 수신 |
-| E. 유료화 (본 설계 범위 외) | 결제 연동, 약관/개인정보처리방침, 플랜 업그레이드 | 시장/방식 확정 후 별도 설계 |
+| E. 유료화 (E-1 구현 완료 2026-07-15 — 초대 기반 B2B 최소 유료화: pro 시드·plan_expires_at·자동 강등 틱·D-7 임박 알림, 설계 2026-07-15-phase-e1-manual-billing-plan-expiry-design.md. E-2 잔여: PG 결제·약관·셀프서비스 업그레이드 — 가입자 추이에 따라) | 결제 연동, 약관/개인정보처리방침, 플랜 업그레이드 | 시장/방식 확정 후 별도 설계 |
 
 Phase A가 모든 것의 전제. B-0가 B보다 앞서는 이유: B의 분석 쿼터 카운트 의미론("전달
 건수")이 B-0의 deliveries 원장에 의존한다. prompt_presets는 캐시 키의 전제이므로 C에서

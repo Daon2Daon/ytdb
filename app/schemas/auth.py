@@ -81,6 +81,7 @@ class MyUsageResponse(BaseModel):
     unlimited: bool = False          # admin/개발 모드
     limits: Optional[MyLimits] = None
     usage: MyUsage
+    plan_expires_at: Optional[datetime] = None   # E-1: NULL=무기한, 마이페이지 만료 표시용
 
 
 class TelegramLinkResponse(BaseModel):

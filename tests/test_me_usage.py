@@ -23,6 +23,9 @@ def test_route_registered():
 
 
 def test_me_usage_shape(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
     async def _dep():
         return USER
     app.dependency_overrides[require_user] = _dep
@@ -45,6 +48,21 @@ def test_me_usage_shape(monkeypatch):
     monkeypatch.setattr("app.routers.auth.count_daily_deliveries", _n)
     monkeypatch.setattr("app.routers.auth.month_cost_usd", _n)
 
+    # E-1: plan_expires_at 조회용 session.get — 가짜 세션으로 오프라인 유지(실 SQL은 E2E)
+    expires = datetime(2026, 8, 15, tzinfo=timezone.utc)
+    fake_user = SimpleNamespace(plan_expires_at=expires)
+
+    class FakeSession:
+        async def get(self, model, pk):
+            return fake_user
+
+    from app.routers.auth import get_session as auth_get_session
+
+    async def _sess():
+        return FakeSession()
+
+    app.dependency_overrides[auth_get_session] = _sess
+
     c = TestClient(app, raise_server_exceptions=False)
     data = c.get("/api/me/usage").json()
     assert data["plan_name"] == "Free"
@@ -54,3 +72,10 @@ def test_me_usage_shape(monkeypatch):
     assert data["limits"]["monthly_cost_budget_usd"] is None or isinstance(
         data["limits"]["monthly_cost_budget_usd"], (int, float)
     )
+    assert data["plan_expires_at"] is not None
+
+
+def test_my_usage_response_has_plan_expires_at():
+    from app.schemas.auth import MyUsageResponse
+
+    assert "plan_expires_at" in MyUsageResponse.model_fields
