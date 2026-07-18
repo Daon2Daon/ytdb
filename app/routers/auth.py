@@ -189,10 +189,13 @@ async def my_usage(
         today_analyses=await count_daily_deliveries(session, user.user_id),
         month_cost_usd=float(await month_cost_usd(session, user.user_id)),
     )
+    db_user = await session.get(User, user.user_id)
+    expires = db_user.plan_expires_at if db_user else None
     if limits is None:
         # admin 또는 개발 모드 — 무제한
         return MyUsageResponse(
-            plan_name="Unlimited", plan_slug="unlimited", unlimited=True, usage=usage
+            plan_name="Unlimited", plan_slug="unlimited", unlimited=True, usage=usage,
+            plan_expires_at=expires,
         )
     return MyUsageResponse(
         plan_name=limits.plan_name,
@@ -206,6 +209,7 @@ async def my_usage(
             monthly_cost_budget_usd=limits.monthly_cost_budget_usd,
         ),
         usage=usage,
+        plan_expires_at=expires,
     )
 
 
