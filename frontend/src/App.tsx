@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
-import Admin from './pages/Admin'
+import AdminLayout from './pages/admin/AdminLayout'
+import UsersTab from './pages/admin/UsersTab'
+import PlansTab from './pages/admin/PlansTab'
+import UsageTab from './pages/admin/UsageTab'
+import GlobalSettingsTab from './pages/admin/GlobalSettingsTab'
+import ToolsTab from './pages/admin/ToolsTab'
 import MyPage from './pages/MyPage'
 import Dashboard from './pages/Dashboard'
 import Channels from './pages/Channels'
@@ -130,7 +135,15 @@ export default function App() {
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
       </Route>
-      <Route path="/admin" element={<Admin />} />
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<Navigate to="users" replace />} />
+        <Route path="users" element={<UsersTab />} />
+        <Route path="plans" element={<PlansTab />} />
+        <Route path="usage" element={<UsageTab />} />
+        <Route path="global-settings" element={<GlobalSettingsTab />} />
+        <Route path="tools" element={<ToolsTab />} />
+        <Route path="*" element={<Navigate to="users" replace />} />
+      </Route>
       <Route path="/me" element={<MyPage />} />
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
