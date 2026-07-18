@@ -48,8 +48,8 @@ function ZeroGroupLanding() {
     setBusy(true)
     setErr(null)
     try {
-      // 비관리자는 서버가 slug/schema를 자동 생성(입력 무시). 관리자는 slug가 유효해야 함.
-      const created = await groupApi.create({ slug: slug.trim() || name.trim(), name: name.trim() })
+      // 비관리자는 서버가 slug/schema를 자동 생성(미전송). 관리자는 slug가 유효해야 함.
+      const created = await groupApi.create({ slug: slug.trim() || undefined, name: name.trim() })
       navigate(`/g/${created.slug}/`)
     } catch (e) {
       setErr((e as Error).message)
