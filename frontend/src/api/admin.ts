@@ -7,6 +7,7 @@ export interface AdminUser {
   role: string
   status: string
   plan_id: number
+  plan_expires_at: string | null
   last_login_at: string | null
   created_at: string
   usage: AdminUserUsage | null
@@ -113,7 +114,7 @@ export const adminApi = {
       plan_slug: planSlug, memo: memo || null, expires_days: expiresDays,
     }),
   revokeInvite: (inviteId: number) => rootApi.del<void>(`/admin/invitations/${inviteId}`),
-  patchUser: (userId: number, body: { status?: string; plan_id?: number }) =>
+  patchUser: (userId: number, body: { status?: string; plan_id?: number; plan_expires_at?: string | null }) =>
     rootApi.patch<AdminUser>(`/admin/users/${userId}`, body),
   putUserLimits: (userId: number, body: UserLimits) =>
     rootApi.put<UserLimits & { user_id: number }>(`/admin/users/${userId}/limits`, body),

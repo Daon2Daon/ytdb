@@ -16,6 +16,15 @@ function toNullableNumber(v: string): number | null {
   return v.trim() === '' ? null : Number(v)
 }
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+
+function expiryHint(iso: string): { label: string; className: string } {
+  const diff = new Date(iso).getTime() - Date.now()
+  if (diff < 0) return { label: '만료', className: 'text-red-600' }
+  if (diff <= SEVEN_DAYS_MS) return { label: '임박', className: 'text-amber-600' }
+  return { label: '유효', className: 'text-gray-400' }
+}
+
 export default function Admin() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [plans, setPlans] = useState<PlanInfo[]>([])
@@ -86,6 +95,17 @@ export default function Admin() {
   const changePlan = async (u: AdminUser, planId: number) => {
     try {
       await adminApi.patchUser(u.user_id, { plan_id: planId })
+      await load()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const changeExpiry = async (u: AdminUser, value: string) => {
+    try {
+      await adminApi.patchUser(u.user_id, {
+        plan_expires_at: value === '' ? null : new Date(value).toISOString(),
+      })
       await load()
     } catch (e) {
       setError((e as Error).message)
@@ -197,7 +217,8 @@ export default function Admin() {
               <tr className="text-left text-gray-500 border-b">
                 <th className="px-3 py-2">이메일</th><th className="px-3 py-2">이름</th>
                 <th className="px-3 py-2">역할</th><th className="px-3 py-2">상태</th>
-                <th className="px-3 py-2">플랜</th><th className="px-3 py-2">최근 로그인</th>
+                <th className="px-3 py-2">플랜</th><th className="px-3 py-2">만료일 (UTC)</th>
+                <th className="px-3 py-2">최근 로그인</th>
                 <th className="px-3 py-2">사용량</th><th className="px-3 py-2">관리</th>
               </tr>
             </thead>
@@ -217,6 +238,21 @@ export default function Admin() {
                       >
                         {plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{p.name}</option>)}
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="datetime-local"
+                          value={u.plan_expires_at ? u.plan_expires_at.slice(0, 16) : ''}
+                          onChange={(e) => changeExpiry(u, e.target.value)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs"
+                        />
+                        {u.plan_expires_at && (
+                          <span className={`text-xs ${expiryHint(u.plan_expires_at).className}`}>
+                            {expiryHint(u.plan_expires_at).label}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-gray-400">
                       {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '-'}
@@ -265,7 +301,7 @@ export default function Admin() {
                   </tr>
                   {editingLimits === u.user_id && (
                     <tr className="border-b bg-gray-50">
-                      <td colSpan={8} className="px-3 py-3">
+                      <td colSpan={9} className="px-3 py-3">
                         <div className="flex flex-wrap gap-2 items-end">
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">최대 그룹수</label>

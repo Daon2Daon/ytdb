@@ -3,6 +3,7 @@ import { rootApi } from './http'
 export interface MyUsageResponse {
   plan_name: string
   plan_slug: string
+  plan_expires_at: string | null
   unlimited: boolean
   limits: {
     max_groups: number
