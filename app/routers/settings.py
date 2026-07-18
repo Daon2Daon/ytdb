@@ -16,6 +16,7 @@ from app.routers.deps import get_group_or_404
 from app.schemas.setting import SettingItem, SettingsUpdate
 from app.services.llm_client import LiteLLMClient, LiteLLMError
 from app.config import settings as app_settings
+from app.services.global_settings import resolve_ai_gateway
 from app.services.channel_registry_service import resync_group as registry_resync_group
 from app.services.notify_service import _should_stamp_on_save, resolve_notify_target
 from app.services.quota_service import limits_for_group_owner, validate_poll_interval
@@ -210,15 +211,14 @@ async def list_ai_gateway_models(
     group: Group = Depends(get_group_or_404),
     user: CurrentUser = Depends(require_user),
 ) -> list[str]:
-    """저장된 ai_gateway(base_url/api_key)로 모델 목록을 조회한다."""
+    """유효 ai_gateway(그룹 → 전역 폴백)로 모델 목록을 조회한다."""
     if not user.is_admin:
         raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다.")
-    mgr = get_settings_manager()
-    cfg = await mgr.get_ai_gateway(group.group_id)
+    cfg = await resolve_ai_gateway(group.group_id)
     if not cfg.base_url or not cfg.api_key:
         raise HTTPException(
             status_code=400,
-            detail="ai_gateway의 base_url/api_key를 먼저 저장하세요.",
+            detail="ai_gateway의 base_url/api_key를 그룹 또는 전역 설정에 먼저 저장하세요.",
         )
     client = LiteLLMClient(cfg)
     try:
@@ -226,5 +226,7 @@ async def list_ai_gateway_models(
         return sorted(models)
     except LiteLLMError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 — 연결 실패(DNS/타임아웃 등)도 400으로 표면화
+        raise HTTPException(status_code=400, detail=f"게이트웨이 연결 실패: {e}") from e
     finally:
         await client.aclose()

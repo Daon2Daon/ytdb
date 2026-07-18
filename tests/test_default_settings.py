@@ -27,6 +27,10 @@ def test_recommended_defaults_present():
     ai = {i["key"]: i["value"] for i in DEFAULT_GROUP_SETTINGS["ai_gateway"]}
     assert ai["temperature"] == "0.3"
     assert ai["max_tokens"] == "8192"
+    # base_url/primary_model은 시드 금지 — 그룹 명시값이 전역 폴백을 영구히
+    # 가리는 회귀(2026-07-18) 방지. 전역/코드 기본값이 대신 적용된다.
+    assert "base_url" not in ai
+    assert "primary_model" not in ai
     db = {i["key"]: i["value"] for i in DEFAULT_GROUP_SETTINGS["database"]}
     assert db["sslmode"] == "prefer" and db["port"] == "5432"
     notif = {i["key"]: i["value"] for i in DEFAULT_GROUP_SETTINGS["notification"]}

@@ -165,6 +165,7 @@ async def bootstrap_global_settings() -> None:
     await _seed_global_ai_from_admin_groups()
     await _seed_telegram_bot_token()
     await _seed_global_db_from_control_dsn()
+    await _cleanup_user_group_ai_seed()
 
     sf = get_sessionmaker()
     async with sf() as session:
@@ -308,6 +309,64 @@ async def _seed_global_db_from_control_dsn() -> None:
     except SettingsSecretError as e:
         # 트랜잭션 롤백으로 부분 시드 없음 — 다음 부팅에서 재시도.
         print(f"[bootstrap] 전역 DB 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
+
+
+# 과거 그룹 생성 시드가 깔던 ai_gateway 그룹 명시값 (default_settings 2026-07-18 이전)
+_LEGACY_AI_SEED_VALUES = ("http://litellm:4000", "gemini/gemini-2.5-flash")
+
+
+async def _cleanup_user_group_ai_seed() -> None:
+    """user 소유 그룹의 ai_gateway 시드 잔재(base_url/primary_model) 제거. 멱등.
+
+    그룹 명시값은 resolve_ai_gateway에서 전역보다 우선하므로, 시드 잔재가 남아
+    있으면 관리자가 전역 게이트웨이를 바꿔도 기존 사용자 그룹은 시드 시점 값에
+    고정된다. api_key가 설정된 그룹은 의도적 구성일 수 있어 건드리지 않고,
+    값이 시드 상수와 정확히 일치하는 행만 지운다.
+    """
+    from app.models.control.group import Group
+    from app.models.control.setting import Setting
+    from app.models.control.user import User
+
+    sf = get_sessionmaker()
+    async with sf() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(Setting)
+                    .join(Group, Group.group_id == Setting.group_id)
+                    .join(User, User.user_id == Group.owner_user_id)
+                    .where(
+                        User.role == "user",
+                        Setting.category == "ai_gateway",
+                        Setting.key.in_(("base_url", "primary_model")),
+                        Setting.value.in_(_LEGACY_AI_SEED_VALUES),
+                    )
+                )
+            ).scalars().all()
+        )
+        if not rows:
+            return
+        keyed_group_ids = set(
+            (
+                await session.execute(
+                    select(Setting.group_id).where(
+                        Setting.group_id.in_({r.group_id for r in rows}),
+                        Setting.category == "ai_gateway",
+                        Setting.key == "api_key",
+                        Setting.value_enc.is_not(None),
+                    )
+                )
+            ).scalars().all()
+        )
+        deleted = 0
+        for row in rows:
+            if row.group_id in keyed_group_ids:
+                continue
+            await session.delete(row)
+            deleted += 1
+        if deleted:
+            await session.commit()
+            print(f"[bootstrap] user 그룹 ai_gateway 시드 잔재 {deleted}행 정리 — 전역 폴백 적용.")
 
 
 async def _seed_global_ai_from_admin_groups() -> None:

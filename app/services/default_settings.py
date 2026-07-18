@@ -18,10 +18,11 @@ from app.services.settings_types import PRESET_FULL
 from app.services.settings_manager import get_settings_manager
 
 # category -> [{key, value(str), value_type}]
+# 주의: ai_gateway의 base_url/primary_model은 시드하지 않는다 — 그룹 명시값은
+# resolve_ai_gateway의 전역 폴백보다 우선하므로, 시드하면 관리자가 전역 설정을
+# 바꿔도 그룹들이 시드 시점 값에 영구 고정된다(2026-07-18 회귀에서 발견).
 DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
     "ai_gateway": [
-        {"key": "base_url", "value": "http://litellm:4000", "value_type": "string"},
-        {"key": "primary_model", "value": "gemini/gemini-2.5-flash", "value_type": "string"},
         {"key": "temperature", "value": "0.3", "value_type": "float"},
         {"key": "max_tokens", "value": "8192", "value_type": "int"},
     ],
