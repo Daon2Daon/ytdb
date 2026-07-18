@@ -16,6 +16,7 @@ from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
 from app.services.channel_registry_service import remove_group_subscriptions, resync_group
+from app.services.db_engine import data_plane_engine_manager
 from app.services.default_settings import seed_default_settings
 from app.services.quota_service import QuotaExceeded, check_group_quota
 
@@ -115,6 +116,9 @@ async def delete_group(
     group: Group = Depends(get_group_or_404),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    # 자동 생성 스키마만 DROP(스펙 2026-07-19). 실패 시 500 → 그룹이 남아 재시도 가능.
+    if is_auto_schema(group.schema_name):
+        await data_plane_engine_manager.drop_schema(group)
     await remove_group_subscriptions(session, group.group_id)
     await session.delete(group)
     await session.commit()
