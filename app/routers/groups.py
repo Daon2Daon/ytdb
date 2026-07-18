@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets as _secrets
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +20,15 @@ from app.services.default_settings import seed_default_settings
 from app.services.quota_service import QuotaExceeded, check_group_quota
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
+
+# 일반 사용자 그룹 생성 시 자동 부여되는 스키마 패턴(create_group 참조).
+# 이 패턴일 때만 그룹 삭제 시 스키마를 DROP한다 — 레거시/관리자 커스텀
+# 스키마(youtube_invest 등)를 실수로 지우지 않기 위한 안전장치.
+_AUTO_SCHEMA_RE = re.compile(r"^youtube_u\d+_[0-9a-f]{6}$")
+
+
+def is_auto_schema(schema_name: str) -> bool:
+    return _AUTO_SCHEMA_RE.fullmatch(schema_name) is not None
 
 
 @router.get("", response_model=list[GroupOut])
