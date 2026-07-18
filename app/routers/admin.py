@@ -346,6 +346,12 @@ async def patch_user(
         if plan is None:
             raise HTTPException(status_code=400, detail="플랜을 찾을 수 없습니다.")
         user.plan_id = payload.plan_id
+        user.plan_expiry_notified_at = None  # 플랜 변경 → D-7 가드 리셋
+    # E-1: 만료일 tri-state — 생략(변경 없음) / null(해제) / 값(설정). 플랜 수명이
+    # 바뀌면 임박 알림 가드를 리셋해 다음 주기 알림을 다시 연다.
+    if "plan_expires_at" in payload.model_fields_set:
+        user.plan_expires_at = payload.plan_expires_at
+        user.plan_expiry_notified_at = None
     await session.commit()
     await session.refresh(user)
     return user

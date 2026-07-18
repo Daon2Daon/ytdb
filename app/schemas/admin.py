@@ -17,6 +17,7 @@ class AdminUserOut(BaseModel):
     role: str
     status: str
     plan_id: int
+    plan_expires_at: Optional[datetime] = None   # E-1: NULL=무기한
     last_login_at: Optional[datetime]
     created_at: datetime
 
@@ -102,6 +103,7 @@ class GlobalSettingsUpdate(BaseModel):
 class AdminUserPatch(BaseModel):
     status: Optional[str] = None      # 'active' | 'suspended'
     plan_id: Optional[int] = None
+    plan_expires_at: Optional[datetime] = None   # 생략=변경 없음, null=해제 (model_fields_set로 구분)
 
 
 class UserLimitsIn(BaseModel):
