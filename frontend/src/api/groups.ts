@@ -9,4 +9,5 @@ export const groupApi = {
     rootApi.patch<Group>(`/groups/${slug}`, { name }),
   update: (slug: string, body: Partial<Pick<Group, 'name' | 'is_active'>>) =>
     rootApi.patch<Group>(`/groups/${slug}`, body),
+  remove: (slug: string) => rootApi.del<void>(`/groups/${slug}`),
 }
