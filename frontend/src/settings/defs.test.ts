@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SETTING_DEFS, visibleCategories, visibleFields } from './defs'
+import { SETTING_DEFS, defaultSettingsCategory, visibleCategories, visibleFields } from './defs'
 
 describe('visibleCategories', () => {
   it('admin: 전체 카테고리 노출', () => {
@@ -18,6 +18,16 @@ describe('visibleCategories', () => {
     expect(visibleCategories(undefined).map((c) => c.key)).toEqual(
       visibleCategories('user').map((c) => c.key),
     )
+  })
+})
+
+describe('defaultSettingsCategory', () => {
+  it('admin: database', () => {
+    expect(defaultSettingsCategory('admin')).toBe('database')
+  })
+  it('user·undefined: admin 전용이 아닌 첫 탭(polling)', () => {
+    expect(defaultSettingsCategory('user')).toBe('polling')
+    expect(defaultSettingsCategory(undefined)).toBe('polling')
   })
 })
 

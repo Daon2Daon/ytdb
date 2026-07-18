@@ -26,9 +26,12 @@ export default function Settings() {
   const isPresetMode = user?.role !== 'admin' && category === 'prompts'
   const defs = category ? SETTING_DEFS[category] : undefined
   const isDigest = category === 'digest'
+  // 역할상 비허용 카테고리(URL 직접 진입)는 로드하지 않고 아래에서 리다이렉트 —
+  // 비허용 요청(404)이 리다이렉트 후 도착해 에러 배너를 남기는 레이스 방지.
+  const allowed = categories.some((c) => c.key === category)
 
   const load = useCallback(async () => {
-    if (!category || (!defs && !isDigest)) return
+    if (!category || (!defs && !isDigest) || !allowed) return
     setLoading(true)
     setError(null)
     try {
@@ -50,7 +53,7 @@ export default function Settings() {
     } finally {
       setLoading(false)
     }
-  }, [activeSlug, category, defs, isPresetMode])
+  }, [activeSlug, category, defs, isPresetMode, allowed])
 
   useEffect(() => { load() }, [load])
 
@@ -68,7 +71,9 @@ export default function Settings() {
     }
   }
 
-  if (!category || (!defs && !isDigest)) return <Navigate to={`/g/${activeSlug}/settings/${categories[0].key}`} replace />
+  // 미지원 카테고리뿐 아니라 역할상 비허용 카테고리(URL 직접 진입)도 첫 허용 탭으로
+  if (!category || (!defs && !isDigest) || !allowed)
+    return <Navigate to={`/g/${activeSlug}/settings/${categories[0].key}`} replace />
 
   const label = categories.find((c) => c.key === category)?.label ?? category
 

@@ -90,6 +90,11 @@ export function visibleCategories(role: 'admin' | 'user' | undefined): SettingCa
   return SETTING_CATEGORIES.filter((c) => !ADMIN_ONLY_CATEGORIES.has(c.key))
 }
 
+/** 설정 진입 기본 탭 — 역할별 첫 허용 카테고리 (admin=database, user=polling). */
+export function defaultSettingsCategory(role: 'admin' | 'user' | undefined): string {
+  return visibleCategories(role)[0].key
+}
+
 export function visibleFields(
   role: 'admin' | 'user' | undefined, category: string, defs: FieldDef[],
 ): FieldDef[] {

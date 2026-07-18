@@ -139,6 +139,54 @@ def test_global_settings_includes_ai_keys():
     assert "ai_model_prices" in _GLOBAL_KEYS
 
 
+def test_global_settings_includes_db_keys():
+    """기본 데이터 평면 DSN 키 노출 (설계 2026-07-18). db_password는 시크릿."""
+    from app.routers.admin import _GLOBAL_KEYS
+    from app.services.global_settings import SECRET_KEYS
+
+    for key in ("db_host", "db_port", "db_name", "db_username", "db_password", "db_sslmode"):
+        assert key in _GLOBAL_KEYS
+    assert "db_password" in SECRET_KEYS
+
+
+async def test_put_global_settings_db_port_must_be_positive_int(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import admin as admin_router
+    from app.schemas.admin import GlobalSettingItem, GlobalSettingsUpdate
+
+    saved = _patch_globals(monkeypatch, current_secret=None)
+
+    for bad in ("abc", "0", "-5"):
+        payload = GlobalSettingsUpdate(items=[GlobalSettingItem(key="db_port", value=bad)])
+        with pytest.raises(HTTPException) as exc:
+            await admin_router.put_global_settings(payload, session=_FakeSession())
+        assert exc.value.status_code == 400
+    assert saved == {}
+
+    payload = GlobalSettingsUpdate(items=[GlobalSettingItem(key="db_port", value="5433")])
+    await admin_router.put_global_settings(payload, session=_FakeSession())
+    assert saved == {"db_port": "5433"}
+
+
+async def test_put_global_settings_db_sslmode_whitelist(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import admin as admin_router
+    from app.schemas.admin import GlobalSettingItem, GlobalSettingsUpdate
+
+    saved = _patch_globals(monkeypatch, current_secret=None)
+
+    payload = GlobalSettingsUpdate(items=[GlobalSettingItem(key="db_sslmode", value="verify-full")])
+    with pytest.raises(HTTPException) as exc:
+        await admin_router.put_global_settings(payload, session=_FakeSession())
+    assert exc.value.status_code == 400
+
+    payload = GlobalSettingsUpdate(items=[GlobalSettingItem(key="db_sslmode", value="require")])
+    await admin_router.put_global_settings(payload, session=_FakeSession())
+    assert saved == {"db_sslmode": "require"}
+
+
 def test_global_settings_includes_telegram_bot_token():
     from app.routers.admin import _GLOBAL_KEYS
 

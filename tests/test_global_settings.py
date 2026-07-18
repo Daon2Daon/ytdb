@@ -105,6 +105,158 @@ async def test_resolve_youtube_key_falls_back_to_system(monkeypatch):
     assert await gs.resolve_youtube_key(1) == "system-key"
 
 
+async def test_resolve_database_prefers_complete_group_config(monkeypatch):
+    """그룹 설정이 is_configured면 전역을 조회하지 않고 그룹 값 전체를 쓴다."""
+    from app.services.settings_types import DatabaseSettings
+
+    group_cfg = DatabaseSettings(host="g-host", dbname="g-db", username="g-user", password="g-pw")
+
+    async def fake_get_database(group_id):
+        return group_cfg
+
+    monkeypatch.setattr(
+        gs, "get_settings_manager",
+        lambda: SimpleNamespace(get_database=fake_get_database),
+    )
+
+    def boom():
+        raise AssertionError("전역 조회가 호출되면 안 됨")
+
+    monkeypatch.setattr(gs, "get_sessionmaker", boom)
+    assert await gs.resolve_database(1) is group_cfg
+
+
+async def test_resolve_database_falls_back_to_global(monkeypatch):
+    """그룹 설정 불완전(host 없음 등) → 전역 db_* 키 전체로 폴백."""
+    from contextlib import asynccontextmanager
+
+    from app.services.settings_types import DatabaseSettings
+
+    async def fake_get_database(group_id):
+        return DatabaseSettings()  # 미설정 그룹(시드된 port/sslmode만 있어도 동일)
+
+    monkeypatch.setattr(
+        gs, "get_settings_manager",
+        lambda: SimpleNamespace(get_database=fake_get_database),
+    )
+
+    globals_map = {
+        gs.GLOBAL_DB_HOST: "central-db",
+        gs.GLOBAL_DB_PORT: "5433",
+        gs.GLOBAL_DB_NAME: "ytdb",
+        gs.GLOBAL_DB_USERNAME: "app",
+        gs.GLOBAL_DB_PASSWORD: "s3cret",
+        gs.GLOBAL_DB_SSLMODE: None,  # 미설정 → prefer
+    }
+
+    async def fake_get_global(session, key):
+        return globals_map.get(key)
+
+    monkeypatch.setattr(gs, "get_global", fake_get_global)
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: fake_session)
+
+    cfg = await gs.resolve_database(1)
+    assert cfg.is_configured
+    assert (cfg.host, cfg.port, cfg.dbname) == ("central-db", 5433, "ytdb")
+    assert (cfg.username, cfg.password, cfg.sslmode) == ("app", "s3cret", "prefer")
+
+
+async def test_resolve_database_neither_configured(monkeypatch):
+    """그룹·전역 모두 없으면 is_configured=False (호출부가 에러 처리)."""
+    from contextlib import asynccontextmanager
+
+    from app.services.settings_types import DatabaseSettings
+
+    async def fake_get_database(group_id):
+        return DatabaseSettings()
+
+    monkeypatch.setattr(
+        gs, "get_settings_manager",
+        lambda: SimpleNamespace(get_database=fake_get_database),
+    )
+
+    async def fake_get_global(session, key):
+        return None
+
+    monkeypatch.setattr(gs, "get_global", fake_get_global)
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: fake_session)
+    assert not (await gs.resolve_database(1)).is_configured
+
+
+async def test_seed_global_db_skips_when_already_seeded(monkeypatch):
+    """db_host 기시드 → CONTROL_DATABASE_URL 파싱 없이 조기 종료(멱등)."""
+    from contextlib import asynccontextmanager
+
+    async def fake_get_global(session, key):
+        return "already-host"
+
+    monkeypatch.setattr(gs, "get_global", fake_get_global)
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: fake_session)
+
+    def no_set(*a, **kw):
+        raise AssertionError("set_global이 호출되면 안 됨")
+
+    monkeypatch.setattr(gs, "set_global", no_set)
+    await gs._seed_global_db_from_control_dsn()
+
+
+async def test_seed_global_db_parses_control_dsn(monkeypatch):
+    """미시드 상태에서 CONTROL_DATABASE_URL의 host/port/db/user/pw를 시드한다."""
+    from contextlib import asynccontextmanager
+
+    async def fake_get_global(session, key):
+        return None
+
+    monkeypatch.setattr(gs, "get_global", fake_get_global)
+
+    class FakeTxSession:
+        def begin(self):
+            @asynccontextmanager
+            async def _tx():
+                yield None
+            return _tx()
+
+    @asynccontextmanager
+    async def fake_session():
+        yield FakeTxSession()
+
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: fake_session)
+    monkeypatch.setattr(
+        gs.app_settings, "CONTROL_DATABASE_URL",
+        "postgresql+asyncpg://appuser:pw123@dbhost:15432/controldb",
+    )
+
+    seeded = {}
+
+    async def fake_set_global(session, key, value):
+        seeded[key] = value
+
+    monkeypatch.setattr(gs, "set_global", fake_set_global)
+    await gs._seed_global_db_from_control_dsn()
+    assert seeded == {
+        gs.GLOBAL_DB_HOST: "dbhost",
+        gs.GLOBAL_DB_PORT: "15432",
+        gs.GLOBAL_DB_NAME: "controldb",
+        gs.GLOBAL_DB_USERNAME: "appuser",
+        gs.GLOBAL_DB_PASSWORD: "pw123",
+    }
+
+
 async def test_pick_seed_key_prefers_admin_group_with_key():
     """admin 소유 그룹 중 polling 키가 있는 첫 그룹의 키를 고른다 (순수 판정 함수)."""
     from app.services.global_settings import pick_bootstrap_youtube_key

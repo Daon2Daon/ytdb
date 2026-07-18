@@ -105,6 +105,12 @@ export interface AdminUsageResponse {
   youtube: YtQuotaStatus | null
 }
 
+export interface GlobalSettingItem {
+  key: string
+  value: string
+  is_secret: boolean
+}
+
 export const adminApi = {
   users: () => rootApi.get<AdminUser[]>('/admin/users'),
   plans: () => rootApi.get<PlanInfo[]>('/admin/plans'),
@@ -127,4 +133,7 @@ export const adminApi = {
   usage: (window: string) =>
     rootApi.get<AdminUsageResponse>(`/admin/usage?window=${window}`),
   migrateSchemas: () => rootApi.post<MigrateSchemasResponse>('/admin/migrate-schemas', {}),
+  globalSettings: () => rootApi.get<GlobalSettingItem[]>('/admin/global-settings'),
+  putGlobalSettings: (items: GlobalSettingItem[]) =>
+    rootApi.put<GlobalSettingItem[]>('/admin/global-settings', { items }),
 }

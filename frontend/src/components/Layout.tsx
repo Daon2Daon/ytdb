@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
 import { useAuth } from '../auth/useAuth'
-import { SETTING_CATEGORIES } from '../settings/defs'
+import { defaultSettingsCategory } from '../settings/defs'
 import { NewGroupModal, EditGroupModal } from './GroupModals'
 
 const NAV = [
@@ -15,11 +15,11 @@ const NAV = [
   { sub: 'logs', label: '작업 로그', icon: '📋' },
 ]
 
-const SETTINGS_DEFAULT = SETTING_CATEGORIES[0].key
-
 export default function Layout() {
   const { groups, activeSlug, activeGroup } = useGroup()
   const { authEnabled, user, logout } = useAuth()
+  // 일반 사용자를 admin 전용 database 탭으로 보내지 않도록 역할 기반 기본 탭
+  const settingsDefault = defaultSettingsCategory(user?.role)
   const navigate = useNavigate()
   const location = useLocation()
   const [groupModal, setGroupModal] = useState<null | 'new' | 'edit'>(null)
@@ -29,7 +29,7 @@ export default function Layout() {
     const after = location.pathname.replace(/^\/g\/[^/]+/, '')
     const seg = after.split('/').filter(Boolean)[0] ?? ''
     if (seg === 'settings') {
-      navigate(`/g/${slug}/settings/${SETTINGS_DEFAULT}`)
+      navigate(`/g/${slug}/settings/${settingsDefault}`)
       return
     }
     const navSubs = NAV.map((i) => i.sub).filter(Boolean)
@@ -105,7 +105,7 @@ export default function Layout() {
             ))}
             <div className="mt-1 pt-1 border-t border-gray-100 flex flex-row lg:flex-col gap-1">
               <NavLink
-                to={`/g/${activeSlug}/settings/${SETTINGS_DEFAULT}`}
+                to={`/g/${activeSlug}/settings/${settingsDefault}`}
                 className={() => linkClass({ isActive: location.pathname.includes('/settings/') })}
               >
                 <span>⚙️</span><span>설정</span>

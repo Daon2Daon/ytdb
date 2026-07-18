@@ -58,6 +58,12 @@ from app.services.global_settings import (
     GLOBAL_AI_MODEL_PRICES,
     GLOBAL_AI_PRIMARY_MODEL,
     GLOBAL_CENTRAL_POLL_FLOOR_MIN,
+    GLOBAL_DB_HOST,
+    GLOBAL_DB_NAME,
+    GLOBAL_DB_PASSWORD,
+    GLOBAL_DB_PORT,
+    GLOBAL_DB_SSLMODE,
+    GLOBAL_DB_USERNAME,
     GLOBAL_TELEGRAM_BOT_TOKEN,
     GLOBAL_YOUTUBE_API_KEY,
     GLOBAL_YOUTUBE_DAILY_QUOTA,
@@ -87,6 +93,12 @@ _GLOBAL_KEYS = (
     GLOBAL_AI_DIGEST_MODEL,
     GLOBAL_AI_MODEL_PRICES,
     GLOBAL_TELEGRAM_BOT_TOKEN,
+    GLOBAL_DB_HOST,
+    GLOBAL_DB_PORT,
+    GLOBAL_DB_NAME,
+    GLOBAL_DB_USERNAME,
+    GLOBAL_DB_PASSWORD,
+    GLOBAL_DB_SSLMODE,
 )
 
 
@@ -319,6 +331,17 @@ async def put_global_settings(
                 raise HTTPException(status_code=400, detail="ai_model_prices는 JSON이어야 합니다.")
             if not isinstance(parsed, dict):
                 raise HTTPException(status_code=400, detail="ai_model_prices는 JSON 객체여야 합니다.")
+        if item.key == GLOBAL_DB_PORT:
+            try:
+                port = int(value)
+            except ValueError:
+                port = 0
+            if port <= 0:
+                raise HTTPException(status_code=400, detail="db_port는 양의 정수여야 합니다.")
+        if item.key == GLOBAL_DB_SSLMODE and value not in ("disable", "prefer", "require"):
+            raise HTTPException(
+                status_code=400, detail="db_sslmode는 disable/prefer/require 중 하나여야 합니다."
+            )
         await set_global(session, item.key, value)
     await session.commit()
     return await list_global_settings(session)

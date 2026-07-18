@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.models.pg.base import SCHEMA_TOKEN, PgBase
-from app.services.settings_manager import get_settings_manager
 from app.services.settings_types import DatabaseSettings
 
 
@@ -87,11 +86,14 @@ class DataPlaneEngineManager:
         return engine
 
     async def _cfg(self, group: GroupRef) -> DatabaseSettings:
-        cfg = await get_settings_manager().get_database(group.group_id)
+        # 그룹 완결 설정 → 전역 기본 DSN 폴백 (설계 2026-07-18)
+        from app.services.global_settings import resolve_database
+
+        cfg = await resolve_database(group.group_id)
         if not cfg.is_configured:
             raise DBNotConfiguredError(
-                f"그룹(group_id={group.group_id})의 DB 설정이 없습니다. "
-                "settings/database를 먼저 입력하세요."
+                f"그룹(group_id={group.group_id})의 DB 설정이 없고 전역 기본 DSN도 "
+                "비어 있습니다. settings/database 또는 관리자 전역 설정(db_*)을 입력하세요."
             )
         return cfg
 

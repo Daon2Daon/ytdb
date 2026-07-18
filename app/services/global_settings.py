@@ -44,7 +44,17 @@ GLOBAL_AI_MODEL_PRICES = "ai_model_prices"  # JSON: {"모델prefix": {"input": n
 # Phase D-1: 공용 텔레그램 봇 (스펙 §2)
 GLOBAL_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
 
-SECRET_KEYS = frozenset({GLOBAL_YOUTUBE_API_KEY, GLOBAL_AI_API_KEY, GLOBAL_TELEGRAM_BOT_TOKEN})
+# 기본 데이터 평면 DSN (설계 2026-07-18) — 사용자 그룹의 DB 폴백
+GLOBAL_DB_HOST = "db_host"
+GLOBAL_DB_PORT = "db_port"
+GLOBAL_DB_NAME = "db_name"
+GLOBAL_DB_USERNAME = "db_username"
+GLOBAL_DB_PASSWORD = "db_password"
+GLOBAL_DB_SSLMODE = "db_sslmode"
+
+SECRET_KEYS = frozenset(
+    {GLOBAL_YOUTUBE_API_KEY, GLOBAL_AI_API_KEY, GLOBAL_TELEGRAM_BOT_TOKEN, GLOBAL_DB_PASSWORD}
+)
 
 
 def _get_fernet():
@@ -150,10 +160,11 @@ async def bootstrap_global_settings() -> None:
     from app.models.control.group import Group
     from app.models.control.user import User
 
-    # 전역 AI 게이트웨이·공용 텔레그램 봇 토큰 시드는 YouTube 키의 early-return과
-    # 무관하게 항상 먼저 실행.
+    # 전역 AI 게이트웨이·공용 텔레그램 봇 토큰·기본 DSN 시드는 YouTube 키의
+    # early-return과 무관하게 항상 먼저 실행.
     await _seed_global_ai_from_admin_groups()
     await _seed_telegram_bot_token()
+    await _seed_global_db_from_control_dsn()
 
     sf = get_sessionmaker()
     async with sf() as session:
@@ -235,6 +246,68 @@ async def resolve_ai_gateway(group_id: int) -> "AIGatewaySettings":
         max_tokens=_i(d.get("max_tokens"), 8192),
         daily_budget_usd=_f(d.get("daily_budget_usd"), 2.0),
     )
+
+
+async def resolve_database(group_id: int) -> "DatabaseSettings":
+    """유효 데이터 평면 DB 해석: 그룹 완결 설정 → 전역 기본 DSN (설계 2026-07-18).
+
+    AI 게이트웨이의 필드별 pick과 달리 all-or-nothing — 그룹 host에 전역
+    password를 섞는 식의 조합은 항상 잘못된 접속이므로, 그룹 설정이
+    is_configured(host+username+dbname)일 때만 그룹 값 전체를 쓴다.
+    """
+    from app.services.settings_types import DatabaseSettings
+
+    cfg = await get_settings_manager().get_database(group_id)
+    if cfg.is_configured:
+        return cfg
+    async with get_sessionmaker()() as session:
+        host = await get_global(session, GLOBAL_DB_HOST)
+        port = await get_global(session, GLOBAL_DB_PORT)
+        dbname = await get_global(session, GLOBAL_DB_NAME)
+        username = await get_global(session, GLOBAL_DB_USERNAME)
+        password = await get_global(session, GLOBAL_DB_PASSWORD)
+        sslmode = await get_global(session, GLOBAL_DB_SSLMODE)
+    return DatabaseSettings(
+        host=(host or "").strip(),
+        port=_i(port, 5432),
+        dbname=(dbname or "").strip(),
+        username=(username or "").strip(),
+        password=password or "",
+        sslmode=(sslmode or "").strip() or "prefer",
+    )
+
+
+async def _seed_global_db_from_control_dsn() -> None:
+    """전역 기본 DSN 미시드 시 CONTROL_DATABASE_URL에서 1회 시드. 멱등.
+
+    멀티테넌트 스펙 §2.8 — 사용자 그룹의 데이터 평면은 제어 평면과 같은 서버를
+    쓴다. 시드 후에는 관리자가 전역 설정 API/UI로 다른 DSN을 지정할 수 있다.
+    """
+    from sqlalchemy.engine import make_url
+
+    sf = get_sessionmaker()
+    async with sf() as session:
+        if await get_global(session, GLOBAL_DB_HOST):
+            return
+    try:
+        url = make_url(app_settings.CONTROL_DATABASE_URL)
+    except Exception:  # noqa: BLE001 — DSN 형식 오류는 시드만 건너뜀(부팅 비차단)
+        return
+    if not (url.host and url.database and url.username):
+        return
+    try:
+        async with sf() as session:
+            async with session.begin():
+                await set_global(session, GLOBAL_DB_HOST, url.host)
+                await set_global(session, GLOBAL_DB_PORT, str(url.port or 5432))
+                await set_global(session, GLOBAL_DB_NAME, url.database)
+                await set_global(session, GLOBAL_DB_USERNAME, url.username)
+                if url.password:
+                    await set_global(session, GLOBAL_DB_PASSWORD, str(url.password))
+        print("[bootstrap] 전역 기본 데이터 평면 DSN을 CONTROL_DATABASE_URL에서 시드했습니다.")
+    except SettingsSecretError as e:
+        # 트랜잭션 롤백으로 부분 시드 없음 — 다음 부팅에서 재시도.
+        print(f"[bootstrap] 전역 DB 시드 건너뜀({e}) — FERNET_KEY 설정 후 관리자 API로 등록하세요.")
 
 
 async def _seed_global_ai_from_admin_groups() -> None:
