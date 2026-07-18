@@ -26,6 +26,16 @@ def test_root_served_by_spa():
     assert resp.status_code in (200, 503)
 
 
+def test_spa_index_is_no_cache():
+    """index.html은 no-cache — 배포 후 브라우저가 구 번들을 계속 로드하는 것 방지.
+
+    (해시된 assets는 캐시 무해. 빌드 전 503이면 헤더 검사 생략.)
+    """
+    resp = client.get("/")
+    if resp.status_code == 200:
+        assert resp.headers.get("cache-control") == "no-cache"
+
+
 def test_client_route_falls_back_to_spa():
     """클라이언트 라우팅 경로(/g/...)는 catch-all로 index.html에 폴백(404 아님)."""
     resp = client.get("/g/some-group/videos")

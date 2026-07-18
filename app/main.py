@@ -144,14 +144,19 @@ UI_DIR = STATIC_DIR / "ui"
 
 
 def _serve_react() -> Response:
-    """React SPA index.html 서빙(미빌드 시 503)."""
+    """React SPA index.html 서빙(미빌드 시 503).
+
+    index.html은 no-cache — 캐시 헤더가 없으면 브라우저 휴리스틱 캐싱으로
+    배포 후에도 구 번들을 계속 로드한다(ETag 재검증은 유지되므로 비용 미미).
+    해시된 /static/ui/assets/* 는 그대로 캐시돼도 안전.
+    """
     index_file = UI_DIR / "index.html"
     if not index_file.exists():
         return JSONResponse(
             status_code=503,
             content={"detail": "UI가 아직 빌드되지 않았습니다. frontend에서 npm run build 후 사용하세요."},
         )
-    return FileResponse(str(index_file))
+    return FileResponse(str(index_file), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/legacy", include_in_schema=False)
