@@ -78,3 +78,10 @@ async def test_run_once_demotes_and_notifies_with_isolation(monkeypatch):
     await pes.run_plan_expiry_once()
     assert actions["demoted"] == [10]     # 만료자만 강등 (알림 실패에도 강등 완료)
     assert actions["notified"] == [11]    # 임박자만 통지 마킹 (far=12 제외)
+
+
+def test_plan_expiry_job_registered():
+    from app.services import scheduler as sch
+
+    s = sch.setup_jobs()
+    assert s.get_job(sch.JOB_PLAN_EXPIRY) is not None

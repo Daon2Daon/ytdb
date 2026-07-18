@@ -20,6 +20,7 @@ from app.services.monitor_service import (
     run_stats_refresh_once,
 )
 from app.services.notify_service import run_notify_tick_once
+from app.services.plan_expiry_service import run_plan_expiry_once
 from app.services.settings_manager import get_settings_manager
 
 _MIN_ANALYSIS_INTERVAL_MIN = 1
@@ -30,6 +31,7 @@ JOB_PENDING_ANALYSIS = "youtube_pending_analysis"
 JOB_DIGEST_TICK = "youtube_digest_tick"
 JOB_NOTIFY_TICK = "youtube_notify_tick"
 JOB_STATS_REFRESH = "youtube_stats_refresh"
+JOB_PLAN_EXPIRY = "plan_expiry"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -130,6 +132,15 @@ def setup_jobs() -> AsyncIOScheduler:
         trigger="interval",
         minutes=1440,
         id=JOB_STATS_REFRESH,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_plan_expiry_once,        # E-1: 유료 플랜 만료 강등·임박 알림
+        trigger="interval",
+        minutes=30,
+        id=JOB_PLAN_EXPIRY,
         replace_existing=True,
         max_instances=1,
         coalesce=True,
