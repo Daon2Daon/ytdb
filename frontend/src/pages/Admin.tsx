@@ -104,7 +104,7 @@ export default function Admin() {
   const changeExpiry = async (u: AdminUser, value: string) => {
     try {
       await adminApi.patchUser(u.user_id, {
-        plan_expires_at: value === '' ? null : new Date(value).toISOString(),
+        plan_expires_at: value === '' ? null : new Date(value + 'Z').toISOString(),
       })
       await load()
     } catch (e) {
