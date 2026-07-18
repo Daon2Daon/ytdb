@@ -38,7 +38,7 @@ def test_invite_token_unique_and_urlsafe():
 
 def test_plan_seeds_have_default_free_and_unlimited():
     slugs = {p["slug"] for p in PLAN_SEEDS}
-    assert slugs == {"free", "unlimited"}
+    assert slugs == {"free", "pro", "unlimited"}  # Phase E-1: pro 플랜 추가
     defaults = [p for p in PLAN_SEEDS if p["is_default"]]
     assert len(defaults) == 1 and defaults[0]["slug"] == "free"
 
