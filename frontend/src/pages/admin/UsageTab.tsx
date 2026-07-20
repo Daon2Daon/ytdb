@@ -6,6 +6,8 @@ export default function UsageTab() {
   const [usage, setUsage] = useState<AdminUsageResponse | null>(null)
   const [usageWindow, setUsageWindow] = useState('this_month')
   const [error, setError] = useState<string | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -33,9 +35,33 @@ export default function UsageTab() {
       </div>
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
       {usage && usage.null_cost_row_count > 0 && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          단가 미등록 호출 {usage.null_cost_row_count}건 — 전역 설정 탭의 ai_model_prices에 단가를 등록하세요.
-        </p>
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-2">
+          <p>
+            단가 미등록 호출 {usage.null_cost_row_count}건 — 전역 설정 탭의 ai_model_prices에 단가를 등록하세요.
+            단가는 위 표의 모델명(예: 표에 보이는 문자열 그대로)을 키로 매칭합니다.
+          </p>
+          <button
+            onClick={async () => {
+              if (backfilling) return
+              setBackfilling(true)
+              setBackfillMsg(null)
+              try {
+                const r = await adminApi.backfillCosts()
+                setBackfillMsg(`${r.updated}건 재계산 완료 · 잔여 미등록 ${r.remaining_null}건`)
+                await load()
+              } catch (e) {
+                setBackfillMsg((e as Error).message)
+              } finally {
+                setBackfilling(false)
+              }
+            }}
+            disabled={backfilling}
+            className="border border-amber-300 bg-white text-amber-800 rounded-lg px-3 py-1 text-xs hover:bg-amber-100 disabled:opacity-50"
+          >
+            {backfilling ? '재계산 중…' : '현재 단가표로 과거 호출 비용 재계산'}
+          </button>
+          {backfillMsg && <p className="text-xs">{backfillMsg}</p>}
+        </div>
       )}
       {usage?.youtube && (
         <div className="bg-white rounded-xl shadow-sm p-4 space-y-2">

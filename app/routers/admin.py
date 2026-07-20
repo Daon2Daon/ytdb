@@ -25,6 +25,7 @@ from app.models.control.user_limit import UserLimit
 from app.models.control.yt_quota_usage import YtQuotaUsage
 from app.routers.auth import CurrentUser, require_admin
 from app.schemas.admin import (
+    AdminBackfillCostsResponse,
     AdminUsageResponse,
     AdminUsageRow,
     AdminUserOut,
@@ -49,7 +50,7 @@ from app.schemas.admin import (
     YtQuotaEntry,
     YtQuotaStatus,
 )
-from app.services.ai_usage_service import kst_month_start_utc
+from app.services.ai_usage_service import backfill_null_costs, kst_month_start_utc
 from app.services.auth_service import generate_invite_token, hash_password
 from app.services.global_settings import (
     GLOBAL_AI_API_KEY,
@@ -508,3 +509,12 @@ async def usage_summary(
         null_cost_row_count=sum(r.null_cost_calls for r in out_rows),
         youtube=youtube,
     )
+
+
+@router.post("/usage/backfill-costs", response_model=AdminBackfillCostsResponse)
+async def backfill_costs(
+    session: AsyncSession = Depends(get_session),
+) -> AdminBackfillCostsResponse:
+    """단가 등록 전 기록된 cost_usd NULL 원장 행을 현재 단가표로 소급 계산한다."""
+    updated, remaining = await backfill_null_costs(session)
+    return AdminBackfillCostsResponse(updated=updated, remaining_null=remaining)

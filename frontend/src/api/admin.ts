@@ -132,6 +132,8 @@ export const adminApi = {
     rootApi.patch<PlanInfo>(`/admin/plans/${planId}`, body),
   usage: (window: string) =>
     rootApi.get<AdminUsageResponse>(`/admin/usage?window=${window}`),
+  backfillCosts: () =>
+    rootApi.post<{ updated: number; remaining_null: number }>('/admin/usage/backfill-costs', {}),
   migrateSchemas: () => rootApi.post<MigrateSchemasResponse>('/admin/migrate-schemas', {}),
   globalSettings: () => rootApi.get<GlobalSettingItem[]>('/admin/global-settings'),
   putGlobalSettings: (items: GlobalSettingItem[]) =>

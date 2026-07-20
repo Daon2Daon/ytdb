@@ -33,19 +33,13 @@ def kst_month_start_utc(now: datetime) -> datetime:
     return start.astimezone(timezone.utc)
 
 
-def compute_cost_usd(
-    model: str,
-    input_tokens: Optional[int],
-    output_tokens: Optional[int],
-    prices: dict,
-) -> Optional[Decimal]:
-    """단가표(모델 prefix → {input, output} $/1M) 기반 비용. 계산 불가면 None.
+def resolve_price_for_model(
+    model: str, prices: dict
+) -> Optional[tuple[Decimal, Decimal]]:
+    """모델명에 맞는 (input, output) 단가($/1M)를 최장 prefix 매칭으로 해석.
 
-    최장 prefix 매칭 — "gemini/gemini-2.5-flash"가 "gemini/"보다 우선.
-    None 반환 = cost_usd NULL 기록 → 관리자 대시보드 경고로 표면화(스펙 §2.4).
+    "gemini/gemini-2.5-flash"가 "gemini/"보다 우선. 매칭·형식 불가면 None.
     """
-    if input_tokens is None or output_tokens is None or not prices:
-        return None
     best = None
     for prefix in prices:
         if model.startswith(prefix) and (best is None or len(prefix) > len(best)):
@@ -54,12 +48,28 @@ def compute_cost_usd(
         return None
     entry = prices[best]
     try:
-        return (
-            Decimal(str(entry["input"])) * input_tokens
-            + Decimal(str(entry["output"])) * output_tokens
-        ) / Decimal(1_000_000)
+        return Decimal(str(entry["input"])), Decimal(str(entry["output"]))
     except (KeyError, TypeError, InvalidOperation):
         return None
+
+
+def compute_cost_usd(
+    model: str,
+    input_tokens: Optional[int],
+    output_tokens: Optional[int],
+    prices: dict,
+) -> Optional[Decimal]:
+    """단가표(모델 prefix → {input, output} $/1M) 기반 비용. 계산 불가면 None.
+
+    None 반환 = cost_usd NULL 기록 → 관리자 대시보드 경고로 표면화(스펙 §2.4).
+    """
+    if input_tokens is None or output_tokens is None or not prices:
+        return None
+    price = resolve_price_for_model(model, prices)
+    if price is None:
+        return None
+    p_in, p_out = price
+    return (p_in * input_tokens + p_out * output_tokens) / Decimal(1_000_000)
 
 
 from sqlalchemy import func as sa_func, select
@@ -103,6 +113,50 @@ async def record_usage(
                 )
     except Exception as e:  # noqa: BLE001 — 원장 실패가 본 작업을 깨뜨리면 안 됨
         print(f"[ai_usage] 원장 기록 실패(무시): {e}")
+
+
+async def backfill_null_costs(session: AsyncSession) -> tuple[int, int]:
+    """cost_usd NULL 행을 현재 단가표로 소급 계산. (갱신 행 수, 잔여 NULL 수).
+
+    단가 등록 전에 기록된 원장 복구용 — 비용은 기록 시점에만 계산되므로
+    단가표를 나중에 채워도 과거 행은 이 함수 없이는 NULL로 남는다.
+    토큰 수가 행에 보존돼 있어 모델별 선형식으로 일괄 UPDATE가 가능하다.
+    """
+    from sqlalchemy import distinct, update as sa_update
+
+    from app.services.global_settings import get_ai_model_prices
+
+    prices = await get_ai_model_prices()
+    models = (
+        await session.execute(
+            select(distinct(AIUsage.model)).where(AIUsage.cost_usd.is_(None))
+        )
+    ).scalars().all()
+
+    updated = 0
+    for model in models:
+        price = resolve_price_for_model(model, prices)
+        if price is None:
+            continue  # 단가 미등록 모델은 NULL 유지 → 대시보드 경고 지속
+        p_in, p_out = price
+        result = await session.execute(
+            sa_update(AIUsage)
+            .where(AIUsage.model == model, AIUsage.cost_usd.is_(None))
+            .values(
+                cost_usd=(
+                    AIUsage.input_tokens * p_in + AIUsage.output_tokens * p_out
+                ) / 1_000_000
+            )
+        )
+        updated += result.rowcount or 0
+
+    remaining = (
+        await session.execute(
+            select(sa_func.count()).select_from(AIUsage).where(AIUsage.cost_usd.is_(None))
+        )
+    ).scalar_one()
+    await session.commit()
+    return updated, remaining
 
 
 async def month_cost_usd(session: AsyncSession, user_id: int) -> Decimal:
