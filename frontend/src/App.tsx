@@ -4,6 +4,7 @@ import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
 import AdminLayout from './pages/admin/AdminLayout'
 import UsersTab from './pages/admin/UsersTab'
+import GroupsTab from './pages/admin/GroupsTab'
 import PlansTab from './pages/admin/PlansTab'
 import UsageTab from './pages/admin/UsageTab'
 import GlobalSettingsTab from './pages/admin/GlobalSettingsTab'
@@ -138,6 +139,7 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="users" replace />} />
         <Route path="users" element={<UsersTab />} />
+        <Route path="groups" element={<GroupsTab />} />
         <Route path="plans" element={<PlansTab />} />
         <Route path="usage" element={<UsageTab />} />
         <Route path="global-settings" element={<GlobalSettingsTab />} />

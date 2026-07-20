@@ -32,15 +32,22 @@ def is_auto_schema(schema_name: str) -> bool:
     return _AUTO_SCHEMA_RE.fullmatch(schema_name) is not None
 
 
+def owned_groups_stmt(user: CurrentUser):
+    """본인 소유 그룹 목록 쿼리. admin도 동일 — 사이드바에 타인 그룹이 섞여
+    실수로 남의 그룹을 조작하는 사고를 막는다. 전체 열람은 /api/admin/groups."""
+    return (
+        select(Group)
+        .where(Group.owner_user_id == user.user_id)
+        .order_by(Group.group_id)
+    )
+
+
 @router.get("", response_model=list[GroupOut])
 async def list_groups(
     user: CurrentUser = Depends(require_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[Group]:
-    stmt = select(Group).order_by(Group.group_id)
-    if not user.is_admin:
-        stmt = stmt.where(Group.owner_user_id == user.user_id)
-    result = await session.execute(stmt)
+    result = await session.execute(owned_groups_stmt(user))
     return list(result.scalars().all())
 
 

@@ -105,6 +105,16 @@ export interface AdminUsageResponse {
   youtube: YtQuotaStatus | null
 }
 
+export interface AdminGroup {
+  group_id: number
+  slug: string
+  name: string
+  schema_name: string
+  is_active: boolean
+  owner_user_id: number | null
+  owner_email: string | null
+}
+
 export interface GlobalSettingItem {
   key: string
   value: string
@@ -113,6 +123,7 @@ export interface GlobalSettingItem {
 
 export const adminApi = {
   users: () => rootApi.get<AdminUser[]>('/admin/users'),
+  groups: () => rootApi.get<AdminGroup[]>('/admin/groups'),
   plans: () => rootApi.get<PlanInfo[]>('/admin/plans'),
   invites: () => rootApi.get<Invite[]>('/admin/invitations'),
   createInvite: (planSlug: string | null, memo: string, expiresDays: number) =>

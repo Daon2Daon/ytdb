@@ -187,6 +187,16 @@ class AdminUsageResponse(BaseModel):
     youtube: Optional[YtQuotaStatus] = None   # D-2: 당일(PT) 키별 YouTube 쿼터
 
 
+class AdminGroupOut(BaseModel):
+    group_id: int
+    slug: str
+    name: str
+    schema_name: str
+    is_active: bool
+    owner_user_id: Optional[int] = None   # NULL = 레거시(소유자 미지정)
+    owner_email: Optional[str] = None
+
+
 class AdminBackfillCostsResponse(BaseModel):
     updated: int                      # 이번 실행으로 비용이 채워진 원장 행 수
     remaining_null: int               # 여전히 단가 미상으로 남은 행 수

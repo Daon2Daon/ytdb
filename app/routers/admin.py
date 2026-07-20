@@ -26,6 +26,7 @@ from app.models.control.yt_quota_usage import YtQuotaUsage
 from app.routers.auth import CurrentUser, require_admin
 from app.schemas.admin import (
     AdminBackfillCostsResponse,
+    AdminGroupOut,
     AdminUsageResponse,
     AdminUsageRow,
     AdminUserOut,
@@ -133,6 +134,32 @@ async def migrate_schemas() -> MigrateSchemasResponse:
         results=[MigrationResultOut(**vars(r)) for r in results],
         summary=summarize(results),
     )
+
+
+async def list_all_groups_with_owner(session: AsyncSession) -> list[AdminGroupOut]:
+    """전체 그룹 + 소유자 이메일. 사이드바(본인 소유만)와 달리 운영 열람용."""
+    rows = (
+        await session.execute(
+            select(Group, User.email)
+            .outerjoin(User, User.user_id == Group.owner_user_id)
+            .order_by(Group.group_id)
+        )
+    ).all()
+    return [
+        AdminGroupOut(
+            group_id=g.group_id, slug=g.slug, name=g.name,
+            schema_name=g.schema_name, is_active=g.is_active,
+            owner_user_id=g.owner_user_id, owner_email=email,
+        )
+        for g, email in rows
+    ]
+
+
+@router.get("/groups", response_model=list[AdminGroupOut])
+async def admin_list_groups(
+    session: AsyncSession = Depends(get_session),
+) -> list[AdminGroupOut]:
+    return await list_all_groups_with_owner(session)
 
 
 @router.get("/users", response_model=list[AdminUserOutV2])

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 export const ADMIN_TABS = [
   { key: 'users', label: '사용자' },
+  { key: 'groups', label: '그룹' },
   { key: 'plans', label: '플랜' },
   { key: 'usage', label: '사용량' },
   { key: 'global-settings', label: '전역 설정' },
