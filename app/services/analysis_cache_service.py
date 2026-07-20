@@ -117,9 +117,13 @@ async def mark_failed(session: AsyncSession, cache_id: int) -> None:
 
 
 async def record_delivery(
-    session: AsyncSession, user_id: int, group_id: int, cache_id: int
+    session: AsyncSession, user_id: int, group_id: int, cache_id: Optional[int]
 ) -> None:
-    """전달 원장 1행 기록. 같은 (user_id, cache_id) 재전달은 무시(쿼터 과카운트 방지)."""
+    """전달 원장 1행 기록. 같은 (user_id, cache_id) 재전달은 무시(쿼터 과카운트 방지).
+
+    cache_id=None은 직접 프롬프트 경로 — UNIQUE가 NULL엔 적용되지 않아
+    실호출마다 1행씩 기록된다(매 호출이 실제 LLM 비용이므로 의도된 동작).
+    """
     await session.execute(
         pg_insert(AnalysisDelivery)
         .values(user_id=user_id, group_id=group_id, cache_id=cache_id)
@@ -157,7 +161,7 @@ async def fail_cached(cache_id: int) -> None:
         await session.commit()
 
 
-async def record_delivery_for(user_id: int, group_id: int, cache_id: int) -> None:
+async def record_delivery_for(user_id: int, group_id: int, cache_id: Optional[int]) -> None:
     async with get_sessionmaker()() as session:
         await record_delivery(session, user_id, group_id, cache_id)
         await session.commit()

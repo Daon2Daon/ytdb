@@ -117,6 +117,13 @@ async def ensure_control_schema() -> None:
                     "UNIQUE (user_id, cache_id)"
                 )
             )
+        # 직접 프롬프트 경로 전달 원장: cache_id NULL 허용 (멱등)
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".analysis_deliveries '
+                "ALTER COLUMN cache_id DROP NOT NULL"
+            )
+        )
         # Phase E-1: 기존 설치 업그레이드 — 만료 관리 컬럼 (멱등)
         for col in ("plan_expires_at", "plan_expiry_notified_at"):
             await conn.execute(

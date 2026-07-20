@@ -31,8 +31,10 @@ class AnalysisDelivery(Base):
         BigInteger, ForeignKey(f"{APP_SCHEMA}.users.user_id"), nullable=False
     )
     group_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    cache_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey(f"{APP_SCHEMA}.analysis_cache.cache_id"), nullable=False
+    # NULL = 직접 프롬프트 경로(캐시 미경유). UNIQUE(user_id, cache_id)는 NULL에
+    # 적용되지 않으므로 직접 분석은 실호출마다 1행씩 쌓인다(usage 원장과 동일 기준).
+    cache_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey(f"{APP_SCHEMA}.analysis_cache.cache_id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

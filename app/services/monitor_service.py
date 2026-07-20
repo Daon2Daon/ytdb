@@ -681,6 +681,8 @@ async def _run_analysis(
             output_tokens=result.output_tokens,
             video_pk=video_pk,
         )
+        # 직접 경로도 '분석 전달' 사건 — 일일 쿼터·마이페이지 카운트에 포함(캐시 행 없음 = None)
+        await _record_delivery_safe(group, None)
         await write_job_log(
             make_session,
             job_type=JOB_TYPE_VIDEO_ANALYZE,
@@ -858,8 +860,11 @@ async def _run_analysis_cached(
 
 
 async def _record_delivery_safe(group: Group, cache_id: Optional[int]) -> None:
-    """전달 원장 기록. 실패해도 분석 흐름을 깨지 않는다(원장은 쿼터/과금용 부가 데이터)."""
-    if cache_id is None or group.owner_user_id is None:
+    """전달 원장 기록. 실패해도 분석 흐름을 깨지 않는다(원장은 쿼터/과금용 부가 데이터).
+
+    cache_id=None은 직접 프롬프트 경로(캐시 미경유) — 그대로 기록한다.
+    """
+    if group.owner_user_id is None:
         return
     try:
         await record_delivery_for(group.owner_user_id, group.group_id, cache_id)
