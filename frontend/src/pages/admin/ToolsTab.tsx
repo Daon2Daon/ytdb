@@ -23,6 +23,15 @@ export default function ToolsTab() {
   return (
     <div className="space-y-3">
       <div className="bg-white rounded-xl shadow-sm p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">전 스키마 마이그레이션</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            모든 그룹(비활성 포함)의 데이터 스키마를 순회하며 새 버전에서 추가된
+            테이블·컬럼을 보정합니다. 앱 업데이트 배포 후 한 번 실행하는 용도이며,
+            기존 데이터는 건드리지 않고 여러 번 실행해도 안전합니다(멱등).
+            그룹별로 격리 실행되어 일부 그룹이 실패해도 나머지는 계속 진행됩니다.
+          </p>
+        </div>
         <button
           onClick={runMigration}
           disabled={migrating}

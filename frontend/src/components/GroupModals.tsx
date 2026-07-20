@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { groupApi } from '../api/groups'
+import { useAuth } from '../auth/useAuth'
 import { useGroup } from '../group/useGroup'
 
 function ModalShell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
@@ -16,18 +17,26 @@ function ModalShell({ title, children, onClose }: { title: string; children: Rea
 
 export function NewGroupModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { reloadGroups } = useGroup()
   const [slug, setSlug] = useState('')
   const [name, setName] = useState('')
   const [schema, setSchema] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // 일반 사용자는 백엔드가 slug/스키마를 자동 생성하고 입력값을 무시하므로
+  // 해당 입력란 자체를 보여주지 않는다(입력해도 반영되지 않는 혼란 방지).
+  const isAdmin = user?.role === 'admin'
 
   const submit = async () => {
     setBusy(true)
     setErr(null)
     try {
-      const created = await groupApi.create({ slug: slug.trim(), name: name.trim(), schema_name: schema.trim() || undefined })
+      const created = await groupApi.create(
+        isAdmin
+          ? { slug: slug.trim(), name: name.trim(), schema_name: schema.trim() || undefined }
+          : { name: name.trim() },
+      )
       await reloadGroups()
       onClose()
       navigate(`/g/${created.slug}/`)
@@ -42,25 +51,29 @@ export function NewGroupModal({ onClose }: { onClose: () => void }) {
     <ModalShell title="새 그룹" onClose={onClose}>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <div className="space-y-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">그룹 영문 ID (소문자/숫자/밑줄)</label>
-          <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="invest"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        </div>
+        {isAdmin && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">그룹 영문 ID (소문자/숫자/밑줄)</label>
+            <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="invest"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        )}
         <div>
           <label className="block text-xs text-gray-500 mb-1">그룹 명칭</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="투자 모니터"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">DB 스키마 이름 (선택, 기본 youtube_&#123;ID&#125;)</label>
-          <input value={schema} onChange={(e) => setSchema(e.target.value)} placeholder="youtube_invest"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-        </div>
+        {isAdmin && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">DB 스키마 이름 (선택, 기본 youtube_&#123;ID&#125;)</label>
+            <input value={schema} onChange={(e) => setSchema(e.target.value)} placeholder="youtube_invest"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        )}
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">취소</button>
-        <button onClick={submit} disabled={busy || !slug.trim() || !name.trim()}
+        <button onClick={submit} disabled={busy || !name.trim() || (isAdmin && !slug.trim())}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
           {busy ? '생성 중...' : '생성'}
         </button>
