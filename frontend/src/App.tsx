@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from './auth/useAuth'
 import GroupProvider from './group/GroupProvider'
 import Layout from './components/Layout'
 import AdminLayout from './pages/admin/AdminLayout'
@@ -71,7 +72,6 @@ function ZeroGroupLanding() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="투자 모니터"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -118,6 +118,14 @@ function RootRedirect() {
   return <div className="min-h-screen flex items-center justify-center text-gray-500 px-4 text-center">{message}</div>
 }
 
+// 관리자 전용 라우트 가드: 비관리자는 그룹 대시보드로 돌려보낸다(백엔드 403과 이중 방어).
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  const { slug } = useParams()
+  if (user?.role !== 'admin') return <Navigate to={`/g/${slug}/`} replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <Routes>
@@ -127,7 +135,7 @@ export default function App() {
           <Route path="channels" element={<Channels />} />
           <Route path="videos" element={<Videos />} />
           <Route path="videos/:videoPk" element={<VideoDetail />} />
-          <Route path="instant-analyze" element={<InstantAnalyze />} />
+          <Route path="instant-analyze" element={<RequireAdmin><InstantAnalyze /></RequireAdmin>} />
           <Route path="tags" element={<Tags />} />
           <Route path="logs" element={<Logs />} />
           <Route path="digests" element={<Digests />} />

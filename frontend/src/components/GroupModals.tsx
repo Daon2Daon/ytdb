@@ -60,7 +60,7 @@ export function NewGroupModal({ onClose }: { onClose: () => void }) {
         )}
         <div>
           <label className="block text-xs text-gray-500 mb-1">그룹 명칭</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="투자 모니터"
+          <input value={name} onChange={(e) => setName(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </div>
         {isAdmin && (

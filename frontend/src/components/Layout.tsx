@@ -8,7 +8,7 @@ import { NewGroupModal, EditGroupModal } from './GroupModals'
 const NAV = [
   { sub: '', label: '대시보드', icon: '🏠', end: true },
   { sub: 'videos', label: '영상 목록', icon: '🎬' },
-  { sub: 'instant-analyze', label: '즉시 분석', icon: '🔍' },
+  { sub: 'instant-analyze', label: '즉시 분석', icon: '🔍', adminOnly: true },
   { sub: 'digests', label: '다이제스트', icon: '📊' },
   { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
   { sub: 'channels', label: '채널 관리', icon: '📺' },
@@ -23,6 +23,8 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [groupModal, setGroupModal] = useState<null | 'new' | 'edit'>(null)
+  // 즉시 분석 등 관리자 전용 메뉴는 일반 사용자에게 노출하지 않음
+  const nav = NAV.filter((i) => !i.adminOnly || user?.role === 'admin')
 
   // 그룹 전환: 현재 페이지(첫 경로 세그먼트)를 유지하되, PK 종속 상세 경로면 대시보드로.
   const onSwitchGroup = (slug: string) => {
@@ -32,7 +34,7 @@ export default function Layout() {
       navigate(`/g/${slug}/settings/${settingsDefault}`)
       return
     }
-    const navSubs = NAV.map((i) => i.sub).filter(Boolean)
+    const navSubs = nav.map((i) => i.sub).filter(Boolean)
     const safe = navSubs.includes(seg) ? seg : ''
     navigate(`/g/${slug}/${safe}`)
   }
@@ -92,7 +94,7 @@ export default function Layout() {
       <div className="flex flex-col lg:flex-row flex-1 max-w-7xl mx-auto w-full px-3 sm:px-4 py-4 gap-4 lg:gap-6">
         <aside className="w-full lg:w-52 shrink-0">
           <nav className="flex flex-row lg:flex-col gap-1 overflow-x-auto bg-white rounded-xl shadow-sm p-2 lg:p-3 lg:sticky lg:top-6">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink
                 key={item.sub}
                 to={`/g/${activeSlug}/${item.sub}`}

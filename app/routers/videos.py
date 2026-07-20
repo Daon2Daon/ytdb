@@ -19,6 +19,7 @@ from app.models.pg.deleted_video import DeletedVideo
 from app.models.pg.tag import Tag, VideoTag
 from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
+from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.stats import PaginatedVideos
 from app.schemas.video import (
@@ -492,7 +493,11 @@ async def instant_analyze_video(
     payload: InstantAnalyzeRequest,
     background: BackgroundTasks,
     group: Group = Depends(get_group_or_404),
+    user: CurrentUser = Depends(require_user),
 ) -> InstantAnalyzeResponse:
+    # 즉시 분석은 관리자 전용 기능(일반 사용자에게는 메뉴/라우트 모두 비노출).
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="즉시 분석은 관리자만 사용할 수 있습니다.")
     video_id = _extract_video_id(payload.video_url)
     if not video_id:
         raise HTTPException(status_code=400, detail="유효한 YouTube 영상 URL/ID가 아닙니다.")
