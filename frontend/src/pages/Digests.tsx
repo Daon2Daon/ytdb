@@ -4,9 +4,11 @@ import dayjs from 'dayjs'
 import { useGroup } from '../group/useGroup'
 import { digestApi } from '../api/digests'
 import { settingsApi } from '../api/settings'
+import { profileApi, type GroupProfile } from '../api/profile'
 import type { Digest, DigestScheduleConfig } from '../api/types'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
+import ProfileCard from '../components/ProfileCard'
 
 function periodBadge(d: Digest): string {
   const days = d.period_days ?? (d.period_weeks > 0 ? d.period_weeks * 7 : 7)
@@ -49,6 +51,8 @@ export default function Digests() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [profile, setProfile] = useState<GroupProfile | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -72,6 +76,30 @@ export default function Digests() {
   }
 
   useEffect(() => { load() }, [activeSlug])
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const p = await profileApi(activeSlug).get()
+        setProfile(p)
+      } catch {
+        setProfile(null)
+      }
+    }
+    loadProfile()
+  }, [activeSlug])
+
+  const handleRegenerate = async () => {
+    setRegenerating(true)
+    try {
+      const p = await profileApi(activeSlug).regenerate()
+      setProfile(p)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   const canGenerate = configs.length > 0
 
@@ -110,6 +138,14 @@ export default function Digests() {
 
   return (
     <div className="space-y-4">
+      {profile && (
+        <ProfileCard
+          sections={profile.digest_sections}
+          status={profile.bootstrap_status}
+          onRegenerate={handleRegenerate}
+          regenerating={regenerating}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">리뷰 알림</h1>
         <div className="flex items-center gap-2">
