@@ -154,3 +154,27 @@ def promote_fields(type_def: dict, values: dict) -> dict | None:
 
     row["attrs"] = attrs
     return row
+
+
+def map_vocab_value(value: Any, axis_spec: dict) -> tuple[Any, bool]:
+    """(canonical_or_original, is_pending). 대소문자·공백 정규화 후 매핑.
+
+    - synonyms 적중 또는 이미 values 안이면 (canonical, False).
+    - 비어있으면 (원값, False).
+    - 미매핑이면 (원문, True) — 호출부가 vocab_pending에 적재.
+    """
+    if value is None:
+        return None, False
+    raw = str(value).strip()
+    if raw == "":
+        return "", False
+    key = raw.lower()
+    values = axis_spec.get("values") or []
+    synonyms = axis_spec.get("synonyms") or {}
+    for canon in values:
+        if canon.lower() == key:
+            return canon, False
+    for syn, canon in synonyms.items():
+        if syn.lower() == key:
+            return canon, False
+    return raw, True

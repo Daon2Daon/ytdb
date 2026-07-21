@@ -1,5 +1,6 @@
 from app.services.records_schema import normalize_record_schema, normalize_vocab
 from app.services.records_schema import promote_fields
+from app.services.records_schema import map_vocab_value
 from datetime import date
 
 
@@ -92,3 +93,27 @@ def test_promote_fields_bad_number_and_date_go_to_attrs():
 def test_promote_fields_unknown_fields_go_to_attrs():
     row = promote_fields(_CAMPAIGN_TYPE, {"entity": "SKT", "extra": "여분"})
     assert row["attrs"]["extra"] == "여분"
+
+
+_SENT = {"label": "평가", "values": ["긍정", "부정", "혼조"],
+         "synonyms": {"positive": "긍정", "bullish": "긍정", "neg": "부정"}}
+
+
+def test_map_vocab_synonym_hit():
+    assert map_vocab_value("Positive", _SENT) == ("긍정", False)
+    assert map_vocab_value("  BULLISH ", _SENT) == ("긍정", False)
+
+
+def test_map_vocab_canonical_passthrough():
+    assert map_vocab_value("부정", _SENT) == ("부정", False)
+
+
+def test_map_vocab_unmapped_is_pending():
+    val, pending = map_vocab_value("애매함", _SENT)
+    assert val == "애매함"
+    assert pending is True
+
+
+def test_map_vocab_empty():
+    assert map_vocab_value("", _SENT) == ("", False)
+    assert map_vocab_value(None, _SENT) == (None, False)
