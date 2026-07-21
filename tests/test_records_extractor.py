@@ -73,3 +73,28 @@ async def test_run_records_extraction_skips_without_schema(monkeypatch):
 
     # Must return without raising and without constructing the LLM client.
     await rx.run_records_extraction(group=_stub_group(), video_pk=1, analysis={"one_line": "x"})
+
+
+@pytest.mark.asyncio
+async def test_post_pass_helper_reads_analysis_and_calls(monkeypatch):
+    from app.services import monitor_service as ms
+    captured = {}
+
+    async def fake_run(*, group, video_pk, analysis):
+        captured["video_pk"] = video_pk
+        captured["one_line"] = analysis.get("one_line")
+
+    monkeypatch.setattr(ms, "run_records_extraction", fake_run)
+
+    async def fake_load(session, video_pk):
+        return {"one_line": "요약", "sentiment": "긍정"}
+
+    monkeypatch.setattr(ms, "_load_analysis_for_records", fake_load)
+
+    class _FakeSess:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    await ms._records_post_pass(group=_stub_group(), make_session=lambda: _FakeSess(), video_pk=42)
+    assert captured["video_pk"] == 42
+    assert captured["one_line"] == "요약"

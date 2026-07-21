@@ -545,3 +545,19 @@ async def backfill_costs(
     """단가 등록 전 기록된 cost_usd NULL 원장 행을 현재 단가표로 소급 계산한다."""
     updated, remaining = await backfill_null_costs(session)
     return AdminBackfillCostsResponse(updated=updated, remaining_null=remaining)
+
+
+@router.post("/groups/{group_id}/backfill-records")
+async def backfill_records(
+    group_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """그룹의 기존 분석 행에 records_extractor를 소급 실행한다."""
+    from app.services.records_backfill import backfill_records_for_group
+
+    group = (await session.execute(
+        select(Group).where(Group.group_id == group_id)
+    )).scalars().first()
+    if group is None:
+        raise HTTPException(status_code=404, detail="그룹을 찾을 수 없습니다.")
+    return await backfill_records_for_group(group)
