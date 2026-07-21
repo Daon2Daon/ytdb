@@ -80,3 +80,76 @@ def resolve_sections(
     if prof:
         return prof
     return DEFAULT_DIGEST_SECTIONS
+
+
+def _fmt_views(n: Any) -> str:
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return ""
+    if n >= 10000:
+        return f"{n / 10000:.1f}만"
+    if n >= 1000:
+        return f"{n / 1000:.1f}천"
+    return str(n)
+
+
+def build_computed_data(key: str, agg: Any) -> dict[str, Any]:
+    """computed 섹션의 표시용 data(dict). 미등록 key는 빈 dict."""
+    if key == "stats_overview":
+        return {"video_count": getattr(agg, "video_count", 0)}
+    if key == "sentiment_breakdown":
+        return {"breakdown": dict(getattr(agg, "sentiment_breakdown", {}) or {})}
+    if key == "top_tags":
+        return {"items": list(getattr(agg, "top_tags", []) or [])[:20]}
+    if key == "top_channels":
+        return {"items": list(getattr(agg, "top_channels", []) or [])[:10]}
+    if key == "top_viewed":
+        vids = [v for v in getattr(agg, "videos", []) or [] if getattr(v, "view_count", 0)]
+        vids.sort(key=lambda v: v.view_count or 0, reverse=True)
+        items = []
+        for v in vids[:6]:
+            head = (getattr(v, "headline", None) or getattr(v, "one_line", None)
+                    or getattr(v, "title", None) or "").strip()
+            items.append({"channel": getattr(v, "channel_name", ""), "head": head,
+                          "views": v.view_count})
+        return {"items": items}
+    return {}
+
+
+def _computed_to_markdown(section: dict[str, Any]) -> str:
+    key = section.get("key")
+    data = section.get("data") or {}
+    lines: list[str] = []
+    if key == "stats_overview":
+        lines.append(f"- 분석 영상 {data.get('video_count', 0)}건")
+    elif key == "sentiment_breakdown":
+        for k, v in (data.get("breakdown") or {}).items():
+            lines.append(f"- {k}: {v}")
+    elif key in ("top_tags", "top_channels"):
+        for it in data.get("items") or []:
+            lines.append(f"- {it.get('name')} ({it.get('count')})")
+    elif key == "top_viewed":
+        for it in data.get("items") or []:
+            views = _fmt_views(it.get("views"))
+            suffix = f" · 조회 {views}" if views else ""
+            lines.append(f"- [{it.get('channel')}] {it.get('head')}{suffix}")
+    return "\n".join(lines)
+
+
+def sections_to_markdown(sections: list[dict[str, Any]]) -> str:
+    """산출 섹션 배열(body_md/data 포함) → 단일 마크다운. summary_md·공유페이지·폴백용."""
+    blocks: list[str] = []
+    for s in sections:
+        title = _clean(s.get("title"))
+        header = f"## {title}" if title else ""
+        if s.get("kind") == SECTION_KIND_LLM:
+            body = _clean(s.get("body_md"))
+        else:
+            body = _computed_to_markdown(s)
+        if not body:
+            continue
+        blocks.append(f"{header}\n{body}".strip())
+    return "\n\n".join(blocks)
