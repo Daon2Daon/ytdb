@@ -26,6 +26,7 @@ from app.routers import (
     groups,
     health,
     logs,
+    profile,
     settings,
     share,
     stats,
@@ -120,6 +121,7 @@ app.include_router(share.router)  # 공개 공유 페이지(무인증)
 
 _protected = [Depends(require_user)]
 app.include_router(groups.router, dependencies=_protected)
+app.include_router(profile.router, dependencies=_protected)
 app.include_router(settings.router, dependencies=_protected)
 app.include_router(channels.router, dependencies=_protected)
 app.include_router(videos.router, dependencies=_protected)
