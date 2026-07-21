@@ -38,3 +38,16 @@ def test_recommended_defaults_present():
     # 기본 분석 프롬프트가 비어있지 않게 시드된다.
     prompts = {i["key"]: i["value"] for i in DEFAULT_GROUP_SETTINGS["prompts"]}
     assert prompts["analysis_prompt"].strip()
+
+
+import json as _json
+
+
+def test_digest_seed_has_one_disabled_weekly_config():
+    items = {i["key"]: i for i in DEFAULT_GROUP_SETTINGS["digest"]}
+    configs = _json.loads(items["configs"]["value"])
+    assert len(configs) == 1
+    assert configs[0]["enabled"] is False
+    assert configs[0]["period_days"] == 7
+    assert configs[0]["digest_prompt"] == ""
+    assert configs[0]["sections"] == []
