@@ -20,6 +20,7 @@ from app.config import settings as app_settings
 from app.control_db import get_sessionmaker
 from app.models.control.setting import Setting
 from app.services.digest_config import legacy_flat_to_config, parse_digest_configs
+from app.services.group_profile import GroupProfile, parse_profile
 from app.services.settings_types import (
     AIGatewaySettings,
     DatabaseSettings,
@@ -208,6 +209,10 @@ class SettingsManager:
             digest_prompt=str(d.get("digest_prompt") or ""),
             preset_id=preset_id,
         )
+
+    async def get_profile(self, group_id: int) -> GroupProfile:
+        d = await self.get_typed(group_id, "profile")
+        return parse_profile(d)
 
     async def get_polling(self, group_id: int) -> PollingSettings:
         d = await self.get_typed(group_id, "polling")
