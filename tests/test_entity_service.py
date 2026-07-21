@@ -22,3 +22,26 @@ def test_pick_canonical_match_by_alias():
 def test_pick_canonical_match_miss():
     existing = [{"canonical_name": "SoftBank", "aliases": []}]
     assert pick_canonical_match("라쿠텐", existing) is None
+
+
+from app.services.entity_service import parse_merge_response
+
+
+def test_parse_merge_response_auto_vs_hold():
+    raw = '''{"clusters": [
+        {"canonical": "SoftBank", "aliases": ["소프트뱅크"], "confidence": "high"},
+        {"canonical": "라쿠텐", "aliases": ["Rakuten"], "confidence": "low"}
+    ]}'''
+    auto, hold = parse_merge_response(raw)
+    assert auto == [{"canonical": "SoftBank", "aliases": ["소프트뱅크"]}]
+    assert hold == [{"canonical": "라쿠텐", "aliases": ["Rakuten"]}]
+
+
+def test_parse_merge_response_bad_json():
+    assert parse_merge_response("nope") == ([], [])
+
+
+def test_parse_merge_response_skips_empty_aliases():
+    raw = '{"clusters": [{"canonical": "A", "aliases": [], "confidence": "high"}]}'
+    auto, hold = parse_merge_response(raw)
+    assert auto == [] and hold == []
