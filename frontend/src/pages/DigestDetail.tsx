@@ -79,16 +79,18 @@ export default function DigestDetail() {
         {digest.error && <p className="text-sm text-red-600">{digest.error}</p>}
       </div>
 
-      {toRenderSections(digest).map((s) => (
-        <div key={s.key} className="bg-white rounded-xl shadow-sm p-5">
-          {s.title && <h2 className="font-semibold text-gray-800 mb-3">{s.title}</h2>}
-          <article className="prose prose-sm max-w-none text-gray-700 break-words">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {s.kind === 'computed' ? computedToMarkdown(s) : (s.body_md ?? '')}
-            </ReactMarkdown>
-          </article>
-        </div>
-      ))}
+      {toRenderSections(digest).map((s) => {
+        const body = s.kind === 'computed' ? computedToMarkdown(s) : (s.body_md ?? '')
+        if (!body.trim()) return null
+        return (
+          <div key={s.key} className="bg-white rounded-xl shadow-sm p-5">
+            {s.title && <h2 className="font-semibold text-gray-800 mb-3">{s.title}</h2>}
+            <article className="prose prose-sm max-w-none text-gray-700 break-words">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+            </article>
+          </div>
+        )
+      })}
 
       {digest.top_tags && digest.top_tags.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-5">
