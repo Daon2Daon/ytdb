@@ -45,34 +45,6 @@ from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
-# 사용 가능한 placeholder: {category} {period_label} {video_count}
-#                          {sentiment_summary} {top_tags} {top_channels}
-#                          {top_viewed} {previous_digest} {videos_block}
-DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
-
-## 집계 정보
-- 감성 분포: {sentiment_summary}
-- 주요 태그: {top_tags}
-
-## 영상별 자료 (헤드라인 · 한줄요약 · 핵심 주장 · 인사이트 · 등장 종목/지표)
-{videos_block}
-
-## 작성 지침
-위 영상들을 가로질러 이번 기간의 핵심을 한국어로 '브리핑' 형태로 종합하라. 개별 영상 나열이 아니라, 여러 영상에 걸쳐 반복되는 주장·관점·흐름을 묶어 서술할 것.
-- 행위 서술('~을 다뤘다', '~을 분석했다') 금지. 무엇을 주장·전망·결론 내렸는지를 직접 서술.
-- 같은 방향의 견해가 여럿이면 '합의된 관점', 견해가 갈리면 '엇갈리는 관점'으로 구분해 대비할 것.
-- 인사이트는 시청자가 실제 판단에 쓸 수 있도록 구체적 근거·수치와 함께 정리.
-- '~함', '~임' 형태의 개조식. 정치·민감 주제는 사실 위주 중립 표현.
-
-## 출력 형식
-반드시 아래 JSON 형식으로만 출력:
-{{
-  "headline": "이모지 1~2개 포함, 이번 기간 핵심을 한 줄로 (40자 이내)",
-  "summary_md": "마크다운 본문. 반드시 다음 4개 섹션(## 제목)을 순서대로 포함: '## 주요 내용'(이번 기간 핵심 주제·이슈), '## 관점과 의견'(합의된 관점 / 엇갈리는 관점 구분), '## 핵심 인사이트'(실행 가능한 판단 근거), '## 주목할 종목·이슈'(등장 종목/지표 중심)",
-  "telegram_summary": "텔레그램용 짧은 브리핑 (400자 이내, 마크다운 없이 일반 텍스트). 주요 내용과 핵심 관점 위주."
-}}"""
-
-
 _MAX_VIDEOS_IN_PROMPT = 40
 _MAX_BULLETS_PER_VIDEO = 3
 _MAX_INSIGHTS_PER_VIDEO = 3
@@ -395,6 +367,7 @@ async def synthesize_with_llm(
     digest_prompt: str = "",
     period_days: int = 7,
     owner_user_id: Optional[int] = None,
+    sections: Optional[list[dict]] = None,
 ) -> DigestGenerated:
     ai = await resolve_ai_gateway(group_id)
     from app.services.preset_service import resolve_prompts
@@ -426,7 +399,7 @@ async def synthesize_with_llm(
         sections_spec = None
     else:
         profile = await get_settings_manager().get_profile(group_id)
-        sections_spec = resolve_sections([], profile.digest_sections)
+        sections_spec = resolve_sections(sections or [], profile.digest_sections)
         data_block = (
             f"기간: {period_label}\n"
             f"분석 영상 수: {aggregate.video_count}\n"
@@ -472,6 +445,9 @@ async def synthesize_with_llm(
         headline, bodies, telegram_summary = parse_structured_response(
             chat.content, requested_keys=llm_keys
         )
+        if not headline and not bodies and not telegram_summary:
+            # 완전한 파싱 실패(비-JSON 등) — custom 모드와 동일하게 폴백 유도.
+            raise ValueError("structured digest 응답 파싱 실패")
         out_sections = assemble_output_sections(sections_spec, llm_bodies=bodies, agg=aggregate)
         summary_md = sections_to_markdown(out_sections)
         if not headline:
@@ -629,6 +605,7 @@ async def generate_digest_for_group(
                 digest_prompt=digest_cfg.digest_prompt,
                 period_days=days,
                 owner_user_id=group.owner_user_id,
+                sections=digest_cfg.sections,
             )
         except Exception as e:
             generated = _fallback_generated(agg, period_start, period_end, days)

@@ -85,10 +85,11 @@ async def bootstrap_profile(group: Group, *, force: bool = False) -> None:
         description=group.description or "(설명 없음)",
         channels=", ".join(channels) if channels else "(아직 없음)",
     )
-    ai = await resolve_ai_gateway(group.group_id)
-    model = ai.digest_model or ai.primary_model
-    client = LiteLLMClient(ai)
+    client = None
     try:
+        ai = await resolve_ai_gateway(group.group_id)
+        model = ai.digest_model or ai.primary_model
+        client = LiteLLMClient(ai)
         chat = await client.chat(
             model=model,
             messages=[{"role": "user", "content": prompt}],
@@ -114,7 +115,8 @@ async def bootstrap_profile(group: Group, *, force: bool = False) -> None:
         print(f"[bootstrap] {group.slug} 실패: {e}")
         await _save_status(group.group_id, "failed")
     finally:
-        await client.aclose()
+        if client is not None:
+            await client.aclose()
 
 
 async def _save_status(group_id: int, status: str) -> None:
