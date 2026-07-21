@@ -232,5 +232,11 @@ async def run_entity_merge_once() -> None:
                             ))
                     for cluster in hold:
                         await _hold_merge(session, cluster)
+
+                    # 이번 배치에서 검토한 auto 엔티티를 reviewed로 전환한다.
+                    # 다음 틱은 이후 새로 등록된(auto) 엔티티가 있을 때만 LLM을 호출한다.
+                    await session.execute(
+                        update(Entity).where(Entity.status == "auto").values(status="reviewed")
+                    )
         except Exception as e:  # noqa: BLE001 — 그룹 단위 격리
             print(f"[entity-merge] {getattr(group, 'slug', '?')} 실패: {e}")

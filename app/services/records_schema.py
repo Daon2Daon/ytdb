@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 _DATATYPES = ("entity", "text", "number", "date")
@@ -140,17 +139,11 @@ def promote_fields(type_def: dict, values: dict) -> dict | None:
         if raw_str:
             attrs[key] = raw_str
 
+    promoted_keys = {k for k in picked.values() if k}
+    represented = promoted_keys | set(attrs.keys())
     for f in fields:
-        if f.get("required"):
-            has = (
-                (f["datatype"] == "entity" and row["entity_name"])
-                or (f["datatype"] == "text" and row["value_text"])
-                or (f["datatype"] == "number" and row["value_num"] is not None)
-                or (f["datatype"] == "date" and row["event_date"] is not None)
-                or (f["key"] in attrs)
-            )
-            if not has:
-                return None
+        if f.get("required") and f["key"] not in represented:
+            return None
 
     row["attrs"] = attrs
     return row

@@ -117,3 +117,15 @@ def test_map_vocab_unmapped_is_pending():
 def test_map_vocab_empty():
     assert map_vocab_value("", _SENT) == ("", False)
     assert map_vocab_value(None, _SENT) == (None, False)
+
+
+def test_promote_fields_required_second_same_datatype_field():
+    type_def = {"type_key": "t", "fields": [
+        {"key": "a", "datatype": "text"},
+        {"key": "b", "datatype": "text", "required": True},
+    ]}
+    assert promote_fields(type_def, {"a": "only a"}) is None
+    row = promote_fields(type_def, {"a": "aa", "b": "bb"})
+    assert row is not None
+    assert row["value_text"] == "aa"
+    assert row["attrs"]["b"] == "bb"
