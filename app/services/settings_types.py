@@ -145,6 +145,7 @@ class DigestScheduleConfig:
     category: str = ""
     digest_prompt: str = ""
     telegram_enabled: bool = False
+    sections: list[dict] = field(default_factory=list)  # 비면 프로필→중립 기본값 폴백(런타임)
 
 
 @dataclass

@@ -54,7 +54,20 @@ DEFAULT_GROUP_SETTINGS: dict[str, list[dict[str, Any]]] = {
         {"key": "dispatch_scope", "value": "after_activation", "value_type": "string"},
     ],
     "digest": [
-        {"key": "configs", "value": "[]", "value_type": "json"},
+        {"key": "configs", "value": json.dumps([{
+            "id": "default-weekly",
+            "name": "주간 리뷰",
+            "enabled": False,
+            "period_days": 7,
+            "schedule_time": "20:00",
+            "schedule_day": "sun",
+            "schedule_dom": 1,
+            "timezone": "Asia/Seoul",
+            "category": "",
+            "digest_prompt": "",
+            "telegram_enabled": False,
+            "sections": [],
+        }], ensure_ascii=False), "value_type": "json"},
         {"key": "share_link_enabled", "value": "true", "value_type": "bool"},
     ],
     "prompts": [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets as _secrets
 
@@ -15,6 +16,7 @@ from app.models.control.group import Group
 from app.routers.auth import CurrentUser, require_user
 from app.routers.deps import get_group_or_404
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
+from app.services.bootstrap_service import bootstrap_profile
 from app.services.channel_registry_service import remove_group_subscriptions, resync_group
 from app.services.db_engine import data_plane_engine_manager
 from app.services.default_settings import seed_default_settings
@@ -89,6 +91,9 @@ async def create_group(
     await session.refresh(group)
     # 사용자 편의: 추천 기본 설정값을 미리 채워 둔다(시크릿/접속정보 제외).
     await seed_default_settings(group.group_id)
+    # 프로필 부트스트랩은 백그라운드로 — 생성 응답을 지연시키지 않는다.
+    # 실패해도 시드된 중립 기본값으로 digest가 동작한다.
+    asyncio.create_task(bootstrap_profile(group))
     return group
 
 

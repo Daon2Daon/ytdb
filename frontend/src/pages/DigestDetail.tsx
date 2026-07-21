@@ -5,9 +5,36 @@ import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
 import { useGroup } from '../group/useGroup'
 import { digestApi } from '../api/digests'
-import type { Digest } from '../api/types'
+import type { Digest, DigestSection } from '../api/types'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
+
+export function toRenderSections(digest: Digest): DigestSection[] {
+  const secs = digest.digest_sections
+  if (Array.isArray(secs) && secs.length) return secs
+  if (digest.summary_md && digest.summary_md.trim()) {
+    return [{ key: '_legacy', kind: 'llm', title: '요약', body_md: digest.summary_md }]
+  }
+  return []
+}
+
+function computedToMarkdown(s: DigestSection): string {
+  const items = (s.data?.items as { name?: string; count?: number; channel?: string; head?: string; views?: number }[]) ?? []
+  if (s.key === 'top_tags' || s.key === 'top_channels') {
+    return items.map((it) => `- ${it.name} (${it.count})`).join('\n')
+  }
+  if (s.key === 'top_viewed') {
+    return items.map((it) => `- [${it.channel}] ${it.head}`).join('\n')
+  }
+  const breakdown = (s.data?.breakdown as Record<string, number>) ?? {}
+  if (s.key === 'sentiment_breakdown') {
+    return Object.entries(breakdown).map(([k, v]) => `- ${k}: ${v}`).join('\n')
+  }
+  if (s.key === 'stats_overview') {
+    return `- 분석 영상 ${(s.data?.video_count as number) ?? 0}건`
+  }
+  return ''
+}
 
 export default function DigestDetail() {
   const { activeSlug } = useGroup()
@@ -52,14 +79,18 @@ export default function DigestDetail() {
         {digest.error && <p className="text-sm text-red-600">{digest.error}</p>}
       </div>
 
-      {digest.summary_md && (
-        <div className="bg-white rounded-xl shadow-sm p-5">
-          <h2 className="font-semibold text-gray-800 mb-3">요약</h2>
-          <article className="prose prose-sm max-w-none text-gray-700 break-words">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{digest.summary_md}</ReactMarkdown>
-          </article>
-        </div>
-      )}
+      {toRenderSections(digest).map((s) => {
+        const body = s.kind === 'computed' ? computedToMarkdown(s) : (s.body_md ?? '')
+        if (!body.trim()) return null
+        return (
+          <div key={s.key} className="bg-white rounded-xl shadow-sm p-5">
+            {s.title && <h2 className="font-semibold text-gray-800 mb-3">{s.title}</h2>}
+            <article className="prose prose-sm max-w-none text-gray-700 break-words">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+            </article>
+          </div>
+        )
+      })}
 
       {digest.top_tags && digest.top_tags.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-5">

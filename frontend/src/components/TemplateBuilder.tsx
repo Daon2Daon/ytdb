@@ -1,3 +1,4 @@
+import { moveItem } from './OrderedItemsBuilder'
 
 export interface MessageTemplate {
   fields: string[]
@@ -44,11 +45,7 @@ export default function TemplateBuilder({ value, onChange }: Props) {
   const available = ALL_FIELDS.filter((f) => !included.includes(f.key))
 
   const move = (idx: number, dir: -1 | 1) => {
-    const next = [...included]
-    const target = idx + dir
-    if (target < 0 || target >= next.length) return
-    ;[next[idx], next[target]] = [next[target], next[idx]]
-    onChange({ fields: next })
+    onChange({ fields: moveItem(included, idx, dir) })
   }
 
   const remove = (key: string) => onChange({ fields: included.filter((k) => k !== key) })

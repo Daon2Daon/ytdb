@@ -20,6 +20,14 @@ from app.models.pg.video import Video
 from app.models.pg.video_analysis import VideoAnalysis
 from app.services.ai_usage_service import BudgetExceeded, budget_ok_for_group, record_usage
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.digest_sections import (
+    assemble_output_sections,
+    build_structured_prompt,
+    parse_structured_response,
+    resolve_sections,
+    sections_to_markdown,
+    SECTION_KIND_LLM,
+)
 from app.services.global_settings import resolve_ai_gateway
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
@@ -36,34 +44,6 @@ from app.services.settings_types import DigestScheduleConfig, period_label_from_
 from app.services.share_token import generate_share_token, DEFAULT_VISIBILITY
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-
-# 사용 가능한 placeholder: {category} {period_label} {video_count}
-#                          {sentiment_summary} {top_tags} {top_channels}
-#                          {top_viewed} {previous_digest} {videos_block}
-DEFAULT_DIGEST_PROMPT = """너는 경제·투자 콘텐츠를 종합하는 애널리스트다. 아래는 '{category}' 카테고리에서 {period_label} 동안 분석 완료된 유튜브 영상 {video_count}건의 요약·인사이트 모음이다.
-
-## 집계 정보
-- 감성 분포: {sentiment_summary}
-- 주요 태그: {top_tags}
-
-## 영상별 자료 (헤드라인 · 한줄요약 · 핵심 주장 · 인사이트 · 등장 종목/지표)
-{videos_block}
-
-## 작성 지침
-위 영상들을 가로질러 이번 기간의 핵심을 한국어로 '브리핑' 형태로 종합하라. 개별 영상 나열이 아니라, 여러 영상에 걸쳐 반복되는 주장·관점·흐름을 묶어 서술할 것.
-- 행위 서술('~을 다뤘다', '~을 분석했다') 금지. 무엇을 주장·전망·결론 내렸는지를 직접 서술.
-- 같은 방향의 견해가 여럿이면 '합의된 관점', 견해가 갈리면 '엇갈리는 관점'으로 구분해 대비할 것.
-- 인사이트는 시청자가 실제 판단에 쓸 수 있도록 구체적 근거·수치와 함께 정리.
-- '~함', '~임' 형태의 개조식. 정치·민감 주제는 사실 위주 중립 표현.
-
-## 출력 형식
-반드시 아래 JSON 형식으로만 출력:
-{{
-  "headline": "이모지 1~2개 포함, 이번 기간 핵심을 한 줄로 (40자 이내)",
-  "summary_md": "마크다운 본문. 반드시 다음 4개 섹션(## 제목)을 순서대로 포함: '## 주요 내용'(이번 기간 핵심 주제·이슈), '## 관점과 의견'(합의된 관점 / 엇갈리는 관점 구분), '## 핵심 인사이트'(실행 가능한 판단 근거), '## 주목할 종목·이슈'(등장 종목/지표 중심)",
-  "telegram_summary": "텔레그램용 짧은 브리핑 (400자 이내, 마크다운 없이 일반 텍스트). 주요 내용과 핵심 관점 위주."
-}}"""
-
 
 _MAX_VIDEOS_IN_PROMPT = 40
 _MAX_BULLETS_PER_VIDEO = 3
@@ -207,6 +187,7 @@ class DigestGenerated:
     summary_md: str
     telegram_summary: str
     model_name: str
+    sections: list[dict] = field(default_factory=list)
 
 
 def _period(as_of: datetime, period_days: int) -> tuple[datetime, datetime]:
@@ -386,31 +367,52 @@ async def synthesize_with_llm(
     digest_prompt: str = "",
     period_days: int = 7,
     owner_user_id: Optional[int] = None,
+    sections: Optional[list[dict]] = None,
 ) -> DigestGenerated:
     ai = await resolve_ai_gateway(group_id)
     from app.services.preset_service import resolve_prompts
 
     prompts = await resolve_prompts(group_id)
     model = ai.digest_model or ai.primary_model
-    prompt = (digest_prompt or prompts.digest_prompt or DEFAULT_DIGEST_PROMPT).strip()
     period_label = _period_label(period_start, period_end)
-    try:
-        user_msg = prompt.format(
-            category=category or "전체",
-            period_label=period_label,
-            video_count=aggregate.video_count,
-            sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
-            top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
-            top_channels=", ".join(f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
-            top_viewed=_build_top_viewed_block(aggregate.videos),
-            previous_digest=previous_digest,
-            videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
+
+    custom_prompt = (digest_prompt or prompts.digest_prompt or "").strip()
+    if custom_prompt:
+        prompt = custom_prompt
+        try:
+            user_msg = prompt.format(
+                category=category or "전체",
+                period_label=period_label,
+                video_count=aggregate.video_count,
+                sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
+                top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
+                top_channels=", ".join(f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
+                top_viewed=_build_top_viewed_block(aggregate.videos),
+                previous_digest=previous_digest,
+                videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
+            )
+        except (KeyError, IndexError, ValueError):
+            # 프롬프트에 알 수 없는 placeholder가 있으면 안전 폴백(발송 자체는 막지 않음).
+            context_json = _render_payload(aggregate, period_start, period_end, category)
+            videos_block = _build_videos_block(aggregate.videos, aggregate.video_count)
+            user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}\n\n영상별 자료:\n{videos_block}"
+        sections_spec = None
+    else:
+        profile = await get_settings_manager().get_profile(group_id)
+        sections_spec = resolve_sections(sections or [], profile.digest_sections)
+        data_block = (
+            f"기간: {period_label}\n"
+            f"분석 영상 수: {aggregate.video_count}\n"
+            f"감성 분포: {_sentiment_summary_text(aggregate.sentiment_breakdown)}\n"
+            f"주요 태그: {', '.join(t['name'] for t in aggregate.top_tags[:8]) or '없음'}\n"
+            f"직전 리포트: {previous_digest}\n\n"
+            f"영상별 자료:\n{_build_videos_block(aggregate.videos, aggregate.video_count)}"
         )
-    except (KeyError, IndexError, ValueError):
-        # 프롬프트에 알 수 없는 placeholder가 있으면 안전 폴백(발송 자체는 막지 않음).
-        context_json = _render_payload(aggregate, period_start, period_end, category)
-        videos_block = _build_videos_block(aggregate.videos, aggregate.video_count)
-        user_msg = f"{prompt}\n\n집계 데이터:\n{context_json}\n\n영상별 자료:\n{videos_block}"
+        user_msg = build_structured_prompt(
+            persona=getattr(profile, "persona", ""),
+            data_block=data_block, sections=sections_spec,
+        )
+
     client = LiteLLMClient(ai)
     try:
         chat = await client.chat(
@@ -429,21 +431,35 @@ async def synthesize_with_llm(
             input_tokens=chat.input_tokens,
             output_tokens=chat.output_tokens,
         )
-        data = json.loads(chat.content)
-        headline = str(data.get("headline") or "").strip()
-        summary_md = str(data.get("summary_md") or "").strip()
-        telegram_summary = str(data.get("telegram_summary") or "").strip()
+        if sections_spec is None:
+            data = json.loads(chat.content)
+            headline = str(data.get("headline") or "").strip() or _fallback_headline(period_days)
+            summary_md = str(data.get("summary_md") or "").strip() or \
+                f"- 분석 영상 수: {aggregate.video_count}\n- 감성 분포: {aggregate.sentiment_breakdown}"
+            telegram_summary = str(data.get("telegram_summary") or "").strip() or summary_md[:900]
+            return DigestGenerated(
+                headline=headline, summary_md=summary_md,
+                telegram_summary=telegram_summary[:900], model_name=model,
+            )
+        llm_keys = [s["key"] for s in sections_spec if s["kind"] == SECTION_KIND_LLM]
+        headline, bodies, telegram_summary = parse_structured_response(
+            chat.content, requested_keys=llm_keys
+        )
+        if not headline and not bodies and not telegram_summary:
+            # 완전한 파싱 실패(비-JSON 등) — custom 모드와 동일하게 폴백 유도.
+            raise ValueError("structured digest 응답 파싱 실패")
+        out_sections = assemble_output_sections(sections_spec, llm_bodies=bodies, agg=aggregate)
+        summary_md = sections_to_markdown(out_sections)
         if not headline:
             headline = _fallback_headline(period_days)
         if not summary_md:
-            summary_md = f"- 분석 영상 수: {aggregate.video_count}\n- 감성 분포: {aggregate.sentiment_breakdown}"
+            summary_md = f"- 분석 영상 수: {aggregate.video_count}"
         if not telegram_summary:
             telegram_summary = summary_md[:900]
         return DigestGenerated(
-            headline=headline,
-            summary_md=summary_md,
-            telegram_summary=telegram_summary[:900],
-            model_name=model,
+            headline=headline, summary_md=summary_md,
+            telegram_summary=telegram_summary[:900], model_name=model,
+            sections=out_sections,
         )
     finally:
         await client.aclose()
@@ -589,6 +605,7 @@ async def generate_digest_for_group(
                 digest_prompt=digest_cfg.digest_prompt,
                 period_days=days,
                 owner_user_id=group.owner_user_id,
+                sections=digest_cfg.sections,
             )
         except Exception as e:
             generated = _fallback_generated(agg, period_start, period_end, days)
@@ -611,6 +628,7 @@ async def generate_digest_for_group(
             sentiment_breakdown=agg.sentiment_breakdown,
             top_tags=agg.top_tags,
             top_channels=agg.top_channels,
+            digest_sections=generated.sections or None,
             model_name=generated.model_name,
             share_token=generate_share_token(),
             share_visibility=DEFAULT_VISIBILITY,

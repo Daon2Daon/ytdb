@@ -6,6 +6,7 @@ import re
 import uuid
 from typing import Any
 
+from app.services.digest_sections import normalize_sections
 from app.services.settings_types import (
     DigestScheduleConfig,
     MAX_DIGEST_CONFIGS,
@@ -38,6 +39,7 @@ def normalize_schedule_config(raw: dict[str, Any], *, index: int) -> DigestSched
     schedule_dom = int(raw.get("schedule_dom") or 1)
     schedule_dom = max(1, min(28, schedule_dom))
     timezone = str(raw.get("timezone") or "Asia/Seoul").strip() or "Asia/Seoul"
+    sections = normalize_sections(raw.get("sections"))
     return DigestScheduleConfig(
         id=cfg_id,
         name=name,
@@ -50,6 +52,7 @@ def normalize_schedule_config(raw: dict[str, Any], *, index: int) -> DigestSched
         category=str(raw.get("category") or "").strip(),
         digest_prompt=str(raw.get("digest_prompt") or ""),
         telegram_enabled=bool(raw.get("telegram_enabled", False)),
+        sections=sections,
     )
 
 
@@ -77,6 +80,7 @@ def configs_to_json(configs: list[DigestScheduleConfig]) -> list[dict[str, Any]]
             "category": c.category,
             "digest_prompt": c.digest_prompt,
             "telegram_enabled": c.telegram_enabled,
+            "sections": c.sections,
         }
         for c in configs[:MAX_DIGEST_CONFIGS]
     ]

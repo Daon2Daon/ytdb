@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { SettingItem } from '../api/settings'
-import type { DigestScheduleConfig } from '../api/types'
+import type { DigestScheduleConfig, DigestSection } from '../api/types'
+import DigestSectionBuilder from './DigestSectionBuilder'
 
 const MAX_CONFIGS = 10
 const PERIOD_OPTIONS = [
@@ -23,6 +24,7 @@ function newConfig(index: number): DigestScheduleConfig {
     category: '',
     digest_prompt: '',
     telegram_enabled: false,
+    sections: [],
   }
 }
 
@@ -67,6 +69,7 @@ function parseConfigs(raw: string | null | undefined, items: SettingItem[]): Dig
           category: String(item.category || ''),
           digest_prompt: String(item.digest_prompt || ''),
           telegram_enabled: Boolean(item.telegram_enabled),
+          sections: Array.isArray(item.sections) ? (item.sections as DigestSection[]) : [],
         }))
       }
     } catch {
@@ -232,13 +235,32 @@ export default function DigestConfigsEditor({ items, saving, onSave }: Props) {
               />
             </Field>
 
-            <Field label="Digest 프롬프트 (비우면 그룹 기본값)">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">리포트 섹션</p>
+              {cfg.digest_prompt.trim() ? (
+                <p className="text-xs text-amber-600 mb-2">
+                  이 설정은 커스텀 프롬프트 모드로 동작합니다. 아래 고급 설정의 프롬프트를 비우면 섹션 편집이 적용됩니다.
+                </p>
+              ) : (
+                <DigestSectionBuilder
+                  sections={cfg.sections ?? []}
+                  onChange={(s) => update(index, { sections: s })}
+                />
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                비워 두면 그룹 프로필의 추천 구성이 자동 적용됩니다.
+              </p>
+            </div>
+
+            <details className="text-sm">
+              <summary className="cursor-pointer text-gray-500">고급: 전체 프롬프트 직접 작성</summary>
               <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[120px]"
+                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[120px]"
                 value={cfg.digest_prompt}
                 onChange={(e) => update(index, { digest_prompt: e.target.value })}
+                placeholder="여기에 프롬프트를 쓰면 섹션 편집 대신 이 프롬프트로 동작합니다."
               />
-            </Field>
+            </details>
 
             <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
               <input

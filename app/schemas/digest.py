@@ -27,6 +27,7 @@ class DigestOut(BaseModel):
     sentiment_breakdown: Optional[Any]
     top_tags: Optional[Any]
     top_channels: Optional[Any]
+    digest_sections: Optional[Any] = None
     model_name: Optional[str]
     token_input: Optional[int]
     token_output: Optional[int]

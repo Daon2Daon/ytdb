@@ -189,6 +189,7 @@ class DataPlaneEngineManager:
                     ("digests", "period_days", "integer"),
                     ("digests", "digest_config_id", "text"),
                     ("digests", "config_name", "text"),
+                    ("digests", "digest_sections", "jsonb"),
                 ]
                 for tbl, col, coltype in additive_columns:
                     await conn.execute(
