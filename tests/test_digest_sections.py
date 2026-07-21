@@ -94,3 +94,58 @@ def test_sections_to_markdown_renders_llm_and_computed():
     assert "흐름 A" in md
     assert "## 주요 태그" in md
     assert "AI" in md
+
+
+from app.services.digest_sections import (
+    assemble_output_sections,
+    build_structured_prompt,
+    parse_structured_response,
+)
+
+
+def test_build_structured_prompt_includes_persona_and_llm_keys():
+    sections = [
+        {"key": "overview", "kind": "llm", "title": "핵심 요약", "guide": "핵심 흐름"},
+        {"key": "top_tags", "kind": "computed", "title": "주요 태그"},
+    ]
+    prompt = build_structured_prompt(
+        persona="지식 큐레이터다.", data_block="영상: 3건", sections=sections
+    )
+    assert "지식 큐레이터다." in prompt
+    assert "영상: 3건" in prompt
+    assert "overview" in prompt
+    assert "핵심 흐름" in prompt
+    assert "top_tags" not in prompt.split("출력")[-1]
+
+
+def test_parse_structured_response_maps_requested_keys():
+    raw = '{"headline":"H","sections":[{"key":"overview","body_md":"본문"},' \
+          '{"key":"unknown","body_md":"무시"}],"telegram_summary":"T"}'
+    headline, bodies, tg = parse_structured_response(raw, requested_keys=["overview"])
+    assert headline == "H"
+    assert bodies == {"overview": "본문"}
+    assert tg == "T"
+
+
+def test_parse_structured_response_bad_json():
+    headline, bodies, tg = parse_structured_response("not json", requested_keys=["overview"])
+    assert headline == "" and bodies == {} and tg == ""
+
+
+def test_assemble_output_sections_merges_bodies_and_data():
+    sections = [
+        {"key": "overview", "kind": "llm", "title": "핵심 요약", "guide": "x"},
+        {"key": "top_tags", "kind": "computed", "title": "주요 태그"},
+    ]
+    out = assemble_output_sections(
+        sections, llm_bodies={"overview": "본문"}, agg=_FakeAgg()
+    )
+    assert out[0] == {"key": "overview", "kind": "llm", "title": "핵심 요약", "body_md": "본문"}
+    assert out[1]["kind"] == "computed"
+    assert out[1]["data"]["items"][0]["name"] == "AI"
+
+
+def test_assemble_skips_llm_section_with_no_body():
+    sections = [{"key": "overview", "kind": "llm", "title": "요약", "guide": "x"}]
+    out = assemble_output_sections(sections, llm_bodies={}, agg=_FakeAgg())
+    assert out == []

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 SECTION_KIND_LLM = "llm"
@@ -153,3 +154,72 @@ def sections_to_markdown(sections: list[dict[str, Any]]) -> str:
             continue
         blocks.append(f"{header}\n{body}".strip())
     return "\n\n".join(blocks)
+
+
+def build_structured_prompt(
+    *, persona: str, data_block: str, sections: list[dict[str, Any]]
+) -> str:
+    """페르소나(1층) + 데이터 블록 + llm 섹션 출력 스키마(2층)로 프롬프트 조립."""
+    persona = persona.strip() or "너는 유튜브 콘텐츠를 종합하는 애널리스트다."
+    llm_sections = [s for s in sections if s.get("kind") == SECTION_KIND_LLM]
+    schema_lines = []
+    for s in llm_sections:
+        guide = _clean(s.get("guide")) or s.get("title") or s.get("key")
+        schema_lines.append(f'    {{"key": "{s["key"]}", "body_md": "<{guide}>"}}')
+    sections_schema = ",\n".join(schema_lines)
+    return f"""{persona}
+
+아래 자료를 바탕으로 이번 기간을 한국어 개조식('~함','~임')으로 종합하라.
+개별 영상 나열이 아니라 여러 영상에 걸친 흐름을 묶어 서술할 것.
+
+## 자료
+{data_block}
+
+## 출력 형식
+반드시 아래 JSON으로만 출력. sections 배열은 지정된 key를 순서대로 포함:
+{{
+  "headline": "<이모지 1~2개 포함, 이번 기간 핵심 한 줄(40자 이내)>",
+  "sections": [
+{sections_schema}
+  ],
+  "telegram_summary": "<텔레그램용 400자 이내 일반 텍스트 브리핑>"
+}}"""
+
+
+def parse_structured_response(
+    raw: str, *, requested_keys: list[str]
+) -> tuple[str, dict[str, str], str]:
+    """LLM JSON 응답 → (headline, {key: body_md}, telegram_summary). 실패 시 빈 값."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return "", {}, ""
+    if not isinstance(data, dict):
+        return "", {}, ""
+    wanted = set(requested_keys)
+    bodies: dict[str, str] = {}
+    for item in data.get("sections") or []:
+        if not isinstance(item, dict):
+            continue
+        key = _clean(item.get("key"))
+        body = _clean(item.get("body_md"))
+        if key in wanted and body:
+            bodies[key] = body
+    return _clean(data.get("headline")), bodies, _clean(data.get("telegram_summary"))
+
+
+def assemble_output_sections(
+    sections: list[dict[str, Any]], *, llm_bodies: dict[str, str], agg: Any
+) -> list[dict[str, Any]]:
+    """설정 섹션 순서대로 산출 섹션 배열 생성. llm은 body_md, computed는 data."""
+    out: list[dict[str, Any]] = []
+    for s in sections:
+        base = {"key": s["key"], "kind": s["kind"], "title": s.get("title", "")}
+        if s["kind"] == SECTION_KIND_LLM:
+            body = llm_bodies.get(s["key"], "")
+            if not body:
+                continue
+            out.append({**base, "body_md": body})
+        else:
+            out.append({**base, "data": build_computed_data(s["key"], agg)})
+    return out
