@@ -27,3 +27,22 @@ def test_parse_profile_reads_fields():
 def test_parse_profile_drops_invalid_sections():
     p = parse_profile({"digest_sections": [{"key": "x", "kind": "bad"}]})
     assert p.digest_sections == []
+
+
+def test_parse_profile_record_schema_and_vocab():
+    from app.services.group_profile import parse_profile
+    p = parse_profile({
+        "persona": "x",
+        "record_schema": {"types": [{"type_key": "c", "fields": [
+            {"key": "e", "datatype": "entity"}]}]},
+        "vocab": {"sentiment": {"values": ["긍정"], "synonyms": {"positive": "긍정"}}},
+    })
+    assert p.record_schema["types"][0]["type_key"] == "c"
+    assert p.vocab["sentiment"]["synonyms"]["positive"] == "긍정"
+
+
+def test_parse_profile_defaults_record_schema_empty():
+    from app.services.group_profile import parse_profile
+    p = parse_profile({"persona": "x"})
+    assert p.record_schema == {"version": 1, "types": []}
+    assert p.vocab == {}

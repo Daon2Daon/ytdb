@@ -36,6 +36,7 @@ from app.services.analysis_cache_service import (
 from app.services.ai_usage_service import budget_ok_for_group, record_usage
 from app.services.analyzer import build_analysis_pipeline, result_from_cache, save_analysis_to_group
 from app.services.db_engine import DBNotConfiguredError, data_plane_engine_manager as dpm
+from app.services.records_extractor import run_records_extraction
 from app.services.global_settings import resolve_ai_gateway, resolve_youtube_key
 from app.services.job_logger import (
     JOB_TYPE_CHANNEL_POLL,
@@ -563,6 +564,37 @@ async def _notify_after_analysis(
         )
 
 
+async def _load_analysis_for_records(session, video_pk: int) -> dict | None:
+    """저장된 분석을 records 추출 입력용 dict로 로드."""
+    from sqlalchemy import select
+    from app.models.pg.video_analysis import VideoAnalysis
+    row = (await session.execute(
+        select(
+            VideoAnalysis.one_line, VideoAnalysis.analysis_sections,
+            VideoAnalysis.insights, VideoAnalysis.key_points,
+            VideoAnalysis.entities, VideoAnalysis.sentiment,
+        ).where(VideoAnalysis.video_pk == video_pk)
+    )).first()
+    if row is None:
+        return None
+    return {
+        "one_line": row[0], "analysis_sections": row[1], "insights": row[2],
+        "key_points": row[3], "entities": row[4], "sentiment": row[5],
+    }
+
+
+async def _records_post_pass(*, group, make_session, video_pk: int) -> None:
+    """분석 저장 후 records 추출을 best-effort 실행. 예외 삼킴."""
+    try:
+        async with make_session() as sess:
+            analysis = await _load_analysis_for_records(sess, video_pk)
+        if analysis is None:
+            return
+        await run_records_extraction(group=group, video_pk=video_pk, analysis=analysis)
+    except Exception as e:  # noqa: BLE001
+        print(f"[records] post-pass 실패 (video_pk={video_pk}): {e}")
+
+
 def _should_use_cache(preset_id: Optional[int], custom_prompt: Optional[str]) -> bool:
     """프리셋 그룹만 공유 캐시에 참여. 직접 프롬프트/커스텀 오버라이드는 기존 경로."""
     return preset_id is not None and not custom_prompt
@@ -693,6 +725,7 @@ async def _run_analysis(
             video_pk=video_pk,
         )
         await _notify_after_analysis(group, make_session, video_pk, channel_pk)
+        await _records_post_pass(group=group, make_session=make_session, video_pk=video_pk)
     except Exception as e:
         print(f"[{group.slug}] {label} 실패 (video_pk={video_pk}): {e}")
         await _mark_video_failed(group, make_session, video_pk, e, label)
@@ -786,6 +819,7 @@ async def _run_analysis_cached(
                 video_pk=video_pk,
             )
             await _notify_after_analysis(group, make_session, video_pk, channel_pk)
+            await _records_post_pass(group=group, make_session=make_session, video_pk=video_pk)
         except Exception as e:
             print(f"[{group.slug}] 캐시 복사 실패 (video_pk={video_pk}): {e}")
             await _mark_video_failed(group, make_session, video_pk, e, label)
@@ -839,6 +873,7 @@ async def _run_analysis_cached(
             video_pk=video_pk,
         )
         await _notify_after_analysis(group, make_session, video_pk, channel_pk)
+        await _records_post_pass(group=group, make_session=make_session, video_pk=video_pk)
     except Exception as e:
         print(f"[{group.slug}] {label} 실패 (video_pk={video_pk}): {e}")
         try:

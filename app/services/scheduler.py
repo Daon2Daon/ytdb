@@ -15,6 +15,7 @@ from app.control_db import get_sessionmaker
 from app.models.control.group import Group
 from app.services.central_poller import run_central_poll_once
 from app.services.digest_service import run_digest_tick_once
+from app.services.entity_service import run_entity_merge_once
 from app.services.monitor_service import (
     run_pending_analysis_once,
     run_stats_refresh_once,
@@ -141,6 +142,15 @@ def setup_jobs() -> AsyncIOScheduler:
         trigger="interval",
         minutes=30,
         id=JOB_PLAN_EXPIRY,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_entity_merge_once,        # Phase 2: 엔티티 별칭 병합 배치
+        trigger="interval",
+        minutes=1440,
+        id="entity_merge",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
