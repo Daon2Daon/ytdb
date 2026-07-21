@@ -128,12 +128,13 @@ async def run_records_extraction(*, group: Group, video_pk: int, analysis: dict)
         if not record_schema.get("types"):
             return  # 무비용 skip
 
-        ok, _ = await budget_ok_for_group(group)
-        if not ok:
-            return
-
+        # 추출 입력이 비면 budget DB 조회 전에 먼저 빠져나간다(무비용).
         text_in = analysis_text_for_extraction(analysis)
         if not text_in.strip():
+            return
+
+        ok, _ = await budget_ok_for_group(group)
+        if not ok:
             return
 
         from app.services.db_engine import data_plane_engine_manager as dpm
