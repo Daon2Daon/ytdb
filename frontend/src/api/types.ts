@@ -170,6 +170,16 @@ export interface DigestScheduleConfig {
   category: string
   digest_prompt: string
   telegram_enabled: boolean
+  sections?: DigestSection[]
+}
+
+export interface DigestSection {
+  key: string
+  kind: 'llm' | 'computed'
+  title: string
+  guide?: string
+  body_md?: string
+  data?: Record<string, unknown>
 }
 
 export interface Digest {
@@ -189,6 +199,7 @@ export interface Digest {
   sentiment_breakdown: Record<string, number> | null
   top_tags: TagCount[] | null
   top_channels: TagCount[] | null
+  digest_sections?: DigestSection[] | null
   status: string
   error: string | null
   created_at: string
