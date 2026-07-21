@@ -40,6 +40,7 @@ class Digest(PgBase):
     sentiment_breakdown: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     top_tags: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
     top_channels: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    digest_sections: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
 
     model_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
