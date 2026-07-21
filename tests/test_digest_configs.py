@@ -111,3 +111,27 @@ def test_period_label_from_days():
     assert period_label_from_days(1) == "일간"
     assert period_label_from_days(7) == "주간"
     assert period_label_from_days(30) == "월간"
+
+
+from app.services.digest_config import configs_to_json, normalize_schedule_config
+
+
+def test_schedule_config_roundtrips_sections():
+    raw = {
+        "name": "주간",
+        "period_days": 7,
+        "sections": [
+            {"key": "overview", "kind": "llm", "title": "요약", "guide": "핵심"},
+            {"key": "top_tags", "kind": "computed", "title": "태그"},
+            {"key": "bad", "kind": "weird"},
+        ],
+    }
+    cfg = normalize_schedule_config(raw, index=0)
+    assert [s["key"] for s in cfg.sections] == ["overview", "top_tags"]
+    js = configs_to_json([cfg])
+    assert js[0]["sections"][0]["key"] == "overview"
+
+
+def test_schedule_config_defaults_sections_empty():
+    cfg = normalize_schedule_config({"name": "x"}, index=0)
+    assert cfg.sections == []
