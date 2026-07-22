@@ -25,6 +25,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   { key: 'notification', label: '알림' },
   { key: 'digest', label: '리뷰 알림' },
   { key: 'prompts', label: '프롬프트' },
+  { key: 'data_profile', label: '데이터 프로필' },
 ]
 
 export const SETTING_DEFS: Record<string, FieldDef[]> = {
