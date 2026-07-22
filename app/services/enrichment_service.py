@@ -177,3 +177,146 @@ def apply_proposal_items(profile_typed: dict, proposal: dict) -> list[dict]:
         {"key": "enrich_proposal", "value": "{}", "value_type": "json"},
         {"key": "vocab_pending", "value": "[]", "value_type": "json"},
     ]
+
+
+async def run_profile_enrichment_once() -> None:
+    """전 활성 그룹 순차: 조건 충족 시 보강 제안 생성(자동 적용 없음).
+
+    실패는 그룹 단위 격리. LLM은 조건 충족 그룹에만 1회(purpose='enrich').
+    """
+    from sqlalchemy import func, select
+
+    from app.control_db import get_sessionmaker
+    from app.models.control.group import Group
+    from app.models.pg.entity import Entity
+    from app.models.pg.video_analysis import VideoAnalysis
+    from app.services.ai_usage_service import budget_ok_for_group, record_usage
+    from app.services.db_engine import data_plane_engine_manager as dpm
+    from app.services.global_settings import resolve_ai_gateway
+    from app.services.group_profile import parse_profile
+    from app.services.llm_client import LiteLLMClient
+    from app.services.settings_manager import get_settings_manager
+
+    mgr = get_settings_manager()
+    async with get_sessionmaker()() as csess:
+        groups = (await csess.execute(
+            select(Group).where(Group.is_active.is_(True))
+        )).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    for group in groups:
+        try:
+            d = await mgr.get_typed(group.group_id, "profile")
+            async with dpm.group_session(group) as session:
+                count = (await session.execute(
+                    select(func.count()).select_from(VideoAnalysis)
+                )).scalar_one()
+                if not should_enrich(
+                    analysis_count=int(count),
+                    last_at=str(d.get("enrich_last_at") or ""),
+                    has_proposal=not proposal_is_empty(d.get("enrich_proposal")),
+                    now=now,
+                ):
+                    continue
+                samples = [r[0] for r in (await session.execute(
+                    select(VideoAnalysis.one_line)
+                    .order_by(VideoAnalysis.analyzed_at.desc()).limit(20)
+                )).all() if r[0]]
+                holds: list[str] = []
+                for e in (await session.execute(select(Entity))).scalars().all():
+                    cands = (e.attrs or {}).get("merge_candidates") or []
+                    if cands:
+                        holds.append(f"{e.canonical_name} ← {', '.join(cands)}")
+
+            ok, _ = await budget_ok_for_group(group)
+            if not ok:
+                continue
+
+            profile = parse_profile(d)
+            pending = d.get("vocab_pending")
+            prompt = build_enrich_prompt(
+                persona=profile.persona, sections=profile.digest_sections,
+                record_schema=profile.record_schema, vocab=profile.vocab,
+                samples=samples,
+                vocab_pending=[str(x) for x in pending] if isinstance(pending, list) else [],
+                merge_holds=holds,
+            )
+            ai = await resolve_ai_gateway(group.group_id)
+            model = ai.digest_model or ai.primary_model
+            client = LiteLLMClient(ai)
+            try:
+                chat = await client.chat(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=min(ai.max_tokens or 2048, 2048),
+                    response_format={"type": "json_object"},
+                )
+            finally:
+                await client.aclose()
+            await record_usage(
+                user_id=group.owner_user_id, group_id=group.group_id,
+                purpose="enrich", model=model,
+                input_tokens=chat.input_tokens, output_tokens=chat.output_tokens,
+            )
+            new_proposal = normalize_enrich_proposal(chat.content)
+            await mgr.set_values(group.group_id, "profile", [
+                {"key": "enrich_proposal",
+                 "value": json.dumps(new_proposal, ensure_ascii=False),
+                 "value_type": "json"},
+                {"key": "enrich_last_at", "value": now.isoformat(),
+                 "value_type": "string"},
+            ])
+        except Exception as e:  # noqa: BLE001 — 그룹 단위 격리
+            print(f"[enrich] {getattr(group, 'slug', '?')} 실패: {e}")
+
+
+async def apply_proposal(group) -> dict | None:
+    """저장된 제안을 프로필에 적용(+엔티티 attrs 반영). 제안 없으면 None."""
+    from app.services.settings_manager import get_settings_manager
+
+    mgr = get_settings_manager()
+    d = await mgr.get_typed(group.group_id, "profile")
+    proposal = d.get("enrich_proposal")
+    if proposal_is_empty(proposal):
+        return None
+    items = apply_proposal_items(d, proposal)
+    await mgr.set_values(group.group_id, "profile", items)
+    attrs_add = proposal.get("entity_attrs_add") or []
+    if attrs_add:
+        await _apply_entity_attrs(group, attrs_add)
+    return {"applied": True, "note": proposal.get("note", "")}
+
+
+async def _apply_entity_attrs(group, items: list[dict]) -> None:
+    from sqlalchemy import func, select, update
+
+    from app.models.pg.entity import Entity
+    from app.services.db_engine import data_plane_engine_manager as dpm
+
+    async with dpm.group_session(group) as session:
+        async with session.begin():
+            for it in items:
+                name = str(it.get("entity") or "").strip().lower()
+                if not name:
+                    continue
+                crow = (await session.execute(
+                    select(Entity).where(func.lower(Entity.canonical_name) == name)
+                )).scalars().first()
+                if crow is None:
+                    continue
+                merged = {**(crow.attrs or {}), **(it.get("attrs") or {})}
+                await session.execute(
+                    update(Entity).where(Entity.entity_pk == crow.entity_pk)
+                    .values(attrs=merged))
+
+
+async def dismiss_proposal(group) -> None:
+    """제안 무시: 비우고 enrich_last_at 갱신(다음 달 재검토)."""
+    from app.services.settings_manager import get_settings_manager
+
+    await get_settings_manager().set_values(group.group_id, "profile", [
+        {"key": "enrich_proposal", "value": "{}", "value_type": "json"},
+        {"key": "enrich_last_at",
+         "value": datetime.now(timezone.utc).isoformat(), "value_type": "string"},
+    ])

@@ -97,3 +97,11 @@ def test_build_enrich_prompt_includes_inputs():
         merge_holds=["A ← B"],
     )
     assert "요약1" in p and "sentiment:애매" in p and "A ← B" in p
+
+
+def test_batch_and_apply_exported():
+    from app.services.enrichment_service import (
+        apply_proposal, dismiss_proposal, run_profile_enrichment_once,
+    )
+    assert callable(run_profile_enrichment_once)
+    assert callable(apply_proposal) and callable(dismiss_proposal)

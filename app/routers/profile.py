@@ -81,3 +81,21 @@ async def put_profile(
     if items:
         await mgr.set_values(group.group_id, "profile", items)
     return await _profile_payload(group.group_id)
+
+
+@router.post("/proposal/apply")
+async def apply_enrich_proposal(group: Group = Depends(get_group_or_404)) -> dict:
+    from fastapi import HTTPException
+
+    from app.services.enrichment_service import apply_proposal
+    result = await apply_proposal(group)
+    if result is None:
+        raise HTTPException(status_code=404, detail="적용할 제안이 없습니다")
+    return await _profile_payload(group.group_id)
+
+
+@router.post("/proposal/dismiss")
+async def dismiss_enrich_proposal(group: Group = Depends(get_group_or_404)) -> dict:
+    from app.services.enrichment_service import dismiss_proposal
+    await dismiss_proposal(group)
+    return await _profile_payload(group.group_id)
