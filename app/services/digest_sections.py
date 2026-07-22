@@ -13,6 +13,14 @@ from typing import Any
 
 SECTION_KIND_LLM = "llm"
 SECTION_KIND_COMPUTED = "computed"
+SECTION_KIND_HYBRID = "hybrid"
+
+# 피벗 섹션 레지스트리(Phase 3): data는 agg.records_data에서 온다(레코드 기반).
+PIVOT_SECTIONS: dict[str, str] = {
+    "entity_pivot": "엔티티 집중 분석",
+    "period_compare": "지난 기간 대비",
+    "top_records": "수치 상위",
+}
 
 MAX_SECTIONS = 12
 _MAX_GUIDE_LEN = 300
@@ -43,6 +51,24 @@ def _clean(v: Any) -> str:
     return str(v).strip() if v is not None else ""
 
 
+def _clean_pivot_params(raw: Any) -> dict:
+    """피벗 params 정규화: record_type/group_by(str), top_k(1~20 int)만 통과."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for k in ("record_type", "group_by"):
+        v = _clean(raw.get(k))
+        if v:
+            out[k] = v
+    try:
+        tk = int(raw.get("top_k"))
+        if 1 <= tk <= 20:
+            out["top_k"] = tk
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
 def normalize_sections(raw: Any) -> list[dict[str, Any]]:
     """외부 입력을 검증된 섹션 배열로. 불량 항목은 drop, 상한 적용."""
     if not isinstance(raw, list):
@@ -53,17 +79,28 @@ def normalize_sections(raw: Any) -> list[dict[str, Any]]:
             continue
         key = _clean(item.get("key"))
         kind = _clean(item.get("kind"))
-        if not key or kind not in (SECTION_KIND_LLM, SECTION_KIND_COMPUTED):
+        if not key or kind not in (SECTION_KIND_LLM, SECTION_KIND_COMPUTED, SECTION_KIND_HYBRID):
             continue
         if kind == SECTION_KIND_COMPUTED and key not in COMPUTED_SECTIONS:
             continue
+        if kind == SECTION_KIND_HYBRID and key not in PIVOT_SECTIONS:
+            continue
         title = _clean(item.get("title"))
         if not title:
-            title = COMPUTED_SECTIONS.get(key, key) if kind == SECTION_KIND_COMPUTED else key
+            if kind == SECTION_KIND_COMPUTED:
+                title = COMPUTED_SECTIONS.get(key, key)
+            elif kind == SECTION_KIND_HYBRID:
+                title = PIVOT_SECTIONS.get(key, key)
+            else:
+                title = key
         section: dict[str, Any] = {"key": key, "kind": kind, "title": title}
         guide = _clean(item.get("guide"))[:_MAX_GUIDE_LEN]
-        if kind == SECTION_KIND_LLM and guide:
+        if kind in (SECTION_KIND_LLM, SECTION_KIND_HYBRID) and guide:
             section["guide"] = guide
+        if kind == SECTION_KIND_HYBRID:
+            params = _clean_pivot_params(item.get("params"))
+            if params:
+                section["params"] = params
         out.append(section)
         if len(out) >= MAX_SECTIONS:
             break
@@ -99,6 +136,8 @@ def _fmt_views(n: Any) -> str:
 
 def build_computed_data(key: str, agg: Any) -> dict[str, Any]:
     """computed 섹션의 표시용 data(dict). 미등록 key는 빈 dict."""
+    if key in PIVOT_SECTIONS:
+        return dict((getattr(agg, "records_data", {}) or {}).get(key) or {})
     if key == "stats_overview":
         return {"video_count": getattr(agg, "video_count", 0)}
     if key == "sentiment_breakdown":
@@ -137,6 +176,26 @@ def _computed_to_markdown(section: dict[str, Any]) -> str:
             views = _fmt_views(it.get("views"))
             suffix = f" · 조회 {views}" if views else ""
             lines.append(f"- [{it.get('channel')}] {it.get('head')}{suffix}")
+    elif key == "entity_pivot":
+        for it in data.get("items") or []:
+            samples = " / ".join(it.get("samples") or [])
+            by = it.get("by") or {}
+            suffix = f" — {samples}" if samples else ""
+            if by:
+                suffix += " (" + ", ".join(f"{k} {v}" for k, v in by.items()) + ")"
+            lines.append(f"- **{it.get('entity')}** {it.get('count')}건{suffix}")
+    elif key == "period_compare":
+        for label, arr_key in (("신규", "new"), ("소멸", "gone")):
+            arr = data.get(arr_key) or []
+            if arr:
+                lines.append(f"- {label}: " + ", ".join(x.get("entity", "") for x in arr))
+        for x in data.get("continuing") or []:
+            lines.append(f"- 지속: {x.get('entity')} ({x.get('prev')}→{x.get('cur')}건)")
+    elif key == "top_records":
+        for it in data.get("items") or []:
+            head = it.get("entity") or it.get("text") or ""
+            date_txt = f" · {it.get('date')}" if it.get("date") else ""
+            lines.append(f"- {head}: {it.get('value')}{date_txt}")
     return "\n".join(lines)
 
 
@@ -148,6 +207,9 @@ def sections_to_markdown(sections: list[dict[str, Any]]) -> str:
         header = f"## {title}" if title else ""
         if s.get("kind") == SECTION_KIND_LLM:
             body = _clean(s.get("body_md"))
+        elif s.get("kind") == SECTION_KIND_HYBRID:
+            parts = [p for p in (_clean(s.get("body_md")), _computed_to_markdown(s)) if p]
+            body = "\n\n".join(parts)
         else:
             body = _computed_to_markdown(s)
         if not body:
@@ -157,23 +219,33 @@ def sections_to_markdown(sections: list[dict[str, Any]]) -> str:
 
 
 def build_structured_prompt(
-    *, persona: str, data_block: str, sections: list[dict[str, Any]]
+    *, persona: str, data_block: str, sections: list[dict[str, Any]],
+    records_data: dict | None = None,
 ) -> str:
-    """페르소나(1층) + 데이터 블록 + llm 섹션 출력 스키마(2층)로 프롬프트 조립."""
+    """페르소나(1층) + 데이터 블록 + llm/hybrid 섹션 출력 스키마(2층)로 프롬프트 조립."""
     persona = persona.strip() or "너는 유튜브 콘텐츠를 종합하는 애널리스트다."
-    llm_sections = [s for s in sections if s.get("kind") == SECTION_KIND_LLM]
+    llm_sections = [
+        s for s in sections
+        if s.get("kind") in (SECTION_KIND_LLM, SECTION_KIND_HYBRID)
+    ]
     schema_lines = []
     for s in llm_sections:
         guide = _clean(s.get("guide")) or s.get("title") or s.get("key")
         schema_lines.append(f'    {{"key": "{s["key"]}", "body_md": "<{guide}>"}}')
     sections_schema = ",\n".join(schema_lines)
+    records_block = ""
+    if records_data:
+        records_block = (
+            "\n\n## 레코드 집계(피벗) — 해당 섹션은 아래 수치를 근거로 서술하라\n"
+            + json.dumps(records_data, ensure_ascii=False)
+        )
     return f"""{persona}
 
 아래 자료를 바탕으로 이번 기간을 한국어 개조식('~함','~임')으로 종합하라.
 개별 영상 나열이 아니라 여러 영상에 걸친 흐름을 묶어 서술할 것.
 
 ## 자료
-{data_block}
+{data_block}{records_block}
 
 ## 출력 형식
 반드시 아래 JSON으로만 출력. sections 배열은 지정된 key를 순서대로 포함:
@@ -220,6 +292,15 @@ def assemble_output_sections(
             if not body:
                 continue
             out.append({**base, "body_md": body})
+        elif s["kind"] == SECTION_KIND_HYBRID:
+            data = build_computed_data(s["key"], agg)
+            body = llm_bodies.get(s["key"], "")
+            if not body and not any(bool(v) for v in data.values()):
+                continue  # 데이터·서술 모두 빈 하이브리드 섹션은 생략
+            sec = {**base, "data": data}
+            if body:
+                sec["body_md"] = body
+            out.append(sec)
         else:
             out.append({**base, "data": build_computed_data(s["key"], agg)})
     return out

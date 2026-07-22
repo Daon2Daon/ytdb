@@ -171,3 +171,13 @@ def map_vocab_value(value: Any, axis_spec: dict) -> tuple[Any, bool]:
         if syn.lower() == key:
             return canon, False
     return raw, True
+
+
+def bump_schema_version_if_changed(old: Any, new: Any) -> dict:
+    """정규화 후 types가 달라졌으면 version=old+1, 같으면 old version 유지."""
+    old_n = normalize_record_schema(old)
+    new_n = normalize_record_schema(new)
+    old_v = old_n.get("version") or 1
+    if old_n.get("types") != new_n.get("types"):
+        return {"version": old_v + 1, "types": new_n["types"]}
+    return {"version": old_v, "types": new_n["types"]}

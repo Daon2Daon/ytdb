@@ -129,3 +129,16 @@ def test_promote_fields_required_second_same_datatype_field():
     assert row is not None
     assert row["value_text"] == "aa"
     assert row["attrs"]["b"] == "bb"
+
+
+def test_bump_schema_version_changed_and_unchanged():
+    from app.services.records_schema import bump_schema_version_if_changed
+    old = {"version": 2, "types": [{"type_key": "a", "fields": [
+        {"key": "e", "datatype": "entity"}]}]}
+    same = bump_schema_version_if_changed(old, old)
+    assert same["version"] == 2
+    new = {"version": 2, "types": [{"type_key": "a", "fields": [
+        {"key": "e", "datatype": "entity"}, {"key": "n", "datatype": "number"}]}]}
+    bumped = bump_schema_version_if_changed(old, new)
+    assert bumped["version"] == 3
+    assert len(bumped["types"][0]["fields"]) == 2

@@ -26,8 +26,10 @@ from app.services.digest_sections import (
     parse_structured_response,
     resolve_sections,
     sections_to_markdown,
+    SECTION_KIND_HYBRID,
     SECTION_KIND_LLM,
 )
+from app.services.records_pivot import build_records_data, records_block_text
 from app.services.global_settings import resolve_ai_gateway
 from app.services.job_logger import (
     JOB_TYPE_DIGEST,
@@ -179,6 +181,7 @@ class DigestAggregate:
     top_tags: list[dict[str, Any]]
     top_channels: list[dict[str, Any]]
     videos: list["VideoBrief"] = field(default_factory=list)
+    records_data: dict = field(default_factory=dict)  # Phase 3: 피벗 집계 {key: data}
 
 
 @dataclass
@@ -272,6 +275,25 @@ def _render_payload(agg: DigestAggregate, start: datetime, end: datetime, catego
         "top_channels": agg.top_channels,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def custom_prompt_kwargs(
+    aggregate: DigestAggregate, *, category: str, period_label: str, previous_digest: str
+) -> dict:
+    """custom digest_prompt .format() 인자 (순수). Phase 3: records_block 추가."""
+    return {
+        "category": category or "전체",
+        "period_label": period_label,
+        "video_count": aggregate.video_count,
+        "sentiment_summary": _sentiment_summary_text(aggregate.sentiment_breakdown),
+        "top_tags": ", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
+        "top_channels": ", ".join(
+            f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
+        "top_viewed": _build_top_viewed_block(aggregate.videos),
+        "previous_digest": previous_digest,
+        "videos_block": _build_videos_block(aggregate.videos, aggregate.video_count),
+        "records_block": records_block_text(getattr(aggregate, "records_data", {}) or {}),
+    }
 
 
 async def aggregate_period(
@@ -380,17 +402,10 @@ async def synthesize_with_llm(
     if custom_prompt:
         prompt = custom_prompt
         try:
-            user_msg = prompt.format(
-                category=category or "전체",
-                period_label=period_label,
-                video_count=aggregate.video_count,
-                sentiment_summary=_sentiment_summary_text(aggregate.sentiment_breakdown),
-                top_tags=", ".join(t["name"] for t in aggregate.top_tags[:8]) or "없음",
-                top_channels=", ".join(f"{c['name']}({c['count']})" for c in aggregate.top_channels[:10]) or "없음",
-                top_viewed=_build_top_viewed_block(aggregate.videos),
+            user_msg = prompt.format(**custom_prompt_kwargs(
+                aggregate, category=category, period_label=period_label,
                 previous_digest=previous_digest,
-                videos_block=_build_videos_block(aggregate.videos, aggregate.video_count),
-            )
+            ))
         except (KeyError, IndexError, ValueError):
             # 프롬프트에 알 수 없는 placeholder가 있으면 안전 폴백(발송 자체는 막지 않음).
             context_json = _render_payload(aggregate, period_start, period_end, category)
@@ -411,6 +426,7 @@ async def synthesize_with_llm(
         user_msg = build_structured_prompt(
             persona=getattr(profile, "persona", ""),
             data_block=data_block, sections=sections_spec,
+            records_data=(getattr(aggregate, "records_data", None) or None),
         )
 
     client = LiteLLMClient(ai)
@@ -441,7 +457,10 @@ async def synthesize_with_llm(
                 headline=headline, summary_md=summary_md,
                 telegram_summary=telegram_summary[:900], model_name=model,
             )
-        llm_keys = [s["key"] for s in sections_spec if s["kind"] == SECTION_KIND_LLM]
+        llm_keys = [
+            s["key"] for s in sections_spec
+            if s["kind"] in (SECTION_KIND_LLM, SECTION_KIND_HYBRID)
+        ]
         headline, bodies, telegram_summary = parse_structured_response(
             chat.content, requested_keys=llm_keys
         )
@@ -584,6 +603,18 @@ async def generate_digest_for_group(
                 return existing
 
         agg = await aggregate_period(session, period_start, period_end, cat)
+        # Phase 3: record_schema 보유 그룹은 피벗 집계를 agg에 부착(실패는 무시).
+        try:
+            profile = await get_settings_manager().get_profile(group.group_id)
+            if profile.record_schema.get("types"):
+                sections_spec = resolve_sections(digest_cfg.sections, profile.digest_sections)
+                agg.records_data = await build_records_data(
+                    session, sections=sections_spec,
+                    record_schema=profile.record_schema,
+                    period_start=period_start, period_end=period_end,
+                )
+        except Exception as e:  # noqa: BLE001 — 피벗 실패가 다이제스트를 막지 않는다
+            print(f"[digest] records_data 집계 실패(무시): {e}")
         prev = await _fetch_previous_digest(
             session,
             period_days=days,

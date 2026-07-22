@@ -3,9 +3,11 @@ import { useParams, Navigate, NavLink } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
 import { useAuth } from '../auth/useAuth'
 import { settingsApi, type SettingItem, type PromptPreset } from '../api/settings'
+import { profileApi } from '../api/profile'
 import { SETTING_DEFS, visibleCategories, visibleFields } from '../settings/defs'
 import SettingsForm from '../components/SettingsForm'
 import DigestConfigsEditor from '../components/DigestConfigsEditor'
+import DataProfilePanel from '../components/DataProfilePanel'
 import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 
@@ -21,17 +23,20 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [modelMsg, setModelMsg] = useState<string | null>(null)
+  const [recordTypes, setRecordTypes] = useState<string[]>([])
 
   const categories = visibleCategories(user?.role)
   const isPresetMode = user?.role !== 'admin' && category === 'prompts'
   const defs = category ? SETTING_DEFS[category] : undefined
   const isDigest = category === 'digest'
+  const isDataProfile = category === 'data_profile'
   // 역할상 비허용 카테고리(URL 직접 진입)는 로드하지 않고 아래에서 리다이렉트 —
   // 비허용 요청(404)이 리다이렉트 후 도착해 에러 배너를 남기는 레이스 방지.
   const allowed = categories.some((c) => c.key === category)
 
   const load = useCallback(async () => {
-    if (!category || (!defs && !isDigest) || !allowed) return
+    if (!category || (!defs && !isDigest && !isDataProfile) || !allowed) return
+    if (isDataProfile) { setLoading(false); return }
     setLoading(true)
     setError(null)
     try {
@@ -48,12 +53,20 @@ export default function Settings() {
       if (isPresetMode) {
         setPresets(await settingsApi(activeSlug).promptPresets())
       }
+      if (isDigest) {
+        try {
+          const p = await profileApi(activeSlug).get()
+          setRecordTypes((p.record_schema?.types ?? []).map((t) => t.type_key))
+        } catch {
+          setRecordTypes([])
+        }
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [activeSlug, category, defs, isPresetMode, allowed])
+  }, [activeSlug, category, defs, isPresetMode, isDigest, isDataProfile, allowed])
 
   useEffect(() => { load() }, [load])
 
@@ -72,7 +85,7 @@ export default function Settings() {
   }
 
   // 미지원 카테고리뿐 아니라 역할상 비허용 카테고리(URL 직접 진입)도 첫 허용 탭으로
-  if (!category || (!defs && !isDigest) || !allowed)
+  if (!category || (!defs && !isDigest && !isDataProfile) || !allowed)
     return <Navigate to={`/g/${activeSlug}/settings/${categories[0].key}`} replace />
 
   const label = categories.find((c) => c.key === category)?.label ?? category
@@ -113,8 +126,10 @@ export default function Settings() {
               모델 목록을 불러오지 못했습니다: {modelMsg} (base_url/api_key 저장 후 다시 시도)
             </div>
           )}
-          {isDigest ? (
-            <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} />
+          {isDataProfile ? (
+            <DataProfilePanel slug={activeSlug} />
+          ) : isDigest ? (
+            <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} recordTypes={recordTypes} />
           ) : isPresetMode ? (
             <PromptPresetSelector
               key={category}

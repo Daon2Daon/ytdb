@@ -18,7 +18,7 @@ export function toRenderSections(digest: Digest): DigestSection[] {
   return []
 }
 
-function computedToMarkdown(s: DigestSection): string {
+export function computedToMarkdown(s: DigestSection): string {
   const items = (s.data?.items as { name?: string; count?: number; channel?: string; head?: string; views?: number }[]) ?? []
   if (s.key === 'top_tags' || s.key === 'top_channels') {
     return items.map((it) => `- ${it.name} (${it.count})`).join('\n')
@@ -32,6 +32,32 @@ function computedToMarkdown(s: DigestSection): string {
   }
   if (s.key === 'stats_overview') {
     return `- 분석 영상 ${(s.data?.video_count as number) ?? 0}건`
+  }
+  if (s.key === 'entity_pivot') {
+    const pitems = (s.data?.items as { entity?: string; count?: number; samples?: string[] }[]) ?? []
+    return pitems.map((it) => {
+      const samples = it.samples?.length ? ` — ${it.samples.join(' / ')}` : ''
+      return `- **${it.entity}** ${it.count}건${samples}`
+    }).join('\n')
+  }
+  if (s.key === 'period_compare') {
+    const d = s.data as {
+      new?: { entity: string }[]; gone?: { entity: string }[]
+      continuing?: { entity: string; cur: number; prev: number }[]
+    } | undefined
+    const lines: string[] = []
+    if (d?.new?.length) lines.push(`- 신규: ${d.new.map((x) => x.entity).join(', ')}`)
+    if (d?.gone?.length) lines.push(`- 소멸: ${d.gone.map((x) => x.entity).join(', ')}`)
+    d?.continuing?.forEach((x) => lines.push(`- 지속: ${x.entity} (${x.prev}→${x.cur}건)`))
+    return lines.join('\n')
+  }
+  if (s.key === 'top_records') {
+    const ritems = (s.data?.items as {
+      entity?: string | null; value?: number; text?: string | null; date?: string | null
+    }[]) ?? []
+    return ritems
+      .map((it) => `- ${it.entity ?? it.text ?? ''}: ${it.value}${it.date ? ` · ${it.date}` : ''}`)
+      .join('\n')
   }
   return ''
 }
@@ -80,7 +106,11 @@ export default function DigestDetail() {
       </div>
 
       {toRenderSections(digest).map((s) => {
-        const body = s.kind === 'computed' ? computedToMarkdown(s) : (s.body_md ?? '')
+        const computed = s.kind !== 'llm' ? computedToMarkdown(s) : ''
+        const body = s.kind === 'llm' ? (s.body_md ?? '')
+          : s.kind === 'hybrid'
+            ? [s.body_md ?? '', computed].filter((x) => x.trim()).join('\n\n')
+            : computed
         if (!body.trim()) return null
         return (
           <div key={s.key} className="bg-white rounded-xl shadow-sm p-5">

@@ -175,11 +175,12 @@ export interface DigestScheduleConfig {
 
 export interface DigestSection {
   key: string
-  kind: 'llm' | 'computed'
+  kind: 'llm' | 'computed' | 'hybrid'
   title: string
   guide?: string
   body_md?: string
   data?: Record<string, unknown>
+  params?: Record<string, unknown>
 }
 
 export interface Digest {

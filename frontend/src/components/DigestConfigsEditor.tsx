@@ -83,9 +83,10 @@ interface Props {
   items: SettingItem[]
   saving: boolean
   onSave: (items: SettingItem[]) => void
+  recordTypes?: string[]
 }
 
-export default function DigestConfigsEditor({ items, saving, onSave }: Props) {
+export default function DigestConfigsEditor({ items, saving, onSave, recordTypes = [] }: Props) {
   const itemMap = useMemo(() => {
     const m: Record<string, SettingItem> = {}
     items.forEach((i) => (m[i.key] = i))
@@ -245,6 +246,7 @@ export default function DigestConfigsEditor({ items, saving, onSave }: Props) {
                 <DigestSectionBuilder
                   sections={cfg.sections ?? []}
                   onChange={(s) => update(index, { sections: s })}
+                  recordTypes={recordTypes}
                 />
               )}
               <p className="text-xs text-gray-400 mt-1">
