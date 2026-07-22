@@ -6,6 +6,8 @@ import RecordSchemaBuilder from './RecordSchemaBuilder'
 import VocabEditor from './VocabEditor'
 import Spinner from './Spinner'
 import ErrorBanner from './ErrorBanner'
+import EnrichProposalCard from './EnrichProposalCard'
+import MergeQueue from './MergeQueue'
 
 interface Props {
   slug: string
@@ -66,6 +68,10 @@ export default function DataProfilePanel({ slug }: Props) {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      {profile.enrich_proposal && Object.keys(profile.enrich_proposal).length > 0 && (
+        <EnrichProposalCard slug={slug} proposal={profile.enrich_proposal} onApplied={applyLoaded} />
+      )}
+
       <div className="bg-white rounded-xl shadow-sm p-5 space-y-2">
         <h2 className="font-semibold text-gray-800">페르소나</h2>
         <textarea
@@ -106,6 +112,8 @@ export default function DataProfilePanel({ slug }: Props) {
         </button>
         {savedAt && <span className="text-xs text-green-600">저장됨 {savedAt}</span>}
       </div>
+
+      <MergeQueue slug={slug} />
     </div>
   )
 }
