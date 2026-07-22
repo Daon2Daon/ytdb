@@ -16,3 +16,11 @@ def test_regenerate_route_registered():
         if r.path == "/api/groups/{slug}/profile/regenerate":
             methods |= r.methods
     assert "POST" in methods
+
+
+def test_put_profile_route_registered():
+    methods = set()
+    for r in profile_router.router.routes:
+        if r.path == "/api/groups/{slug}/profile":
+            methods |= r.methods
+    assert "PUT" in methods and "GET" in methods
