@@ -233,8 +233,10 @@ def build_structured_prompt(
         guide = _clean(s.get("guide")) or s.get("title") or s.get("key")
         schema_lines.append(f'    {{"key": "{s["key"]}", "body_md": "<{guide}>"}}')
     sections_schema = ",\n".join(schema_lines)
+    # 피벗 블록은 서술할 hybrid 섹션이 있을 때만 주입한다(없으면 토큰 낭비).
+    has_hybrid = any(s.get("kind") == SECTION_KIND_HYBRID for s in sections)
     records_block = ""
-    if records_data:
+    if records_data and has_hybrid:
         records_block = (
             "\n\n## 레코드 집계(피벗) — 해당 섹션은 아래 수치를 근거로 서술하라\n"
             + json.dumps(records_data, ensure_ascii=False)

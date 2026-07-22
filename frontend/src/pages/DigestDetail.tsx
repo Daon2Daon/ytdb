@@ -34,10 +34,14 @@ export function computedToMarkdown(s: DigestSection): string {
     return `- 분석 영상 ${(s.data?.video_count as number) ?? 0}건`
   }
   if (s.key === 'entity_pivot') {
-    const pitems = (s.data?.items as { entity?: string; count?: number; samples?: string[] }[]) ?? []
+    const pitems = (s.data?.items as {
+      entity?: string; count?: number; samples?: string[]; by?: Record<string, number>
+    }[]) ?? []
     return pitems.map((it) => {
-      const samples = it.samples?.length ? ` — ${it.samples.join(' / ')}` : ''
-      return `- **${it.entity}** ${it.count}건${samples}`
+      let suffix = it.samples?.length ? ` — ${it.samples.join(' / ')}` : ''
+      const byKeys = Object.keys(it.by ?? {})
+      if (byKeys.length) suffix += ` (${byKeys.map((k) => `${k} ${it.by![k]}`).join(', ')})`
+      return `- **${it.entity}** ${it.count}건${suffix}`
     }).join('\n')
   }
   if (s.key === 'period_compare') {

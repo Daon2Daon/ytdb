@@ -67,3 +67,12 @@ def test_structured_prompt_includes_hybrid_schema_and_records():
         persona="p", data_block="D", sections=sections, records_data=_Agg.records_data)
     assert '"entity_pivot"' in p
     assert "레코드 집계" in p and "SoftBank" in p
+
+
+def test_structured_prompt_omits_records_when_no_hybrid_section():
+    # hybrid 섹션이 없으면 records_data가 있어도 피벗 블록을 넣지 않는다(토큰 절약).
+    sections = [{"key": "overview", "kind": "llm", "title": "요약", "guide": "g"}]
+    p = build_structured_prompt(
+        persona="p", data_block="D", sections=sections, records_data=_Agg.records_data)
+    assert "레코드 집계" not in p
+    assert "SoftBank" not in p
