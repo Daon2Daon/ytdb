@@ -38,6 +38,9 @@ export default function RecordSchemaBuilder({ schema, onChange }: Props) {
               </li>
             ))}
           </ul>
+          {t.fields.length === 0 && (
+            <p className="text-xs text-amber-600">필드를 1개 이상 추가해야 저장됩니다.</p>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <input placeholder="key(영문)" value={draftFor(t.type_key).key}
               onChange={(e) => setDraft(t.type_key, { key: e.target.value })}

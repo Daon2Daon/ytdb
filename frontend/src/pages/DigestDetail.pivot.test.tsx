@@ -6,11 +6,12 @@ describe('pivot section markdown', () => {
   it('renders entity_pivot items', () => {
     const s: DigestSection = {
       key: 'entity_pivot', kind: 'hybrid', title: '집중',
-      data: { items: [{ entity: 'SoftBank', count: 2, samples: ['5G'] }] },
+      data: { items: [{ entity: 'SoftBank', count: 2, samples: ['5G'], by: { 일본: 2 } }] },
     }
     const md = computedToMarkdown(s)
     expect(md).toContain('SoftBank')
     expect(md).toContain('2건')
+    expect(md).toContain('일본 2')
   })
 
   it('renders period_compare new/gone/continuing', () => {
