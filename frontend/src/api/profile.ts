@@ -6,6 +6,7 @@ export interface GroupProfile {
   digest_sections: DigestSection[]
   bootstrap_status: string
   bootstrap_at?: string
+  record_schema?: { version: number; types: { type_key: string; label: string; fields: unknown[] }[] }
 }
 
 export function profileApi(slug: string) {

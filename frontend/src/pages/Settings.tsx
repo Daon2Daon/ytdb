@@ -3,6 +3,7 @@ import { useParams, Navigate, NavLink } from 'react-router-dom'
 import { useGroup } from '../group/useGroup'
 import { useAuth } from '../auth/useAuth'
 import { settingsApi, type SettingItem, type PromptPreset } from '../api/settings'
+import { profileApi } from '../api/profile'
 import { SETTING_DEFS, visibleCategories, visibleFields } from '../settings/defs'
 import SettingsForm from '../components/SettingsForm'
 import DigestConfigsEditor from '../components/DigestConfigsEditor'
@@ -21,6 +22,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [modelMsg, setModelMsg] = useState<string | null>(null)
+  const [recordTypes, setRecordTypes] = useState<string[]>([])
 
   const categories = visibleCategories(user?.role)
   const isPresetMode = user?.role !== 'admin' && category === 'prompts'
@@ -48,12 +50,20 @@ export default function Settings() {
       if (isPresetMode) {
         setPresets(await settingsApi(activeSlug).promptPresets())
       }
+      if (isDigest) {
+        try {
+          const p = await profileApi(activeSlug).get()
+          setRecordTypes((p.record_schema?.types ?? []).map((t) => t.type_key))
+        } catch {
+          setRecordTypes([])
+        }
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [activeSlug, category, defs, isPresetMode, allowed])
+  }, [activeSlug, category, defs, isPresetMode, isDigest, allowed])
 
   useEffect(() => { load() }, [load])
 
@@ -114,7 +124,7 @@ export default function Settings() {
             </div>
           )}
           {isDigest ? (
-            <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} />
+            <DigestConfigsEditor items={items} saving={saving} onSave={handleSave} recordTypes={recordTypes} />
           ) : isPresetMode ? (
             <PromptPresetSelector
               key={category}
