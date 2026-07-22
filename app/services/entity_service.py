@@ -144,6 +144,11 @@ async def _apply_merge(session, cluster: dict) -> list[str]:
     return merged
 
 
+async def apply_merge_cluster(session, cluster: dict) -> list[str]:
+    """수동 승인 경로 재사용 wrapper — 배치 병합과 동일 코드(설계 §3.4)."""
+    return await _apply_merge(session, cluster)
+
+
 async def _hold_merge(session, cluster: dict) -> None:
     """보류 후보를 canonical 엔티티 attrs.merge_candidates에 적재(Phase 3 승인 UI 입력)."""
     crow = (await session.execute(
