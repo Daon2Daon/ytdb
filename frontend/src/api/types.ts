@@ -212,3 +212,58 @@ export interface VideoNotifyResponse {
   notified_at: string | null
   notify_source: 'telegram' | 'web' | null
 }
+
+export type CommentCategory = {
+  summary: string
+  key_points: string[]
+  insights: string
+  top_comments: { author: string; text: string; like_count: number; published_at: string }[]
+}
+
+export type CommentAnalysisResult = {
+  categories: { positive: CommentCategory; negative: CommentCategory; neutral: CommentCategory }
+  order: string
+  batch_failures: number
+}
+
+export type CommentAnalysisOut = {
+  video_pk: number
+  status: 'pending' | 'running' | 'done' | 'failed'
+  requested_limit: number
+  fetched_count: number | null
+  total_count: number | null
+  current_comment_count: number | null
+  positive_count: number | null
+  negative_count: number | null
+  neutral_count: number | null
+  result: CommentAnalysisResult | null
+  model: string | null
+  partial: boolean
+  error: string | null
+  analyzed_at: string | null
+}
+
+export type CommentCredits = {
+  used: number
+  limit: number
+  unlimited: boolean
+  per_analysis_max: number
+}
+
+export type StartCommentAnalysisResponse = {
+  video_pk: number
+  status: string
+  queued: boolean
+}
+
+export type CommentAnalysisListItem = {
+  video_pk: number
+  video_id: string
+  title: string
+  thumbnail_url: string | null
+  status: string
+  positive_count: number | null
+  negative_count: number | null
+  neutral_count: number | null
+  analyzed_at: string | null
+}
