@@ -11,7 +11,7 @@ import json
 from typing import Optional
 
 from cryptography.fernet import InvalidToken
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,7 +93,15 @@ async def set_global(session: AsyncSession, key: str, value: str) -> None:
     stmt = pg_insert(GlobalSetting).values(**values)
     stmt = stmt.on_conflict_do_update(
         index_elements=[GlobalSetting.key],
-        set_={"value": stmt.excluded.value, "value_enc": stmt.excluded.value_enc, "is_secret": stmt.excluded.is_secret},
+        # updated_at을 명시해야 한다 — 모델의 onupdate=func.now()는 ORM UPDATE에만
+        # 걸리고 Core pg_insert의 DO UPDATE에는 적용되지 않는다. 빠뜨리면
+        # updated_at이 최초 삽입 시각에 고정돼 설정 변경 이력을 신뢰할 수 없다.
+        set_={
+            "value": stmt.excluded.value,
+            "value_enc": stmt.excluded.value_enc,
+            "is_secret": stmt.excluded.is_secret,
+            "updated_at": func.now(),
+        },
     )
     await session.execute(stmt)
 
