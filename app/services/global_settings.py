@@ -34,10 +34,15 @@ DEFAULT_CENTRAL_POLL_FLOOR_MIN = 10
 GLOBAL_YOUTUBE_DAILY_QUOTA = "youtube_daily_quota"
 DEFAULT_YOUTUBE_DAILY_QUOTA = 10000
 
-# Phase C: 전역 AI 게이트웨이 (스펙 §5). tagging_model은 미사용이라 전역화 제외.
+# Phase C: 전역 AI 게이트웨이 (스펙 §5).
+# tagging_model은 당초 "미사용"으로 보고 전역화에서 뺐으나, 이후 entity_service와
+# records_extractor가 쓰기 시작해 그 전제가 깨졌다. 두 곳 모두
+# `tagging_model or primary_model`로 해석하는데 기본값이 truthy라 primary_model로
+# 폴백하지 않는다 — 게이트웨이를 전역으로 옮겨도 태깅만 코드 기본값에 남는다.
 GLOBAL_AI_BASE_URL = "ai_base_url"
 GLOBAL_AI_API_KEY = "ai_api_key"
 GLOBAL_AI_PRIMARY_MODEL = "ai_primary_model"
+GLOBAL_AI_TAGGING_MODEL = "ai_tagging_model"
 GLOBAL_AI_DIGEST_MODEL = "ai_digest_model"
 GLOBAL_AI_MODEL_PRICES = "ai_model_prices"  # JSON: {"모델prefix": {"input": n, "output": n}} ($/1M)
 
@@ -236,6 +241,7 @@ async def resolve_ai_gateway(group_id: int) -> "AIGatewaySettings":
         g_base = await get_global(session, GLOBAL_AI_BASE_URL)
         g_key = await get_global(session, GLOBAL_AI_API_KEY)
         g_primary = await get_global(session, GLOBAL_AI_PRIMARY_MODEL)
+        g_tagging = await get_global(session, GLOBAL_AI_TAGGING_MODEL)
         g_digest = await get_global(session, GLOBAL_AI_DIGEST_MODEL)
 
     def pick(group_val, global_val, default: str) -> str:
@@ -249,7 +255,7 @@ async def resolve_ai_gateway(group_id: int) -> "AIGatewaySettings":
         base_url=pick(d.get("base_url"), g_base, "http://litellm:4000"),
         api_key=pick(d.get("api_key"), g_key, ""),
         primary_model=pick(d.get("primary_model"), g_primary, "gemini/gemini-2.5-flash"),
-        tagging_model=str(d.get("tagging_model") or "gemini/gemini-2.5-flash"),
+        tagging_model=pick(d.get("tagging_model"), g_tagging, "gemini/gemini-2.5-flash"),
         digest_model=pick(d.get("digest_model"), g_digest, ""),
         temperature=_f(d.get("temperature"), 0.3),
         max_tokens=_i(d.get("max_tokens"), 8192),
@@ -414,9 +420,12 @@ async def _seed_global_ai_from_admin_groups() -> None:
                     await set_global(session, GLOBAL_AI_BASE_URL, base)
                     await set_global(session, GLOBAL_AI_API_KEY, key)
                     primary = str(d.get("primary_model") or "").strip()
+                    tagging = str(d.get("tagging_model") or "").strip()
                     digest = str(d.get("digest_model") or "").strip()
                     if primary:
                         await set_global(session, GLOBAL_AI_PRIMARY_MODEL, primary)
+                    if tagging:
+                        await set_global(session, GLOBAL_AI_TAGGING_MODEL, tagging)
                     if digest:
                         await set_global(session, GLOBAL_AI_DIGEST_MODEL, digest)
             print(f"[bootstrap] 전역 AI 게이트웨이를 그룹 {group.slug} 설정에서 시드했습니다.")

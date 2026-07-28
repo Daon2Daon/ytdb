@@ -394,6 +394,79 @@ async def test_resolve_ai_gateway_group_overrides_global(monkeypatch):
     assert ai.digest_model == ""                     # 전역도 빈값 → 기본값(빈값)
 
 
+def test_ai_tagging_model_global_key_registered():
+    """tagging_model도 다른 AI 설정처럼 전역 키를 가져야 한다.
+
+    entity_service·records_extractor가 `tagging_model or primary_model`로 해석하는데
+    기본값이 truthy라 primary_model로 폴백하지 않는다. 전역 키가 없으면 게이트웨이를
+    전역으로 옮겨도 태깅만 코드 기본값(gemini/gemini-2.5-flash)에 남아, 단가표에
+    항목이 없으면 ai_usage.cost_usd가 조용히 NULL로 쌓인다.
+    """
+    from app.routers.admin import _GLOBAL_KEYS
+    from app.services.global_settings import GLOBAL_AI_TAGGING_MODEL, SECRET_KEYS
+
+    assert GLOBAL_AI_TAGGING_MODEL == "ai_tagging_model"
+    assert GLOBAL_AI_TAGGING_MODEL not in SECRET_KEYS  # 모델명은 평문
+    # 관리자 API로 읽고 쓸 수 있어야 실제로 전역화된 것이다.
+    assert GLOBAL_AI_TAGGING_MODEL in _GLOBAL_KEYS
+
+
+def _patch_gateway_sources(monkeypatch, *, group: dict, globals_: dict):
+    """resolve_ai_gateway의 그룹·전역 조회를 스텁으로 대체한다."""
+    from app.services import global_settings as gs
+
+    class _Mgr:
+        get_typed = staticmethod(lambda group_id, category: _async_return(group))
+
+    async def _global(session, key):
+        return globals_.get(key)
+
+    class _S:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return None
+
+    monkeypatch.setattr(gs, "get_settings_manager", lambda: _Mgr())
+    monkeypatch.setattr(gs, "get_global", _global)
+    monkeypatch.setattr(gs, "get_sessionmaker", lambda: (lambda: _S()))
+    return gs
+
+
+async def _async_return(value):
+    return value
+
+
+async def test_tagging_model_falls_back_to_global(monkeypatch):
+    """그룹이 비면 전역 tagging_model을 쓴다."""
+    gs = _patch_gateway_sources(
+        monkeypatch,
+        group={"base_url": "", "api_key": "", "tagging_model": ""},
+        globals_={"ai_tagging_model": "gemini/gemini-3.1-flash-lite"},
+    )
+    ai = await gs.resolve_ai_gateway(7)
+    assert ai.tagging_model == "gemini/gemini-3.1-flash-lite"
+
+
+async def test_tagging_model_group_value_wins_over_global(monkeypatch):
+    gs = _patch_gateway_sources(
+        monkeypatch,
+        group={"base_url": "", "api_key": "", "tagging_model": "gemini/group-tagger"},
+        globals_={"ai_tagging_model": "gemini/global-tagger"},
+    )
+    ai = await gs.resolve_ai_gateway(7)
+    assert ai.tagging_model == "gemini/group-tagger"
+
+
+async def test_tagging_model_defaults_when_group_and_global_empty(monkeypatch):
+    """둘 다 비면 종전 코드 기본값을 유지한다 — 기존 동작 회귀 방지."""
+    gs = _patch_gateway_sources(
+        monkeypatch,
+        group={"base_url": "", "api_key": "", "tagging_model": ""},
+        globals_={},
+    )
+    ai = await gs.resolve_ai_gateway(7)
+    assert ai.tagging_model == "gemini/gemini-2.5-flash"
+
+
 def test_get_ai_model_prices_parsing():
     from app.services.global_settings import _parse_model_prices
 

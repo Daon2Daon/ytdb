@@ -9,8 +9,12 @@ const GLOBAL_SETTING_LABELS: Record<string, { label: string; help?: string }> = 
   ai_base_url: { label: 'AI 게이트웨이 Base URL' },
   ai_api_key: { label: 'AI 게이트웨이 API 키' },
   ai_primary_model: { label: 'AI 기본 모델' },
+  ai_tagging_model: { label: 'AI 태깅 모델', help: '엔티티 병합·레코드 추출용. 비우면 기본값(gemini/gemini-2.5-flash)' },
   ai_digest_model: { label: 'AI 다이제스트 모델' },
-  ai_model_prices: { label: 'AI 모델 단가표(JSON)', help: '{"모델prefix": {"input": n, "output": n}} — $/1M 토큰' },
+  ai_model_prices: {
+    label: 'AI 모델 단가표(JSON)',
+    help: '{"모델prefix": {"input": n, "output": n}} — $/1M 토큰. 키는 원장에 기록되는 모델명의 접두사여야 한다(예: gemini/gemini-3.1-flash-lite). 가장 긴 일치가 우선하므로 "gemini/" 같은 포괄 키를 함께 두면 미등록 모델이 비용 NULL로 새지 않는다',
+  },
   telegram_bot_token: { label: '공용 텔레그램 봇 토큰' },
   db_host: { label: '기본 DB 호스트', help: '사용자 그룹 데이터 평면 폴백 DSN — 그룹에 자체 DB 설정이 없으면 이 접속을 사용' },
   db_port: { label: '기본 DB 포트' },
