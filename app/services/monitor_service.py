@@ -186,6 +186,7 @@ class MonitorService:
                     duration_seconds=parse_duration_seconds(vm.duration),
                     view_count=vm.view_count,
                     like_count=vm.like_count,
+                    comment_count=vm.comment_count,
                     sequence_in_channel=seq_start + idx,
                     analysis_status="pending",
                     retry_count=0,
@@ -322,8 +323,16 @@ def _stats_window_cutoff(now: datetime, days: int) -> datetime:
 
 
 def _build_stats_map(metas) -> dict[str, tuple]:
-    """VideoMeta 리스트 → {video_id: (view_count, like_count)}."""
-    return {m.video_id: (m.view_count, m.like_count) for m in metas if m.video_id}
+    """VideoMeta 리스트 → {video_id: (view_count, like_count, comment_count)}.
+
+    comment_count는 댓글 분석의 신선도 배너 기준값이다 — 이 갱신 경로가
+    빠지면 등록 시점 값에 머물러 "댓글 N건 늘었음" 판정이 불가능해진다.
+    """
+    return {
+        m.video_id: (m.view_count, m.like_count, m.comment_count)
+        for m in metas
+        if m.video_id
+    }
 
 
 async def _poll_group(group: Group) -> None:
@@ -1024,14 +1033,18 @@ async def run_stats_refresh_once() -> None:
                         stats_map = _build_stats_map(metas)
                         async with make_session() as sess:
                             async with sess.begin():
-                                for video_id, (vc, lc) in stats_map.items():
+                                for video_id, (vc, lc, cc) in stats_map.items():
                                     pk = id_to_pk.get(video_id)
                                     if pk is None:
                                         continue
                                     await sess.execute(
                                         update(Video)
                                         .where(Video.video_pk == pk)
-                                        .values(view_count=vc, like_count=lc)
+                                        .values(
+                                            view_count=vc,
+                                            like_count=lc,
+                                            comment_count=cc,
+                                        )
                                     )
                                     updated += 1
                         message = f"stats 갱신: {updated}/{len(id_to_pk)}건"

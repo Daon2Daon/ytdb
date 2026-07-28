@@ -184,6 +184,7 @@ class DataPlaneEngineManager:
                     ("videos", "share_token", "text"),
                     ("videos", "share_visibility", "text"),
                     ("videos", "notify_source", "text"),
+                    ("videos", "comment_count", "bigint"),
                     ("digests", "share_token", "text"),
                     ("digests", "share_visibility", "text"),
                     ("digests", "period_days", "integer"),

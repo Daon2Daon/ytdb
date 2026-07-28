@@ -62,6 +62,8 @@ PLAN_SEEDS: list[dict] = [
         "slug": "free", "name": "Free", "max_groups": 1, "max_channels_total": 5,
         "max_analyses_per_day": 10, "max_video_minutes": 60,
         "monthly_cost_budget_usd": "5.0", "min_poll_interval_min": 60, "is_default": True,
+        "max_comment_analyses_per_month": 5,
+        "max_comments_per_analysis": 1000,
     },
     {
         "slug": "pro", "name": "Pro", "max_groups": 3, "max_channels_total": 30,
@@ -74,6 +76,8 @@ PLAN_SEEDS: list[dict] = [
         # NUMERIC(10,4) 컬럼의 최대값(10^6 미만)에 맞춘 사실상의 무제한 값.
         "max_video_minutes": 100000, "monthly_cost_budget_usd": "999999.9999",
         "min_poll_interval_min": 1, "is_default": False,
+        "max_comment_analyses_per_month": 100000,
+        "max_comments_per_analysis": 100000,
     },
 ]
 

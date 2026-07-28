@@ -15,6 +15,8 @@ import Dashboard from './pages/Dashboard'
 import Channels from './pages/Channels'
 import Videos from './pages/Videos'
 import VideoDetail from './pages/VideoDetail'
+import VideoComments from './pages/VideoComments'
+import CommentAnalysis from './pages/CommentAnalysis'
 import InstantAnalyze from './pages/InstantAnalyze'
 import Tags from './pages/Tags'
 import Logs from './pages/Logs'
@@ -135,6 +137,8 @@ export default function App() {
           <Route path="channels" element={<Channels />} />
           <Route path="videos" element={<Videos />} />
           <Route path="videos/:videoPk" element={<VideoDetail />} />
+          <Route path="videos/:videoPk/comments" element={<VideoComments />} />
+          <Route path="comment-analysis" element={<CommentAnalysis />} />
           <Route path="instant-analyze" element={<RequireAdmin><InstantAnalyze /></RequireAdmin>} />
           <Route path="tags" element={<Tags />} />
           <Route path="logs" element={<Logs />} />

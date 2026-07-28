@@ -8,6 +8,7 @@ limits=None으로 표현하며 모든 검사가 무조건 통과한다.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -38,6 +39,8 @@ class EffectiveLimits:
     plan_name: str
     has_override: bool
     monthly_cost_budget_usd: Optional[float] = None  # None = 예산 무제한
+    max_comment_analyses_per_month: int = 0
+    max_comments_per_analysis: int = 0
 
 
 def kst_day_start_utc(now: datetime) -> datetime:
@@ -74,12 +77,16 @@ class QuotaExceeded(Exception):
 
 
 def _merge_limits(plan: Plan, override: Optional[UserLimit]) -> EffectiveLimits:
-    def pick(field: str) -> int:
+    def pick(field: str, default: int = 0) -> int:
+        # getattr(..., None) 방어: max_comment_analyses_per_month /
+        # max_comments_per_analysis 컬럼은 Task 2에서 모델에 추가되기 전까지는
+        # Plan/UserLimit 인스턴스에 존재하지 않을 수 있다(구 테스트 픽스처 호환).
         if override is not None:
-            v = getattr(override, field)
+            v = getattr(override, field, None)
             if v is not None:
                 return int(v)
-        return int(getattr(plan, field))
+        v = getattr(plan, field, None)
+        return int(v) if v is not None else default
 
     def pick_budget() -> Optional[float]:
         if override is not None and override.monthly_cost_budget_usd is not None:
@@ -97,6 +104,8 @@ def _merge_limits(plan: Plan, override: Optional[UserLimit]) -> EffectiveLimits:
         plan_name=plan.name,
         has_override=override is not None,
         monthly_cost_budget_usd=pick_budget(),
+        max_comment_analyses_per_month=pick("max_comment_analyses_per_month"),
+        max_comments_per_analysis=pick("max_comments_per_analysis"),
     )
 
 
@@ -200,4 +209,78 @@ async def check_daily_analysis_quota(session: AsyncSession, user_id: int) -> Non
             f"일일 분석 한도 초과: 오늘 {current}건 / 한도 {limits.max_analyses_per_day}건 "
             "(KST 자정에 초기화)",
             limit=limits.max_analyses_per_day, current=current,
+        )
+
+
+# ── 댓글 분석 가중 크레딧 ────────────────────────────────────────────────────
+
+CREDIT_UNIT_COMMENTS = 1000
+
+
+def credits_for(requested_limit: int) -> int:
+    """가중 크레딧: 1회 = 댓글 1,000건. 하한 1회.
+
+    500건도 1회, 2,000건은 2회. 수량에 비례해 차감하여 실제 비용과 정합을 맞춘다.
+    """
+    return max(1, math.ceil(max(0, requested_limit) / CREDIT_UNIT_COMMENTS))
+
+
+def quota_verdict(
+    limits: Optional[EffectiveLimits], used_credits: int, requested_limit: int
+) -> Optional[str]:
+    """통과면 None, 거절이면 사용자에게 보여줄 사유 문자열.
+
+    async 검사 함수(check_comment_analysis_quota)와 분리한 순수 판정 로직 —
+    DB 없이 경계 조건을 테스트할 수 있다.
+    """
+    if limits is None:
+        return None
+    if requested_limit > limits.max_comments_per_analysis:
+        return (
+            f"플랜 상한({limits.max_comments_per_analysis:,}건)을 초과합니다: "
+            f"요청 {requested_limit:,}건"
+        )
+    need = credits_for(requested_limit)
+    cap = limits.max_comment_analyses_per_month
+    if used_credits + need > cap:
+        remaining = max(0, cap - used_credits)
+        return (
+            f"이번 달 댓글 분석 한도를 초과합니다: 이번 요청 {need}회 / "
+            f"잔여 {remaining}회 (월 {cap}회, KST 월초 초기화)"
+        )
+    return None
+
+
+async def count_monthly_credits(session: AsyncSession, user_id: int) -> int:
+    """당월(KST) 본인 귀속 크레딧 합. 원장이 비면 0."""
+    from app.models.control.comment_analysis_run import CommentAnalysisRun
+    from app.services.ai_usage_service import kst_month_start_utc
+
+    since = kst_month_start_utc(datetime.now(timezone.utc))
+    return int(
+        (
+            await session.execute(
+                select(sa_func.coalesce(sa_func.sum(CommentAnalysisRun.credits), 0)).where(
+                    CommentAnalysisRun.user_id == user_id,
+                    CommentAnalysisRun.created_at >= since,
+                )
+            )
+        ).scalar_one()
+    )
+
+
+async def check_comment_analysis_quota(
+    session: AsyncSession, user_id: int, requested_limit: int
+) -> None:
+    """댓글 분석 쿼터 검사. admin/미존재 사용자는 통과. 초과 시 QuotaExceeded."""
+    limits = await effective_limits(session, user_id)
+    if limits is None:
+        return
+    used = await count_monthly_credits(session, user_id)
+    reason = quota_verdict(limits, used, requested_limit)
+    if reason is not None:
+        raise QuotaExceeded(
+            reason,
+            limit=limits.max_comment_analyses_per_month,
+            current=used,
         )

@@ -60,7 +60,7 @@ DB 없이 검증 가능한 로직부터 만든다. 이후 모든 태스크가 �
 - Modify: `app/services/quota_service.py`
 - Test: `tests/test_comment_quota.py`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_quota.py` 생성:
 
@@ -128,12 +128,12 @@ def test_remaining_exactly_covers_weighted_cost():
     assert quota_verdict(lim, used_credits=3, requested_limit=2000) is None
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_quota.py -v`
 Expected: FAIL — `ImportError: cannot import name 'credits_for'`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `app/services/quota_service.py`의 `EffectiveLimits`에 필드 2개를 추가한다. 기본값이 있는 `monthly_cost_budget_usd` 뒤에 와야 하므로 둘 다 기본값을 준다:
 
@@ -215,19 +215,19 @@ def quota_verdict(
     return None
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_quota.py -v`
 Expected: PASS (7 passed)
 
-- [ ] **Step 5: 기존 테스트 회귀 확인**
+- [x] **Step 5: 기존 테스트 회귀 확인**
 
 `EffectiveLimits` 생성자를 쓰는 기존 테스트가 깨지지 않아야 한다(새 필드에 기본값을 줬으므로 통과해야 함).
 
 Run: `python -m pytest tests/ -q`
 Expected: 기존과 동일한 통과 수 + 7
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add app/services/quota_service.py tests/test_comment_quota.py
@@ -243,7 +243,7 @@ git commit -m "feat: 댓글 분석 가중 크레딧 계산·한도 판정 순수
 - Modify: `app/models/control/plan.py`, `app/models/control/user_limit.py`, `app/control_db.py`, `app/services/auth_service.py`
 - Test: `tests/test_comment_analysis_models.py`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_analysis_models.py` 생성:
 
@@ -292,12 +292,12 @@ def test_user_limit_comment_columns_are_nullable():
     assert cols["max_comments_per_analysis"].nullable is True
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_analysis_models.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.models.control.comment_analysis_run'`
 
-- [ ] **Step 3: 원장 모델 생성**
+- [x] **Step 3: 원장 모델 생성**
 
 `app/models/control/comment_analysis_run.py`:
 
@@ -343,7 +343,7 @@ class CommentAnalysisRun(Base):
     )
 ```
 
-- [ ] **Step 4: 플랜/한도 컬럼 추가**
+- [x] **Step 4: 플랜/한도 컬럼 추가**
 
 `app/models/control/plan.py`의 `min_poll_interval_min` 아래에 추가:
 
@@ -363,7 +363,7 @@ class CommentAnalysisRun(Base):
     max_comments_per_analysis: Mapped[int | None] = mapped_column(Integer, nullable=True)
 ```
 
-- [ ] **Step 5: 모델을 메타데이터에 등록**
+- [x] **Step 5: 모델을 메타데이터에 등록**
 
 `app/control_db.py`의 `ensure_control_schema()`가 `Base.metadata.create_all`을 호출하려면 모델이 임포트되어 있어야 한다. `ensure_control_schema()` 안에서 다른 모델을 임포트하는 기존 위치를 찾아 같은 방식으로 추가한다:
 
@@ -377,7 +377,7 @@ class CommentAnalysisRun(Base):
 from app.models.control.comment_analysis_run import CommentAnalysisRun  # noqa: F401
 ```
 
-- [ ] **Step 6: 기존 설치용 ALTER 추가**
+- [x] **Step 6: 기존 설치용 ALTER 추가**
 
 `create_all`은 기존 테이블에 컬럼을 추가하지 않는다. `app/control_db.py:85` 근처의 기존 ALTER 블록과 같은 자리에 추가한다:
 
@@ -412,7 +412,7 @@ from app.models.control.comment_analysis_run import CommentAnalysisRun  # noqa: 
 
 DEFAULT가 있으므로 기존 플랜 행은 자동으로 5 / 1000을 갖는다. 별도 백필 불필요.
 
-- [ ] **Step 7: 플랜 시드 갱신**
+- [x] **Step 7: 플랜 시드 갱신**
 
 `app/services/auth_service.py`의 `PLAN_SEEDS`. 각 시드 dict에 키 2개를 추가한다. `free`(또는 기본 플랜)에는 `5` / `1000`, `unlimited`에는 `100000` / `100000`:
 
@@ -435,12 +435,12 @@ DEFAULT가 있으므로 기존 플랜 행은 자동으로 5 / 1000을 갖는다.
         "max_comments_per_analysis": 1000,
 ```
 
-- [ ] **Step 8: 테스트 통과 확인**
+- [x] **Step 8: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_analysis_models.py tests/test_comment_quota.py -v`
 Expected: PASS (6 + 7 = 13 passed)
 
-- [ ] **Step 9: 커밋**
+- [x] **Step 9: 커밋**
 
 ```bash
 git add app/models/control/ app/control_db.py app/services/auth_service.py tests/test_comment_analysis_models.py
@@ -455,7 +455,7 @@ git commit -m "feat: 댓글 분석 크레딧 원장 테이블 + 플랜 한도 �
 - Modify: `app/services/quota_service.py`
 - Test: `tests/test_comment_quota.py` (추가)
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_quota.py` 끝에 추가:
 
@@ -519,12 +519,12 @@ async def test_check_passes_when_within_limit(monkeypatch):
     await check_comment_analysis_quota(_FakeSession(4), user_id=1, requested_limit=1000)
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_quota.py -v -k check_`
 Expected: FAIL — `ImportError: cannot import name 'check_comment_analysis_quota'`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `app/services/quota_service.py`의 `quota_verdict` 아래에 추가:
 
@@ -564,12 +564,12 @@ async def check_comment_analysis_quota(
         )
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_quota.py -v`
 Expected: PASS (10 passed)
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add app/services/quota_service.py tests/test_comment_quota.py
@@ -585,7 +585,7 @@ git commit -m "feat: 댓글 분석 월 크레딧 집계·검사 함수"
 - Modify: `app/models/pg/video.py`, `app/services/db_engine.py`, `app/models/pg/__init__.py`
 - Test: `tests/test_comment_analysis_models.py` (추가)
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_analysis_models.py` 끝에 추가:
 
@@ -621,12 +621,12 @@ def test_video_has_comment_count():
     assert Video.__table__.c.comment_count.nullable is True
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_analysis_models.py -v -k comment_analysis_uses`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.models.pg.comment_analysis'`
 
-- [ ] **Step 3: 모델 생성**
+- [x] **Step 3: 모델 생성**
 
 `app/models/pg/comment_analysis.py`:
 
@@ -693,7 +693,7 @@ class CommentAnalysis(PgBase):
     )
 ```
 
-- [ ] **Step 4: videos.comment_count 컬럼 추가**
+- [x] **Step 4: videos.comment_count 컬럼 추가**
 
 `app/models/pg/video.py`의 `like_count` 아래에 추가:
 
@@ -701,7 +701,7 @@ class CommentAnalysis(PgBase):
     comment_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 ```
 
-- [ ] **Step 5: 모델 등록과 기존 스키마 자가치유**
+- [x] **Step 5: 모델 등록과 기존 스키마 자가치유**
 
 `app/models/pg/__init__.py`에 다음 줄을 추가한다(`PgBase.metadata`에 테이블이 등록되어야 `ensure_schema`의 `_create_missing`이 생성한다):
 
@@ -715,12 +715,12 @@ from app.models.pg.comment_analysis import CommentAnalysis  # noqa: F401
                     ("videos", "comment_count", "bigint"),
 ```
 
-- [ ] **Step 6: 테스트 통과 확인**
+- [x] **Step 6: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_analysis_models.py -v`
 Expected: PASS (10 passed)
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add app/models/pg/ app/services/db_engine.py tests/test_comment_analysis_models.py
@@ -735,7 +735,7 @@ git commit -m "feat: comment_analyses 테이블 + videos.comment_count"
 - Modify: `app/services/youtube_api.py`
 - Test: `tests/test_comment_fetch.py`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_fetch.py` 생성:
 
@@ -882,12 +882,12 @@ async def test_quota_recorder_called_once_per_page():
     assert recorded == [1, 1]
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_fetch.py -v`
 Expected: FAIL — `ImportError: cannot import name 'CommentsDisabledError'`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `app/services/youtube_api.py`의 `YouTubeQuotaExceededError` 아래에 예외를 추가한다:
 
@@ -1000,19 +1000,19 @@ class VideoMeta:
             raise YouTubeAPIError(f"YouTube API 오류: {resp.status_code} - {resp.text}")
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_fetch.py -v`
 Expected: PASS (6 passed)
 
-- [ ] **Step 5: 회귀 확인**
+- [x] **Step 5: 회귀 확인**
 
 `_get` 오류 처리를 바꿨으므로 기존 YouTube 관련 테스트가 깨지지 않아야 한다.
 
 Run: `python -m pytest tests/ -q`
 Expected: 전체 통과
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add app/services/youtube_api.py tests/test_comment_fetch.py
@@ -1030,7 +1030,7 @@ LLM 응답 파싱은 실패 모드가 많아 순수 함수로 분리해 먼저 �
 - Modify: `app/services/comment_analysis_service.py` (신규 생성, 파서만)
 - Test: `tests/test_comment_parsing.py`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `tests/test_comment_parsing.py` 생성:
 
@@ -1103,12 +1103,12 @@ def test_pick_top_comments_handles_fewer_than_cap():
     assert set(top[0].keys()) == {"author", "text", "like_count", "published_at"}
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_parsing.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.comment_analysis_service'`
 
-- [ ] **Step 3: 프롬프트 모듈 생성**
+- [x] **Step 3: 프롬프트 모듈 생성**
 
 `app/services/comment_prompts.py`:
 
@@ -1155,7 +1155,7 @@ summary는 해당 카테고리 댓글의 주된 내용을, insights는 콘텐츠
 """
 ```
 
-- [ ] **Step 4: 파서 구현**
+- [x] **Step 4: 파서 구현**
 
 `app/services/comment_analysis_service.py` 생성 (이번 태스크에서는 순수 함수만):
 
@@ -1236,12 +1236,12 @@ def pick_top_comments(
     ]
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_parsing.py -v`
 Expected: PASS (9 passed)
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add app/services/comment_prompts.py app/services/comment_analysis_service.py tests/test_comment_parsing.py
@@ -1256,7 +1256,7 @@ git commit -m "feat: 댓글 분류 응답 파서 + 기본 프롬프트"
 - Modify: `app/services/comment_analysis_service.py`, `app/services/settings_types.py`
 - Test: `tests/test_comment_pipeline.py`
 
-- [ ] **Step 1: 프롬프트 설정 필드 추가**
+- [x] **Step 1: 프롬프트 설정 필드 추가**
 
 `app/services/settings_types.py`의 `PromptSettings`에 필드를 추가한다:
 
@@ -1269,7 +1269,7 @@ class PromptSettings:
     comment_analysis_prompt: str = ""
 ```
 
-- [ ] **Step 2: 실패하는 테스트 작성**
+- [x] **Step 2: 실패하는 테스트 작성**
 
 `tests/test_comment_pipeline.py` 생성:
 
@@ -1350,12 +1350,12 @@ def test_group_by_label_tolerates_length_mismatch():
     assert len(grouped[LABEL_NEUTRAL]) == 2
 ```
 
-- [ ] **Step 3: 테스트 실패 확인**
+- [x] **Step 3: 테스트 실패 확인**
 
 Run: `python -m pytest tests/test_comment_pipeline.py -v`
 Expected: FAIL — `ImportError: cannot import name 'classify_comments'`
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 먼저 `app/services/comment_analysis_service.py` 상단의 typing 임포트를 다음으로 교체한다:
 
@@ -1421,12 +1421,12 @@ def group_by_label(
     return grouped
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `python -m pytest tests/test_comment_pipeline.py -v`
 Expected: PASS (5 passed)
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add app/services/comment_analysis_service.py app/services/settings_types.py tests/test_comment_pipeline.py
@@ -1441,7 +1441,7 @@ git commit -m "feat: 댓글 분류 배치 파이프라인 + 라벨 그룹화"
 - Modify: `app/services/comment_analysis_service.py`
 - Test: 없음 (DB·게이트웨이 통합 지점 — Task 13에서 수동 검증)
 
-- [ ] **Step 1: 인사이트 생성 함수 추가**
+- [x] **Step 1: 인사이트 생성 함수 추가**
 
 `app/services/comment_analysis_service.py`에 추가:
 
@@ -1491,7 +1491,7 @@ def parse_insight_response(raw: str) -> Dict[str, Dict[str, Any]]:
     return out
 ```
 
-- [ ] **Step 2: 오케스트레이터 추가**
+- [x] **Step 2: 오케스트레이터 추가**
 
 같은 파일 끝에 추가:
 
@@ -1667,17 +1667,17 @@ async def run_comment_analysis(
         await _fail(str(e))
 ```
 
-- [ ] **Step 3: 임포트 정리 확인**
+- [x] **Step 3: 임포트 정리 확인**
 
 Run: `python -c "import app.services.comment_analysis_service"`
 Expected: 오류 없이 종료
 
-- [ ] **Step 4: 기존 테스트 회귀 확인**
+- [x] **Step 4: 기존 테스트 회귀 확인**
 
 Run: `python -m pytest tests/ -q`
 Expected: 전체 통과
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add app/services/comment_analysis_service.py
@@ -1692,7 +1692,7 @@ git commit -m "feat: 댓글 분석 오케스트레이터 (수집→분류→인�
 - Create: `app/schemas/comment_analysis.py`, `app/routers/comment_analysis.py`
 - Modify: `app/main.py`, `app/routers/auth.py`
 
-- [ ] **Step 1: 스키마 작성**
+- [x] **Step 1: 스키마 작성**
 
 `app/schemas/comment_analysis.py`:
 
@@ -1758,7 +1758,7 @@ class CommentCreditsOut(BaseModel):
     per_analysis_max: int
 ```
 
-- [ ] **Step 2: 라우터 작성**
+- [x] **Step 2: 라우터 작성**
 
 `app/routers/comment_analysis.py`:
 
@@ -1968,7 +1968,7 @@ async def start_by_url(
     return await _start(group, video_pk, video_id, user, payload.limit, background)
 ```
 
-- [ ] **Step 3: `ensure_video_row` 헬퍼 추출**
+- [x] **Step 3: `ensure_video_row` 헬퍼 추출**
 
 `app/routers/videos.py`의 `instant_analyze_video`가 하는 "URL → videos 행 확보" 로직을 재사용 가능한 함수로 꺼낸다. `_ensure_instant_channel` 아래에 추가한다:
 
@@ -2037,7 +2037,7 @@ async def ensure_video_row(group: Group, video_url: str) -> tuple[int, str]:
             return video.video_pk, video_id
 ```
 
-- [ ] **Step 4: 크레딧 조회 엔드포인트**
+- [x] **Step 4: 크레딧 조회 엔드포인트**
 
 `app/routers/auth.py`의 `me_router` 블록에 추가한다:
 
@@ -2069,7 +2069,7 @@ async def my_comment_credits(
 from app.schemas.comment_analysis import CommentCreditsOut
 ```
 
-- [ ] **Step 5: 라우터 등록**
+- [x] **Step 5: 라우터 등록**
 
 `app/main.py`의 임포트에 `comment_analysis`를 추가하고, `videos.router` 등록 아래에 한 줄을 넣는다:
 
@@ -2077,12 +2077,12 @@ from app.schemas.comment_analysis import CommentCreditsOut
 app.include_router(comment_analysis.router, dependencies=_protected)
 ```
 
-- [ ] **Step 6: 앱 부팅 확인**
+- [x] **Step 6: 앱 부팅 확인**
 
 Run: `python -c "from app.main import app; print(len(app.routes))"`
 Expected: 오류 없이 라우트 수 출력
 
-- [ ] **Step 7: 회귀 확인 후 커밋**
+- [x] **Step 7: 회귀 확인 후 커밋**
 
 Run: `python -m pytest tests/ -q`
 Expected: 전체 통과
@@ -2101,7 +2101,7 @@ git commit -m "feat: 댓글 분석 API 라우터 + 크레딧 조회"
 - Modify: `frontend/src/api/types.ts`
 - Test: `frontend/src/components/CommentAnalysis.logic.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `frontend/src/components/CommentAnalysis.logic.test.ts`:
 
@@ -2189,12 +2189,12 @@ describe('cardState', () => {
 })
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cd frontend && npx vitest run src/components/CommentAnalysis.logic.test.ts`
 Expected: FAIL — `Failed to resolve import "./CommentAnalysis.logic"`
 
-- [ ] **Step 3: 순수 로직 구현**
+- [x] **Step 3: 순수 로직 구현**
 
 `frontend/src/components/CommentAnalysis.logic.ts`:
 
@@ -2268,7 +2268,7 @@ export function ratioPercents(
 }
 ```
 
-- [ ] **Step 4: 타입과 API 클라이언트**
+- [x] **Step 4: 타입과 API 클라이언트**
 
 `frontend/src/api/types.ts`에 추가:
 
@@ -2366,12 +2366,12 @@ export const creditsApi = {
 
 Run: `cd frontend && grep -n "^export" src/api/http.ts`
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `cd frontend && npx vitest run src/components/CommentAnalysis.logic.test.ts`
 Expected: PASS (17 passed)
 
-- [ ] **Step 6: 타입 체크와 커밋**
+- [x] **Step 6: 타입 체크와 커밋**
 
 Run: `cd frontend && npx tsc --noEmit`
 Expected: 오류 없음
@@ -2389,7 +2389,7 @@ git commit -m "feat: 댓글 분석 프론트 순수 로직 + API 클라이언트
 - Create: `frontend/src/components/CommentAnalysisCard.tsx`
 - Modify: `frontend/src/pages/VideoDetail.tsx`
 
-- [ ] **Step 1: 카드 컴포넌트 작성**
+- [x] **Step 1: 카드 컴포넌트 작성**
 
 `frontend/src/components/CommentAnalysisCard.tsx`:
 
@@ -2559,7 +2559,7 @@ export default function CommentAnalysisCard({ slug, videoPk }: Props) {
 }
 ```
 
-- [ ] **Step 2: VideoDetail에 삽입**
+- [x] **Step 2: VideoDetail에 삽입**
 
 `frontend/src/pages/VideoDetail.tsx` 상단 임포트에 추가:
 
@@ -2575,19 +2575,19 @@ import CommentAnalysisCard from '../components/CommentAnalysisCard'
 
 `activeSlug`가 이 컴포넌트에 없으면 `const { activeSlug } = useGroup()`으로 가져온다(파일 상단에 `import { useGroup } from '../group/useGroup'`).
 
-- [ ] **Step 3: 타입 체크**
+- [x] **Step 3: 타입 체크**
 
 Run: `cd frontend && npx tsc --noEmit`
 Expected: 오류 없음
 
-- [ ] **Step 4: 기존 프론트 테스트 회귀**
+- [x] **Step 4: 기존 프론트 테스트 회귀**
 
 Run: `cd frontend && npm test`
 Expected: 전체 통과
 
 카드의 상태 분기는 Task 10의 `cardState` 테스트가 이미 5종을 모두 덮는다. 이 저장소에는 `@testing-library/react`가 없고 기존 컴포넌트 테스트(`ProfileCard.test.tsx` 등)도 전부 순수 함수만 검증하므로, 렌더링 테스트를 위해 의존성을 추가하지 않는다.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src/components/CommentAnalysisCard.tsx frontend/src/pages/VideoDetail.tsx
@@ -2602,7 +2602,7 @@ git commit -m "feat: 영상 상세에 댓글 반응 요약 카드"
 - Create: `frontend/src/pages/VideoComments.tsx`, `frontend/src/pages/CommentAnalysis.tsx`
 - Modify: `frontend/src/App.tsx`, `frontend/src/components/Layout.tsx`
 
-- [ ] **Step 1: 결과 상세 페이지**
+- [x] **Step 1: 결과 상세 페이지**
 
 `frontend/src/pages/VideoComments.tsx`:
 
@@ -2727,7 +2727,7 @@ export default function VideoComments() {
 }
 ```
 
-- [ ] **Step 2: URL 입력 진입 페이지**
+- [x] **Step 2: URL 입력 진입 페이지**
 
 `frontend/src/pages/CommentAnalysis.tsx`:
 
@@ -2853,7 +2853,7 @@ export default function CommentAnalysis() {
 }
 ```
 
-- [ ] **Step 3: 라우트 등록**
+- [x] **Step 3: 라우트 등록**
 
 `frontend/src/App.tsx` 임포트에 추가:
 
@@ -2869,7 +2869,7 @@ import VideoComments from './pages/VideoComments'
           <Route path="comment-analysis" element={<CommentAnalysis />} />
 ```
 
-- [ ] **Step 4: 사이드바 메뉴 추가**
+- [x] **Step 4: 사이드바 메뉴 추가**
 
 `frontend/src/components/Layout.tsx`의 `NAV` 배열에서 `instant-analyze` 항목 **아래**에 추가한다(`adminOnly` 없음 — 모든 사용자에게 노출):
 
@@ -2877,17 +2877,17 @@ import VideoComments from './pages/VideoComments'
   { sub: 'comment-analysis', label: '댓글 반응', icon: '💬' },
 ```
 
-- [ ] **Step 5: 타입 체크와 테스트**
+- [x] **Step 5: 타입 체크와 테스트**
 
 Run: `cd frontend && npx tsc --noEmit && npm test`
 Expected: 타입 오류 없음, 전체 테스트 통과
 
-- [ ] **Step 6: 빌드 확인**
+- [x] **Step 6: 빌드 확인**
 
 Run: `cd frontend && npm run build`
 Expected: 빌드 성공
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add frontend/src/pages/VideoComments.tsx frontend/src/pages/CommentAnalysis.tsx frontend/src/App.tsx frontend/src/components/Layout.tsx
@@ -2902,7 +2902,7 @@ DB와 실제 게이트웨이가 필요한 지점을 수동으로 확인한다.
 
 **Files:** 없음 (검증만)
 
-- [ ] **Step 1: 전체 테스트**
+- [x] **Step 1: 전체 테스트**
 
 Run: `python -m pytest tests/ -q`
 Expected: 전체 통과
@@ -2910,13 +2910,13 @@ Expected: 전체 통과
 Run: `cd frontend && npm test`
 Expected: 전체 통과
 
-- [ ] **Step 2: 앱 기동과 스키마 적용**
+- [x] **Step 2: 앱 기동과 스키마 적용**
 
 Run: `uvicorn app.main:app --reload`
 
 부팅 로그에 오류가 없어야 한다. `ensure_control_schema()`가 `comment_analysis_runs` 테이블과 `plans`/`user_limits` 컬럼을 만든다.
 
-- [ ] **Step 3: 기존 그룹 스키마 마이그레이션**
+- [x] **Step 3: 기존 그룹 스키마 마이그레이션**
 
 관리자 UI → **관리자** → **도구** 탭에서 전 스키마 마이그레이션을 실행한다.
 기존 그룹에 `comment_analyses` 테이블과 `videos.comment_count` 컬럼이 생겨야 한다.
@@ -2929,21 +2929,21 @@ SELECT table_schema FROM information_schema.columns
 WHERE table_name = 'videos' AND column_name = 'comment_count';
 ```
 
-- [ ] **Step 4: 관리자 계정으로 E2E**
+- [x] **Step 4: 관리자 계정으로 E2E**
 
 1. 사이드바 **💬 댓글 반응** → URL 입력 → 1,000건 → 분석하기
 2. 영상 상세로 이동 → 하단 카드가 "분석 중"을 표시
 3. 완료 후 비율 막대가 나타나고 **자세히 보기** → 3탭과 대표 댓글이 보임
 4. 관리자는 차감 안내가 뜨지 않고 5,000건 옵션이 활성
 
-- [ ] **Step 5: 일반 사용자 계정으로 쿼터 검증**
+- [x] **Step 5: 일반 사용자 계정으로 쿼터 검증**
 
 1. 일반 사용자로 로그인 → 진입 페이지에 `이번 달 0 / 5회 사용`이 보임
 2. 2,000건 선택 시 드롭다운이 비활성(기본 플랜 상한 1,000건)
 3. 1,000건으로 분석 → 잔여가 4회로 줄어듦
 4. 관리자 화면에서 해당 사용자의 `user_limits.max_comments_per_analysis`를 5000으로 올린 뒤, 2,000건 옵션이 열리고 차감 안내가 `2회 차감`으로 바뀌는지 확인
 
-- [ ] **Step 6: 오류 경로 확인**
+- [x] **Step 6: 오류 경로 확인**
 
 1. 댓글이 비활성화된 영상 URL로 분석 → `이 영상은 댓글이 비활성화되어 있습니다` + **크레딧 미차감** 확인:
 
@@ -2953,7 +2953,7 @@ SELECT COUNT(*) FROM app.comment_analysis_runs WHERE user_id = <id>;
 
 2. 같은 영상에 분석이 진행 중일 때 다시 누르면 409
 
-- [ ] **Step 7: 사용량 원장 확인**
+- [x] **Step 7: 사용량 원장 확인**
 
 ```sql
 SELECT purpose, model, input_tokens, output_tokens, cost_usd
@@ -2962,7 +2962,7 @@ FROM app.ai_usage WHERE purpose = 'comment_analysis' ORDER BY created_at DESC LI
 
 `cost_usd`가 NULL이면 단가표에 해당 모델 prefix가 없는 것이다 — 관리자 전역 설정의 모델 단가표를 확인한다(원장 모델명과 단가표 키가 정확히 맞아야 한다).
 
-- [ ] **Step 8: YouTube 유닛 원장 확인**
+- [x] **Step 8: YouTube 유닛 원장 확인**
 
 ```sql
 SELECT usage_date, key_fp, units FROM app.yt_quota_usage ORDER BY usage_date DESC LIMIT 3;
@@ -2970,7 +2970,7 @@ SELECT usage_date, key_fp, units FROM app.yt_quota_usage ORDER BY usage_date DES
 
 1,000건 분석 후 units가 10 증가해야 한다.
 
-- [ ] **Step 9: 최종 커밋**
+- [x] **Step 9: 최종 커밋**
 
 ```bash
 git add -A
@@ -2981,10 +2981,48 @@ git commit -m "test: 댓글 반응 분석 통합 검증"
 
 ## 완료 기준
 
-- [ ] `python -m pytest tests/ -q` 전체 통과
-- [ ] `cd frontend && npm test` 전체 통과
-- [ ] `cd frontend && npm run build` 성공
-- [ ] 관리자가 수량 제한 없이 분석 가능
-- [ ] 일반 사용자가 월 5회 가중 크레딧으로 제한됨
-- [ ] 댓글 비활성화·LLM 실패 시 크레딧이 차감되지 않음
-- [ ] 기존 사이드바 항목·영상 분석·스케줄러·알림 동작 무변경
+- [x] `python -m pytest tests/ -q` 전체 통과 — 538 passed / 1 failed
+      (`test_instant_analyze_daily_quota_400`은 이 기능과 무관한 기존 실패:
+      즉시분석 라우트가 관리자 전용 403으로 바뀌었는데 테스트는 role=user로 400을 기대)
+- [x] `cd frontend && npm test` 전체 통과 — 76 passed / 13 files
+- [x] `cd frontend && npm run build` 성공 — 363 모듈
+- [x] 관리자가 수량 제한 없이 분석 가능 — `/api/me/comment-credits`가 `unlimited: true`,
+      `per_analysis_max: 100000`. 실제 E2E로 done 확인
+- [x] 일반 사용자가 월 5회 가중 크레딧으로 제한됨 — 실제 분석 후 `used 0 → 1`,
+      원장에 `credits=1` 기록. 5,000건 요청은 400 `플랜 상한(1,000건)을 초과합니다`
+- [x] LLM 실패 시 크레딧이 차감되지 않음 — 게이트웨이 키가 없는 그룹에서 실제로
+      발생, `status=failed` + `used` 0 유지 + 원장 불변. 존재하지 않는 영상(404)·
+      URL 형식 오류(400)도 원장 불변
+      ※ **댓글 비활성화는 실행 검증 못 함** — 실제 후보 영상 5개가 전부 댓글 활성이라
+      트리거되지 않았다. `tests/test_comment_fetch.py`의 단위 테스트로만 덮인다
+- [x] 기존 사이드바 항목·영상 분석·스케줄러·알림 동작 무변경 — 전체 스위트 회귀 없음
+- [x] UI 화면 확인 — 관리자 로그인 상태에서 브라우저로 전 화면 확인
+      · 사이드바 `💬 댓글 반응`이 즉시 분석 아래 노출, 진입 페이지 렌더 정상
+      · 관리자는 크레딧 안내 카드 미노출 + 5,000건 옵션 활성(disabled 없음)
+      · 재분석 클릭 → 카드가 `분석 중입니다… 완료되면 자동으로 갱신됩니다`로 전이
+      · 결과 페이지: 비율 막대, `전체 72건 중 상위 31건 분석 · 모델명`, 3탭
+        (긍정 30/부정 0/중립 1), 요약·키포인트·인사이트 박스·대표 댓글, 빈 카테고리
+        폴백(`해당 카테고리의 댓글이 없습니다`)까지 정상
+      · 실패 상태: 오류 메시지 + `크레딧은 차감되지 않았습니다` 표시, 버튼이
+        `분석하기`로 복귀. 원장과 실제로 일치함을 DB로 교차 확인
+
+## 검증에서 발견된 미해결 항목
+
+1. **`ai_usage.cost_usd`가 NULL로 남아 예산 안전망이 작동하지 않는다.** 단가표 키는
+   `gemini-3.1-flash-lite`인데 원장 모델명은 `gemini/gemini-3.1-flash-lite`이고,
+   `resolve_price_for_model`은 단가표 키가 모델명의 접두사일 때만 매칭한다.
+   이 기능이 만든 문제가 아니다 — 기존 `analysis` 용도도 8행 중 1행만 비용이 있다.
+   설계 스펙 §은 `monthly_cost_budget_usd`를 안전망으로 삼으므로, 관리자 전역 설정의
+   단가표에 `gemini/` 접두사를 포함한 키를 추가해야 실제로 동작한다.
+
+2. **실패한 재분석이 직전 성공 결과를 화면에서 지운다.** `UNIQUE(video_pk)`로 영상당
+   1행이라 재분석은 같은 행을 `running`으로 되돌리고, 실패하면 `failed`로 끝난다.
+   `result` JSONB 자체는 남지만 프론트가 `status === 'done'`일 때만 결과를 그리므로
+   직전의 정상 결과가 보이지 않게 된다. UI 검증 중 실제로 발생했다(긍정 30건 결과가
+   게이트웨이 DNS 실패 후 사라짐). 히스토리 미보존은 설계 결정이지만, 실패 시
+   직전 결과를 계속 보여줄지는 재고 여지가 있다.
+
+3. **분류 배치가 전부 실패해도 환급되지 않는다.** `classify_comments`가 실패를 흡수해
+   계속 진행하므로, 인사이트 호출만 성공하면 `status=done` + `partial=true`로 저장되고
+   크레딧은 차감된 채 "중립 100%" 결과가 남는다. 토큰이 실제 소모됐으니 차감이
+   타당하다고 볼 수도 있어 판단을 보류했다 — 바꾸려면 `failures`로 조건 한 줄이면 된다.

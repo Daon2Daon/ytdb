@@ -89,6 +89,7 @@ class PromptSettings:
     analysis_prompt: str = ""
     digest_prompt: str = ""
     preset_id: Optional[int] = None
+    comment_analysis_prompt: str = ""
 
 
 @dataclass

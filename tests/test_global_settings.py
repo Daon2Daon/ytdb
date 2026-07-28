@@ -63,6 +63,22 @@ async def test_set_global_secret_requires_fernet(monkeypatch):
         await gs.set_global(FakeSession([]), "youtube_api_key", "AIza-x")
 
 
+async def test_set_global_upsert_bumps_updated_at():
+    """UPSERT가 updated_at을 갱신해야 설정 변경 이력을 신뢰할 수 있다.
+
+    모델의 onupdate=func.now()는 ORM UPDATE에만 걸리고 Core pg_insert의
+    on_conflict_do_update에는 적용되지 않는다. set_ 절에 명시하지 않으면
+    updated_at이 최초 삽입 시각에 고정돼, 몇 번을 수정해도 그대로 보인다.
+    """
+    session = FakeSession([FakeResult(None)])
+    await gs.set_global(session, "central_poll_floor_min", "20")
+
+    stmt = session.executed[0]
+    updated = stmt._post_values_clause.update_values_to_set
+    keys = {c.key if hasattr(c, "key") else str(c) for c, _ in updated}
+    assert "updated_at" in keys
+
+
 async def test_get_central_poll_floor_min_default_and_clamp():
     # 행 없음 → 기본 10
     assert await gs.get_central_poll_floor_min(FakeSession([FakeResult(None)])) == 10

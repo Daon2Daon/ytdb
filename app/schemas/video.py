@@ -60,6 +60,7 @@ class VideoDetail(BaseModel):
     duration_seconds: Optional[int]
     view_count: Optional[int]
     like_count: Optional[int]
+    comment_count: Optional[int] = None
     analysis_status: str
     analysis_error: Optional[str]
     notified_at: Optional[datetime]

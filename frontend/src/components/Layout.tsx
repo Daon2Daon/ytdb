@@ -9,6 +9,7 @@ const NAV = [
   { sub: '', label: '대시보드', icon: '🏠', end: true },
   { sub: 'videos', label: '영상 목록', icon: '🎬' },
   { sub: 'instant-analyze', label: '즉시 분석', icon: '🔍', adminOnly: true },
+  { sub: 'comment-analysis', label: '댓글 반응', icon: '💬' },
   { sub: 'digests', label: '다이제스트', icon: '📊' },
   { sub: 'tags', label: '태그 클라우드', icon: '🏷' },
   { sub: 'channels', label: '채널 관리', icon: '📺' },

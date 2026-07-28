@@ -21,11 +21,11 @@ def test_stats_window_cutoff():
 
 def test_build_stats_map():
     metas = [
-        SimpleNamespace(video_id="a", view_count=100, like_count=10),
-        SimpleNamespace(video_id="b", view_count=None, like_count=5),
+        SimpleNamespace(video_id="a", view_count=100, like_count=10, comment_count=7),
+        SimpleNamespace(video_id="b", view_count=None, like_count=5, comment_count=None),
     ]
     m = _build_stats_map(metas)
-    assert m == {"a": (100, 10), "b": (None, 5)}
+    assert m == {"a": (100, 10, 7), "b": (None, 5, None)}
 
 
 def test_build_stats_map_empty():

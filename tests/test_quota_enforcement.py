@@ -10,6 +10,7 @@ from app.services.quota_service import QuotaExceeded
 from app.routers.deps import get_group_or_404
 
 USER = CurrentUser(user_id=2, email="u@x.com", display_name="U", role="user")
+ADMIN = CurrentUser(user_id=1, email="a@x.com", display_name="A", role="admin")
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +24,12 @@ def _cleanup():
 def _as_user():
     async def _dep():
         return USER
+    app.dependency_overrides[require_user] = _dep
+
+
+def _as_admin():
+    async def _dep():
+        return ADMIN
     app.dependency_overrides[require_user] = _dep
 
 
@@ -124,8 +131,32 @@ def test_put_polling_settings_below_plan_floor_400(monkeypatch):
     assert "폴링 주기" in resp.json()["detail"]
 
 
-def test_instant_analyze_daily_quota_400(monkeypatch):
+def test_instant_analyze_forbidden_for_non_admin(monkeypatch):
+    """즉시 분석은 관리자 전용 — 쿼터 검사보다 먼저 403으로 막힌다.
+
+    이 게이트가 나중에 추가되면서 아래 쿼터 테스트가 role=user로는 통과할 수
+    없게 됐다. 게이트 자체를 고정해 같은 일이 조용히 반복되지 않게 한다.
+    """
     _as_user()
+    _as_group()
+
+    async def _never(group):
+        raise AssertionError("403보다 먼저 쿼터를 검사하면 안 됨")
+
+    monkeypatch.setattr("app.routers.videos._instant_quota_check", _never)
+    c = TestClient(app, raise_server_exceptions=False)
+    resp = c.post(
+        "/api/groups/g1/videos/instant",
+        json={"video_url": "https://youtu.be/dQw4w9WgXcQ"},
+    )
+    assert resp.status_code == 403
+    assert "관리자" in resp.json()["detail"]
+
+
+def test_instant_analyze_daily_quota_400(monkeypatch):
+    # 즉시 분석은 관리자 전용이라 일반 사용자는 쿼터 검사에 닿기 전에 403이 난다.
+    # 이 테스트의 대상은 그 뒤의 일일 쿼터 강제이므로 관리자로 요청한다.
+    _as_admin()
     _as_group()
 
     async def _deny(group):

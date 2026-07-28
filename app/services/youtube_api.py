@@ -26,6 +26,10 @@ class YouTubeQuotaExceededError(YouTubeAPIError):
     pass
 
 
+class CommentsDisabledError(YouTubeAPIError):
+    """영상의 댓글이 비활성화됨. LLM 호출 전에 판정되므로 크레딧을 차감하지 않는다."""
+
+
 @dataclass(frozen=True)
 class ChannelMeta:
     channel_id: str
@@ -56,6 +60,16 @@ class VideoMeta:
     like_count: int | None
     channel_id: str | None = None
     channel_title: str | None = None
+    comment_count: int | None = None
+
+
+@dataclass(frozen=True)
+class CommentMeta:
+    comment_id: str
+    author: str
+    text: str
+    like_count: int
+    published_at: str
 
 
 _UC_ID_RE = re.compile(r"^UC[a-zA-Z0-9_-]{20,}$")
@@ -127,6 +141,18 @@ class YouTubeAPIClient:
             f"{self._base_url}/{path.lstrip('/')}", params={**params, "key": self._api_key}
         )
         if resp.status_code != 200:
+            reason = ""
+            try:
+                errors = ((resp.json().get("error") or {}).get("errors")) or []
+                reason = (errors[0].get("reason") or "") if errors else ""
+            except Exception:
+                reason = ""
+            if reason == "commentsDisabled":
+                raise CommentsDisabledError("이 영상은 댓글이 비활성화되어 있습니다.")
+            if reason in ("quotaExceeded", "rateLimitExceeded"):
+                raise YouTubeQuotaExceededError(
+                    f"YouTube API 할당량을 초과했습니다: {reason}"
+                )
             raise YouTubeAPIError(f"YouTube API 오류: {resp.status_code} - {resp.text}")
         return resp.json()
 
@@ -293,6 +319,50 @@ class YouTubeAPIClient:
                         like_count=to_int(stats.get("likeCount")),
                         channel_id=snippet.get("channelId"),
                         channel_title=snippet.get("channelTitle"),
+                        comment_count=to_int(stats.get("commentCount")),
                     )
                 )
         return out
+
+    async def list_comment_threads(
+        self, video_id: str, limit: int, order: str = "relevance"
+    ) -> List["CommentMeta"]:
+        """최상위 댓글을 limit건까지 수집한다(대댓글 제외).
+
+        commentThreads.list는 호출당 1유닛 — 기존 _get 경로를 타므로
+        yt_quota_service 원장에 자동 기록된다. 1,000건 = 10유닛.
+        마지막 페이지에서 limit을 넘는 초과분은 잘라낸다.
+        """
+        out: List[CommentMeta] = []
+        page_token: str | None = None
+        while len(out) < limit:
+            params: Dict[str, Any] = {
+                "part": "snippet",
+                "videoId": video_id,
+                "maxResults": min(100, limit - len(out)),
+                "order": order,
+                "textFormat": "plainText",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            data = await self._get("commentThreads", params, 1)
+            for it in data.get("items") or []:
+                top = (
+                    ((it.get("snippet") or {}).get("topLevelComment") or {}).get("snippet")
+                    or {}
+                )
+                out.append(
+                    CommentMeta(
+                        comment_id=it.get("id") or "",
+                        author=top.get("authorDisplayName") or "",
+                        text=top.get("textDisplay") or "",
+                        like_count=int(top.get("likeCount") or 0),
+                        published_at=top.get("publishedAt") or "",
+                    )
+                )
+                if len(out) >= limit:
+                    break
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+        return out[:limit]

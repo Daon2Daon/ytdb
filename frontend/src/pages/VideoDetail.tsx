@@ -12,6 +12,7 @@ import Spinner from '../components/Spinner'
 import ErrorBanner from '../components/ErrorBanner'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmModal from '../components/ConfirmModal'
+import CommentAnalysisCard from '../components/CommentAnalysisCard'
 
 function ConfidenceBar({ score }: { score: number }) {
   const pct = Math.round(score * 100)
@@ -409,6 +410,8 @@ export default function VideoDetail() {
             )}
           </div>
         )}
+
+        <CommentAnalysisCard slug={activeSlug} videoPk={video.video_pk} />
 
         {video.analysis_error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-700 space-y-1 break-words">
