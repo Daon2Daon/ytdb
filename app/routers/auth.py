@@ -17,6 +17,7 @@ from app.control_db import get_session, get_sessionmaker
 from app.models.control.invitation import Invitation
 from app.models.control.telegram_destination import TelegramDestination
 from app.models.control.user import User
+from app.schemas.comment_analysis import CommentCreditsOut
 from app.schemas.auth import (
     LoginRequest,
     MeResponse,
@@ -210,6 +211,27 @@ async def my_usage(
         ),
         usage=usage,
         plan_expires_at=expires,
+    )
+
+
+@me_router.get("/comment-credits", response_model=CommentCreditsOut)
+async def my_comment_credits(
+    user: CurrentUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> CommentCreditsOut:
+    from app.services.quota_service import count_monthly_credits, effective_limits
+
+    limits = await effective_limits(session, user.user_id)
+    if limits is None:
+        return CommentCreditsOut(
+            used=0, limit=0, unlimited=True, per_analysis_max=100000
+        )
+    used = await count_monthly_credits(session, user.user_id)
+    return CommentCreditsOut(
+        used=used,
+        limit=limits.max_comment_analyses_per_month,
+        unlimited=False,
+        per_analysis_max=limits.max_comments_per_analysis,
     )
 
 

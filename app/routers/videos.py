@@ -130,6 +130,83 @@ async def _ensure_instant_channel(session, default_interval_min: int) -> Channel
     return ch
 
 
+async def ensure_video_row(group: Group, video_url: str) -> tuple[int, str]:
+    """URL/ID로 videos 행을 확보하고 (video_pk, video_id)를 돌려준다.
+
+    이미 등록된 영상이면 그 행을 쓴다. 미등록이면 메타를 조회해 삽입하며,
+    실제 채널이 없으면 __instant__ 가상 채널에 붙인다.
+    댓글 분석의 by-url 진입점과 즉시분석이 이 함수를 공유해 저장 경로를 통일한다.
+    """
+    video_id = _extract_video_id(video_url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="유효한 YouTube 영상 URL/ID가 아닙니다.")
+
+    async with dpm.group_session(group) as session:
+        existing = (
+            await session.execute(select(Video).where(Video.video_id == video_id))
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing.video_pk, video_id
+
+    polling = await get_settings_manager().get_polling(group.group_id)
+    api_key = await resolve_youtube_key(group.group_id)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="YouTube API 키가 없습니다.")
+    polling = replace(polling, youtube_api_key=api_key)
+
+    api = YouTubeAPIClient(polling, recorder=make_recorder(api_key))
+    try:
+        metas = await api.get_video_details([video_id])
+    except YouTubeAPIError as e:
+        raise HTTPException(status_code=400, detail=f"영상 메타 조회 실패: {e}") from e
+    finally:
+        await api.aclose()
+    if not metas:
+        raise HTTPException(status_code=404, detail="해당 영상을 찾을 수 없습니다.")
+    vm = metas[0]
+
+    async with dpm.group_session(group) as session:
+        async with session.begin():
+            channel = (
+                await session.execute(select(Channel).where(Channel.channel_id == vm.channel_id))
+            ).scalar_one_or_none()
+            if channel is None:
+                channel = await _ensure_instant_channel(
+                    session, polling.default_channel_interval_min or 720
+                )
+            # 위 SELECT와 이 INSERT 사이의 경합(동시 by-url 요청)을 닫는다 —
+            # instant_analyze_video와 같은 패턴.
+            stmt = (
+                pg_insert(Video)
+                .values(
+                    channel_pk=channel.channel_pk,
+                    video_id=vm.video_id,
+                    video_url=vm.video_url,
+                    title=vm.title or vm.video_id,
+                    description=vm.description,
+                    thumbnail_url=vm.thumbnail_url,
+                    published_at=parse_iso_datetime(vm.published_at),
+                    duration_seconds=parse_duration_seconds(vm.duration),
+                    view_count=vm.view_count,
+                    like_count=vm.like_count,
+                    comment_count=vm.comment_count,
+                    source_channel_name=vm.channel_title,
+                    analysis_status="pending",
+                )
+                .on_conflict_do_nothing(index_elements=["video_id"])
+                .returning(Video.video_pk)
+            )
+            inserted_pk = (await session.execute(stmt)).scalar_one_or_none()
+            if inserted_pk is not None:
+                return inserted_pk, video_id
+            found = (
+                await session.execute(select(Video).where(Video.video_id == video_id))
+            ).scalar_one_or_none()
+            if found is None:
+                raise HTTPException(status_code=500, detail="영상 등록에 실패했습니다.")
+            return found.video_pk, video_id
+
+
 def _page_number(limit: int, offset: int) -> int:
     if limit <= 0:
         return 1

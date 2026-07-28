@@ -22,6 +22,7 @@ from app.routers import (
     admin,
     auth,
     channels,
+    comment_analysis,
     digests,
     entities,
     groups,
@@ -127,6 +128,7 @@ app.include_router(entities.router, dependencies=_protected)
 app.include_router(settings.router, dependencies=_protected)
 app.include_router(channels.router, dependencies=_protected)
 app.include_router(videos.router, dependencies=_protected)
+app.include_router(comment_analysis.router, dependencies=_protected)
 app.include_router(tags.router, dependencies=_protected)
 app.include_router(digests.router, dependencies=_protected)
 app.include_router(actions.router, dependencies=_protected)
