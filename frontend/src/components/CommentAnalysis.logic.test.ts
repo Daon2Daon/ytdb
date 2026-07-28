@@ -5,6 +5,7 @@ import {
   freshness,
   optionEnabled,
   ratioPercents,
+  showsResult,
 } from './CommentAnalysis.logic'
 
 describe('creditCost', () => {
@@ -77,5 +78,25 @@ describe('cardState', () => {
   })
   it('done이지만 현재 댓글 수를 모르면 done', () => {
     expect(cardState('done', null, 1000)).toBe('done')
+  })
+})
+
+describe('showsResult', () => {
+  it('done이고 결과가 있으면 보여준다', () => {
+    expect(showsResult('done', true)).toBe(true)
+  })
+  it('실패해도 직전 결과가 남아 있으면 계속 보여준다', () => {
+    // 재분석 실패가 멀쩡한 직전 결과를 화면에서 지우지 않도록 한다.
+    expect(showsResult('failed', true)).toBe(true)
+  })
+  it('결과가 없으면 상태와 무관하게 감춘다', () => {
+    expect(showsResult('failed', false)).toBe(false)
+    expect(showsResult('done', false)).toBe(false)
+    expect(showsResult(null, false)).toBe(false)
+  })
+  it('진행 중에는 직전 결과를 보여주지 않는다', () => {
+    // 갱신 중임을 분명히 하기 위해 running 동안은 감춘다.
+    expect(showsResult('running', true)).toBe(false)
+    expect(showsResult('pending', true)).toBe(false)
   })
 })

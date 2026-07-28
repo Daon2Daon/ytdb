@@ -9,6 +9,7 @@ import {
   freshness,
   optionEnabled,
   ratioPercents,
+  showsResult,
 } from './CommentAnalysis.logic'
 
 type Props = { slug: string; videoPk: number }
@@ -85,6 +86,8 @@ export default function CommentAnalysisCard({ slug, videoPk }: Props) {
 
   const running = st === 'running'
   const analyzed = st === 'done' || st === 'stale'
+  // 실패해도 직전 결과가 남아 있으면 계속 보여준다.
+  const withResult = showsResult(data?.status, Boolean(data?.result))
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 space-y-3">
@@ -98,11 +101,14 @@ export default function CommentAnalysisCard({ slug, videoPk }: Props) {
       {st === 'failed' && (
         <div className="text-sm text-red-600 space-y-1">
           <p>{data?.error || '분석에 실패했습니다.'}</p>
-          <p className="text-xs text-gray-500">크레딧은 차감되지 않았습니다.</p>
+          <p className="text-xs text-gray-500">
+            크레딧은 차감되지 않았습니다.
+            {withResult && ' 아래는 직전 분석 결과입니다.'}
+          </p>
         </div>
       )}
 
-      {analyzed && data && (
+      {withResult && data && (
         <div className="space-y-2">
           <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
             <div className="bg-emerald-500" style={{ width: `${pct.positive}%` }} />
@@ -119,7 +125,8 @@ export default function CommentAnalysisCard({ slug, videoPk }: Props) {
           )}
           {fresh.stale && (
             <p className="text-xs text-amber-600">
-              분석 이후 댓글 {fresh.added.toLocaleString()}건이 추가됐습니다. 다시 분석할 수 있습니다.
+              분석 이후 댓글 활동이 있었습니다 (대댓글 포함 {fresh.added.toLocaleString()}건 증가).
+              최상위 댓글이 늘지 않았다면 다시 분석해도 결과는 같을 수 있습니다.
             </p>
           )}
           <Link

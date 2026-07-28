@@ -48,6 +48,21 @@ export function cardState(
   return 'none'
 }
 
+/**
+ * 결과 블록을 그릴지 판정한다.
+ *
+ * 재분석은 같은 행을 덮어쓰므로(UNIQUE(video_pk)) 실패하면 status만 failed가 되고
+ * result JSONB는 남는다. 그때도 직전 결과를 계속 보여줘 멀쩡한 분석이 화면에서
+ * 사라지지 않게 한다. 다만 running 중에는 갱신 중임이 분명하도록 감춘다.
+ */
+export function showsResult(
+  status: string | null | undefined,
+  hasResult: boolean,
+): boolean {
+  if (!hasResult) return false
+  return status === 'done' || status === 'failed'
+}
+
 /** 비율 막대용 백분율. 합이 0이면 전부 0. */
 export function ratioPercents(
   positive: number | null,

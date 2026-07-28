@@ -5,8 +5,11 @@ videos.py가 이미 590줄이라 여기에 더 얹지 않고 별도 라우터로
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.control.group import Group
 from app.models.pg.comment_analysis import (
@@ -32,6 +35,12 @@ from app.services.yt_quota_service import system_hard_blocked
 
 router = APIRouter(prefix="/api/groups/{slug}", tags=["comment-analysis"])
 
+# running 행이 이보다 오래 갱신되지 않았으면 죽은 작업으로 보고 재시작을 허용한다.
+# 프로세스가 분석 도중 죽으면 _fail이 실행되지 않아 행이 running으로 남는데,
+# 이 유예가 없으면 해당 영상은 영구히 409가 되어 UI로 복구할 수 없다.
+# 상한 5,000건이 2~4분, 프론트 폴링 타임아웃이 10분이므로 그보다 넉넉히 잡는다.
+STALE_RUNNING_MINUTES = 15
+
 
 async def _preflight(user: CurrentUser, requested_limit: int) -> None:
     """쿼터 → 예산 → YouTube 하드 게이트 순으로 검사. 모두 400으로 변환."""
@@ -53,34 +62,41 @@ async def _start(
     group: Group, video_pk: int, video_id: str, user: CurrentUser,
     requested_limit: int, background: BackgroundTasks,
 ) -> StartCommentAnalysisResponse:
-    """행을 running으로 만들고 백그라운드 작업을 등록한다."""
+    """행을 running으로 만들고 백그라운드 작업을 등록한다.
+
+    삽입과 진행중 검사를 UPSERT 한 문장으로 처리한다. SELECT 후 INSERT로 나누면
+    동시 요청 두 건이 모두 SELECT를 미스해 UNIQUE(video_pk) 위반(500)이 난다.
+    ON CONFLICT DO UPDATE의 WHERE가 걸러지면 반환 행이 없고, 그것이 곧 409다.
+    """
+    table = CommentAnalysis.__table__
+    stale_before = datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)
     async with dpm.group_session(group) as session:
         async with session.begin():
-            existing = (
-                await session.execute(
-                    select(CommentAnalysis).where(CommentAnalysis.video_pk == video_pk)
+            stmt = (
+                pg_insert(table)
+                .values(
+                    video_pk=video_pk,
+                    status=STATUS_RUNNING,
+                    requested_limit=requested_limit,
                 )
-            ).scalar_one_or_none()
-            if existing is not None and existing.status == STATUS_RUNNING:
-                raise HTTPException(status_code=409, detail="이미 분석이 진행 중입니다.")
-            if existing is None:
-                session.add(
-                    CommentAnalysis(
-                        video_pk=video_pk,
-                        status=STATUS_RUNNING,
-                        requested_limit=requested_limit,
-                    )
+                .on_conflict_do_update(
+                    index_elements=["video_pk"],
+                    set_={
+                        "status": STATUS_RUNNING,
+                        "requested_limit": requested_limit,
+                        "error": None,
+                    },
+                    # 진행 중인 작업은 덮지 않는다. 단 오래 멈춰 있으면 죽은 것으로 보고 인수한다.
+                    where=or_(
+                        table.c.status != STATUS_RUNNING,
+                        table.c.updated_at < stale_before,
+                    ),
                 )
-            else:
-                await session.execute(
-                    update(CommentAnalysis)
-                    .where(CommentAnalysis.video_pk == video_pk)
-                    .values(
-                        status=STATUS_RUNNING,
-                        requested_limit=requested_limit,
-                        error=None,
-                    )
-                )
+                .returning(table.c.video_pk)
+            )
+            claimed = (await session.execute(stmt)).scalar_one_or_none()
+    if claimed is None:
+        raise HTTPException(status_code=409, detail="이미 분석이 진행 중입니다.")
     background.add_task(
         run_comment_analysis, group, video_pk, video_id, user.user_id, requested_limit
     )

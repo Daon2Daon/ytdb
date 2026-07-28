@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Tuple
 
 from app.services.youtube_api import CommentMeta
@@ -149,6 +150,17 @@ async def classify_comments(
                 failures += 1
         labels.extend(label_map[i] for i in range(len(batch)))
     return labels, failures
+
+
+def all_batches_failed(failures: int, comment_count: int, batch_size: int) -> bool:
+    """모든 배치가 실패했는가 — 분류가 한 건도 이뤄지지 않았다는 뜻.
+
+    이 경우 결과는 '중립 100%'가 되어 사용자에게 무가치하므로 크레딧을 환급한다.
+    댓글이 0건이면 배치도 없으므로 0 == 0으로 참이 되지 않게 막는다.
+    """
+    if comment_count <= 0 or failures <= 0:
+        return False
+    return failures >= math.ceil(comment_count / batch_size)
 
 
 def group_by_label(
@@ -321,6 +333,12 @@ async def run_comment_analysis(
                 comments, _call, base_prompt=prompts.comment_analysis_prompt
             )
             grouped = group_by_label(comments, labels)
+            if all_batches_failed(failures, len(comments), BATCH_SIZE):
+                # 분류가 한 건도 안 됐다 — '중립 100%' 결과는 무가치하므로
+                # 인사이트 호출로 비용을 더 쓰지 않고 환급한다.
+                raise RuntimeError(
+                    f"댓글 분류에 모두 실패했습니다({failures}개 배치). 잠시 후 다시 시도해 주세요."
+                )
             insight_raw = await _call(
                 build_insight_prompt(DEFAULT_INSIGHT_PROMPT, grouped), 0
             )

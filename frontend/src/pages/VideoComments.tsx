@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { commentApi } from '../api/comments'
 import type { CommentAnalysisOut, CommentCategory } from '../api/types'
 import { useGroup } from '../group/useGroup'
-import { ratioPercents } from '../components/CommentAnalysis.logic'
+import { ratioPercents, showsResult } from '../components/CommentAnalysis.logic'
 
 const TABS: { key: 'positive' | 'negative' | 'neutral'; label: string; color: string }[] = [
   { key: 'positive', label: '긍정', color: 'bg-emerald-500' },
@@ -60,7 +60,7 @@ export default function VideoComments() {
 
   if (err) return <p className="text-sm text-red-600">{err}</p>
   if (!data) return <p className="text-sm text-gray-500">불러오는 중…</p>
-  if (data.status !== 'done' || !data.result)
+  if (!showsResult(data.status, Boolean(data.result)) || !data.result)
     return <p className="text-sm text-gray-500">아직 분석 결과가 없습니다.</p>
 
   const pct = ratioPercents(data.positive_count, data.negative_count, data.neutral_count)
@@ -85,11 +85,19 @@ export default function VideoComments() {
           <div className="bg-rose-500" style={{ width: `${pct.negative}%` }} />
           <div className="bg-gray-400" style={{ width: `${pct.neutral}%` }} />
         </div>
+        {/* total_count는 YouTube statistics.commentCount라 대댓글을 포함한다.
+            fetched_count는 최상위 댓글만이므로 두 수의 차이가 곧 '잘린 양'은 아니다. */}
         <p className="text-xs text-gray-500">
-          전체 {(data.total_count ?? data.fetched_count ?? 0).toLocaleString()}건 중 상위{' '}
-          {(data.fetched_count ?? 0).toLocaleString()}건 분석
+          전체 {(data.total_count ?? data.fetched_count ?? 0).toLocaleString()}건(대댓글 포함) 중
+          최상위 {(data.fetched_count ?? 0).toLocaleString()}건 분석
           {data.model ? ` · ${data.model}` : ''}
         </p>
+        {data.status === 'failed' && (
+          <p className="text-xs text-amber-600">
+            마지막 재분석이 실패해 직전 결과를 보여주고 있습니다.
+            {data.error ? ` (${data.error})` : ''}
+          </p>
+        )}
         {data.partial && (
           <p className="text-xs text-amber-600">일부 댓글은 분류에 실패해 중립으로 처리했습니다.</p>
         )}
