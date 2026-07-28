@@ -3013,14 +3013,53 @@ git commit -m "test: 댓글 반응 분석 통합 검증"
 작성 시점에는 1~3번이 미해결이었다. **네 건 모두 해결됐으며**, 아래는 그 경위다.
 4번은 계획서 작성 이후 코드 점검에서 새로 발견된 결함이다.
 
-1. ~~**`ai_usage.cost_usd`가 NULL로 남아 예산 안전망이 작동하지 않는다.**~~ → **해결(설정)**
+1. ~~**`ai_usage.cost_usd`가 NULL로 남아 예산 안전망이 작동하지 않는다.**~~ → **해결(설정 + 소급 백필)**
    단가표 키는 `gemini-3.1-flash-lite`인데 원장 모델명은 `gemini/gemini-3.1-flash-lite`이고,
    `resolve_price_for_model`은 단가표 키가 모델명의 접두사일 때만 매칭한다.
    이 기능이 만든 문제가 아니었다 — 기존 `analysis` 용도도 8행 중 1행만 비용이 있었다.
-   코드 수정 없이 관리자 전역 설정의 단가표에 `gemini/` 접두사를 포함한 키를 추가해
-   해소했다. 2026-07-28 실측: `comment_analysis` 원장에 `cost_usd`가
-   `0.000514` / `0.000511`로 정상 기록된다. `monthly_cost_budget_usd` 안전망이
-   이제 실제로 동작한다.
+
+   **두 단계로 해소했다. 둘 다 필요하다.**
+   1. 관리자 전역 설정의 단가표 키에 `gemini/` 접두사를 붙였다(코드 수정 없음).
+      이것만으로는 **이후 기록되는 행만** 고쳐진다 — 비용은 `record_usage` 시점에
+      한 번 계산되고 끝이라, 단가표를 나중에 채워도 과거 행은 NULL로 남는다.
+   2. `POST /api/admin/usage/backfill-costs`(→ `ai_usage_service.backfill_null_costs`)로
+      과거 NULL 행을 현재 단가표로 소급 계산했다. 토큰 수가 행에 보존돼 있어 가능하다.
+      이 백필로 07-13~07-22의 `analysis` 8행이 한꺼번에 채워졌다.
+
+   2026-07-28 실측: `comment_analysis` 원장에 `cost_usd`가 `0.000514` / `0.000511`로
+   기록되고, `monthly_cost_budget_usd` 안전망이 실제로 동작한다.
+
+   **남은 NULL 3행**은 모델이 `gemini/gemini-2.5-flash`(코드 기본값)인데 단가표에
+   항목이 없어서다. 백필도 매칭 실패 모델은 건너뛴다(의도된 동작 — 대시보드 경고 유지).
+   토큰이 0이라 금액 영향은 없다.
+
+   > **⚠️ 이 항목을 다시 조사할 사람에게 — 함정 두 개**
+   >
+   > **(1) 원장만 보면 "처음부터 잘 되고 있었다"로 오독하게 된다.** 위 백필이
+   > 과거 행을 소급으로 채웠기 때문에, 지금 `ai_usage`를 조회하면 07-13부터
+   > 전부 비용이 있는 것처럼 보인다. 실제로는 오늘 백필 전까지 대부분 NULL이었다.
+   > 이 문서의 "8행 중 1행만" 기록이 백필 이전의 실제 상태다.
+   >
+   > **(2) `global_settings.updated_at`을 신뢰하지 말 것.** `set_global`의 UPSERT가
+   > `set_`에 `updated_at`을 빠뜨려, 값을 여러 번 바꿔도 타임스탬프가 최초 삽입
+   > 시각에 고정돼 있었다. 커밋 `ab6e16f`에서 고쳤지만 **그 이전에 기록된 행의
+   > 타임스탬프는 소급 보정되지 않았다** — 단가표 행이 `2026-07-18`로 보이는 것이
+   > 그 잔재다. 이 조사에서 두 번(오늘 낮 한 번, 저녁 점검에서 한 번) 오진을
+   > 유발했다. 설정 변경 시점을 추론하려면 타임스탬프 대신 값 자체와 그 값이
+   > 만들어낸 원장 데이터를 봐야 한다.
+
+   **미해결로 남긴 것:** "8행 중 1행"에서 그 1행의 정체는 확정하지 못했다.
+   접두사 없는 키로는 0행이어야 하므로 그 이전에 또 다른 단가표 상태가 있었다는
+   뜻인데, 백필이 나머지를 같은 공식으로 채워 이제 구분할 수 없다. 결론에는
+   영향이 없어 추측으로 메우지 않고 남겨둔다.
+
+   **정리 — 단가표 키 작성 규칙:** "접두사를 붙인다"가 아니라
+   **"키가 `ai_usage.model`에 기록되는 문자열의 접두사여야 한다"**가 규칙이다.
+   `resolve_price_for_model`에는 정규화가 없고(`model.startswith(prefix)` 최장 매칭),
+   `record_usage` 호출 8곳 모두 설정에 적힌 모델명을 그대로 기록한다. 즉
+   **모델명 설정과 단가표 키는 한 쌍**이며, 한쪽만 바꾸면 조용히 깨진다.
+   `gemini/` 같은 포괄 키를 하나 깔아두면 신규 모델이 NULL로 새는 것을 막을 수 있다
+   (최장 매칭이라 구체 키가 항상 이긴다).
 
 2. ~~**실패한 재분석이 직전 성공 결과를 화면에서 지운다.**~~ → **해결(커밋 bef6cb4)**
    `UNIQUE(video_pk)`로 영상당 1행이라 재분석은 같은 행을 `running`으로 되돌리고,
@@ -3063,7 +3102,39 @@ git commit -m "test: 댓글 반응 분석 통합 검증"
 드러난다. 상태를 갖는 기능은 빈 상태(첫 실행)뿐 아니라 **기존 상태 위에서 다시 실행하는
 경로**를 따로 밟아야 한다.
 
-또한 `bef6cb4`가 동시성 방어(1번 지적)와 고착 인수(2번 지적)를 함께 넣으면서, 뒤에
+### UPSERT의 `updated_at` 누락 — 하루에 두 번 나온 같은 버그
+
+`on_conflict_do_update`의 `set_`에 `updated_at`을 빠뜨리는 실수가 오늘 하루에 두 곳에서
+나왔다. `set_global`(커밋 `ab6e16f`)과 `_start`(커밋 `1f7403b`)다. 원인이 같다 —
+**모델의 `onupdate=func.now()`는 ORM/Core `update()` 경로에만 걸리고 Core `pg_insert`의
+DO UPDATE에는 적용되지 않는다.** 컴파일된 SQL을 보면 SET 절에 아예 나타나지 않는다.
+
+증상이 서로 달라서 같은 버그로 안 보인다는 게 함정이다. `set_global`은 설정 변경
+이력이 조용히 굳었고(→ 조사에서 오진 유발), `_start`는 동시성 방어가 뚫렸다(→ 크레딧
+이중 차감). 공통점은 **둘 다 즉시 드러나지 않고 나중에 다른 얼굴로 나타난다**는 것이다.
+
+패턴이 확인된 뒤 저장소의 `on_conflict_do_update` 7곳 전부를 `onupdate` 보유 테이블
+11개와 교차 점검했다. **현재 남은 구멍은 없다.**
+
+| upsert 위치 | 대상 테이블 | `onupdate` | 상태 |
+|---|---|---|---|
+| `routers/comment_analysis.py` | comment_analyses | 있음 | 수정됨 (`1f7403b`) |
+| `services/global_settings.py` | global_settings | 있음 | 수정됨 (`ab6e16f`) |
+| `services/yt_quota_service.py` | yt_quota_usage | 없음 | `updated_at` 명시 — 안전 |
+| `services/telegram_link_service.py` | telegram_destinations | 없음 | 해당 없음 |
+| `services/channel_registry_service.py` (2곳) | channel_registry, channel_subscriptions | 없음 | 해당 없음 |
+| `services/analyzer.py` | video_analyses | 없음 | 해당 없음 |
+
+`onupdate`를 가진 나머지 테이블(groups, plans, users, videos, digests, channels 등)은
+ORM `update()` 경로로만 갱신되어 정상 적용된다.
+
+**앞으로 `on_conflict_do_update`를 새로 쓸 때**: 대상 테이블에 `onupdate` 컬럼이 있으면
+`set_`에 반드시 직접 넣는다. 확인은 컴파일된 SQL을 보는 게 가장 확실하다 —
+`str(stmt.compile(dialect=postgresql.dialect()))`로 SET 절을 눈으로 보면 1초면 끝난다.
+
+### 그 밖에
+
+`bef6cb4`가 동시성 방어(1번 지적)와 고착 인수(2번 지적)를 함께 넣으면서, 뒤에
 넣은 staleness 조건이 앞의 동시성 방어를 무력화했다. 두 조건이 같은 컬럼을 공유하는데
 그 컬럼의 갱신 주체를 확인하지 않은 탓이다. 당시 이 UPSERT에는 테스트가 없었고
 수동 확인만 있었다 — 지금은 `tests/test_comment_analysis_api.py`가 컴파일된 SQL로
