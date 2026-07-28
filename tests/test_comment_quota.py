@@ -1,6 +1,14 @@
 """댓글 분석 쿼터 순수 함수 테스트 (DB 불필요)."""
 
-from app.services.quota_service import EffectiveLimits, credits_for, quota_verdict
+import pytest
+
+from app.services.quota_service import (
+    EffectiveLimits,
+    QuotaExceeded,
+    check_comment_analysis_quota,
+    credits_for,
+    quota_verdict,
+)
 
 
 def _limits(*, per_month: int = 5, per_analysis: int = 1000) -> EffectiveLimits:
@@ -59,3 +67,57 @@ def test_partial_remaining_cannot_cover_weighted_cost():
 def test_remaining_exactly_covers_weighted_cost():
     lim = _limits(per_month=5, per_analysis=5000)
     assert quota_verdict(lim, used_credits=3, requested_limit=2000) is None
+
+
+class _FakeResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one(self):
+        return self._value
+
+
+class _FakeSession:
+    """execute()가 미리 정한 값을 돌려주는 최소 스텁."""
+
+    def __init__(self, used_credits: int):
+        self._used = used_credits
+
+    async def execute(self, _stmt):
+        return _FakeResult(self._used)
+
+
+async def test_check_passes_for_admin(monkeypatch):
+    async def fake_limits(session, user_id):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.quota_service.effective_limits", fake_limits
+    )
+    # 예외가 나지 않으면 통과
+    await check_comment_analysis_quota(_FakeSession(999), user_id=1, requested_limit=100000)
+
+
+async def test_check_raises_when_exhausted(monkeypatch):
+    async def fake_limits(session, user_id):
+        return _limits()
+
+    monkeypatch.setattr(
+        "app.services.quota_service.effective_limits", fake_limits
+    )
+    with pytest.raises(QuotaExceeded) as ei:
+        await check_comment_analysis_quota(
+            _FakeSession(5), user_id=1, requested_limit=1000
+        )
+    assert ei.value.limit == 5
+    assert ei.value.current == 5
+
+
+async def test_check_passes_when_within_limit(monkeypatch):
+    async def fake_limits(session, user_id):
+        return _limits()
+
+    monkeypatch.setattr(
+        "app.services.quota_service.effective_limits", fake_limits
+    )
+    await check_comment_analysis_quota(_FakeSession(4), user_id=1, requested_limit=1000)

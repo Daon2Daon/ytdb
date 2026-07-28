@@ -249,3 +249,38 @@ def quota_verdict(
             f"잔여 {remaining}회 (월 {cap}회, KST 월초 초기화)"
         )
     return None
+
+
+async def count_monthly_credits(session: AsyncSession, user_id: int) -> int:
+    """당월(KST) 본인 귀속 크레딧 합. 원장이 비면 0."""
+    from app.models.control.comment_analysis_run import CommentAnalysisRun
+    from app.services.ai_usage_service import kst_month_start_utc
+
+    since = kst_month_start_utc(datetime.now(timezone.utc))
+    return int(
+        (
+            await session.execute(
+                select(sa_func.coalesce(sa_func.sum(CommentAnalysisRun.credits), 0)).where(
+                    CommentAnalysisRun.user_id == user_id,
+                    CommentAnalysisRun.created_at >= since,
+                )
+            )
+        ).scalar_one()
+    )
+
+
+async def check_comment_analysis_quota(
+    session: AsyncSession, user_id: int, requested_limit: int
+) -> None:
+    """댓글 분석 쿼터 검사. admin/미존재 사용자는 통과. 초과 시 QuotaExceeded."""
+    limits = await effective_limits(session, user_id)
+    if limits is None:
+        return
+    used = await count_monthly_credits(session, user_id)
+    reason = quota_verdict(limits, used, requested_limit)
+    if reason is not None:
+        raise QuotaExceeded(
+            reason,
+            limit=limits.max_comment_analyses_per_month,
+            current=used,
+        )
