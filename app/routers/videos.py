@@ -646,6 +646,7 @@ async def instant_analyze_video(
                     duration_seconds=parse_duration_seconds(vm.duration),
                     view_count=vm.view_count,
                     like_count=vm.like_count,
+                    comment_count=vm.comment_count,
                     sequence_in_channel=None,
                     analysis_status="pending",
                     retry_count=0,
