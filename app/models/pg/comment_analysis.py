@@ -36,7 +36,9 @@ class CommentAnalysis(PgBase):
         nullable=False,
         unique=True,
     )
-    status: Mapped[str] = mapped_column(Text, nullable=False, default=STATUS_PENDING)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, default=STATUS_PENDING, server_default=f"'{STATUS_PENDING}'"
+    )
     requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     fetched_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -66,6 +66,11 @@ def test_comment_analysis_has_required_columns():
     } <= cols
 
 
+def test_comment_analysis_status_has_db_default():
+    # DB 레벨 DEFAULT (raw insert 경로 보호). 설계 스펙 §2.1의 DEFAULT 'pending'.
+    assert CommentAnalysis.__table__.c.status.server_default is not None
+
+
 def test_video_has_comment_count():
     assert "comment_count" in Video.__table__.columns
     assert Video.__table__.c.comment_count.nullable is True
