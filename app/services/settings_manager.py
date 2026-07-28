@@ -208,6 +208,7 @@ class SettingsManager:
             analysis_prompt=str(d.get("analysis_prompt") or ""),
             digest_prompt=str(d.get("digest_prompt") or ""),
             preset_id=preset_id,
+            comment_analysis_prompt=str(d.get("comment_analysis_prompt") or ""),
         )
 
     async def get_profile(self, group_id: int) -> GroupProfile:

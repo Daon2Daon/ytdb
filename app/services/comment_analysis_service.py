@@ -243,7 +243,7 @@ async def run_comment_analysis(
     from app.services.ai_usage_service import record_usage
     from app.services.comment_prompts import DEFAULT_INSIGHT_PROMPT
     from app.services.db_engine import data_plane_engine_manager as dpm
-    from app.services.global_settings import resolve_youtube_key
+    from app.services.global_settings import resolve_ai_gateway, resolve_youtube_key
     from app.services.llm_client import LiteLLMClient
     from app.services.quota_service import (
         QuotaExceeded, check_comment_analysis_quota, credits_for,
@@ -311,7 +311,10 @@ async def run_comment_analysis(
                 run_id = row.run_id
 
         # 3) 분류 + 인사이트
-        gateway = await get_settings_manager().get_ai_gateway(group.group_id)
+        # resolve_ai_gateway는 그룹값 → 전역 → 기본값 순으로 폴백한다. 저장소의
+        # 다른 AI 소비자(analyzer/digest/monitor 등)가 전부 이 경로를 쓴다 —
+        # settings_manager.get_ai_gateway는 그룹 스코프만 읽어 전역을 무시한다.
+        gateway = await resolve_ai_gateway(group.group_id)
         prompts = await get_settings_manager().get_prompts(group.group_id)
         model = gateway.primary_model
         client = LiteLLMClient(gateway)
