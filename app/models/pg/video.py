@@ -32,6 +32,7 @@ class Video(PgBase):
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     view_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     like_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    comment_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sequence_in_channel: Mapped[int | None] = mapped_column(Integer, nullable=True)
     analysis_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
