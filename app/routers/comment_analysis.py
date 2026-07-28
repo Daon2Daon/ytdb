@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.control.group import Group
@@ -58,42 +58,52 @@ async def _preflight(user: CurrentUser, requested_limit: int) -> None:
         )
 
 
-async def _start(
-    group: Group, video_pk: int, video_id: str, user: CurrentUser,
-    requested_limit: int, background: BackgroundTasks,
-) -> StartCommentAnalysisResponse:
-    """행을 running으로 만들고 백그라운드 작업을 등록한다.
+def build_claim_stmt(video_pk: int, requested_limit: int, now: datetime):
+    """분석 시작 권한을 원자적으로 잡는 UPSERT를 만든다.
 
-    삽입과 진행중 검사를 UPSERT 한 문장으로 처리한다. SELECT 후 INSERT로 나누면
+    삽입과 진행중 검사를 한 문장으로 처리한다. SELECT 후 INSERT로 나누면
     동시 요청 두 건이 모두 SELECT를 미스해 UNIQUE(video_pk) 위반(500)이 난다.
     ON CONFLICT DO UPDATE의 WHERE가 걸러지면 반환 행이 없고, 그것이 곧 409다.
     """
     table = CommentAnalysis.__table__
-    stale_before = datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)
+    stale_before = now - timedelta(minutes=STALE_RUNNING_MINUTES)
+    return (
+        pg_insert(table)
+        .values(
+            video_pk=video_pk,
+            status=STATUS_RUNNING,
+            requested_limit=requested_limit,
+        )
+        .on_conflict_do_update(
+            index_elements=["video_pk"],
+            set_={
+                "status": STATUS_RUNNING,
+                "requested_limit": requested_limit,
+                "error": None,
+                # SQLAlchemy는 on_conflict_do_update의 set_에 Column.onupdate를
+                # 적용하지 않는다. 명시하지 않으면 updated_at이 '직전 실행이 끝난
+                # 시각'으로 남아, 재분석이 시작하자마자 stale로 판정된다 —
+                # 아래 WHERE의 고착 인수 조건이 곧바로 참이 되어 409가 뚫린다.
+                "updated_at": func.now(),
+            },
+            # 진행 중인 작업은 덮지 않는다. 단 오래 멈춰 있으면 죽은 것으로 보고 인수한다.
+            where=or_(
+                table.c.status != STATUS_RUNNING,
+                table.c.updated_at < stale_before,
+            ),
+        )
+        .returning(table.c.video_pk)
+    )
+
+
+async def _start(
+    group: Group, video_pk: int, video_id: str, user: CurrentUser,
+    requested_limit: int, background: BackgroundTasks,
+) -> StartCommentAnalysisResponse:
+    """행을 running으로 만들고 백그라운드 작업을 등록한다."""
+    stmt = build_claim_stmt(video_pk, requested_limit, datetime.now(timezone.utc))
     async with dpm.group_session(group) as session:
         async with session.begin():
-            stmt = (
-                pg_insert(table)
-                .values(
-                    video_pk=video_pk,
-                    status=STATUS_RUNNING,
-                    requested_limit=requested_limit,
-                )
-                .on_conflict_do_update(
-                    index_elements=["video_pk"],
-                    set_={
-                        "status": STATUS_RUNNING,
-                        "requested_limit": requested_limit,
-                        "error": None,
-                    },
-                    # 진행 중인 작업은 덮지 않는다. 단 오래 멈춰 있으면 죽은 것으로 보고 인수한다.
-                    where=or_(
-                        table.c.status != STATUS_RUNNING,
-                        table.c.updated_at < stale_before,
-                    ),
-                )
-                .returning(table.c.video_pk)
-            )
             claimed = (await session.execute(stmt)).scalar_one_or_none()
     if claimed is None:
         raise HTTPException(status_code=409, detail="이미 분석이 진행 중입니다.")
