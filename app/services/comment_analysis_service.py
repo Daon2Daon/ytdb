@@ -162,3 +162,219 @@ def group_by_label(
         label = labels[i] if i < len(labels) else LABEL_NEUTRAL
         grouped.get(label, grouped[LABEL_NEUTRAL]).append(c)
     return grouped
+
+
+def build_insight_prompt(
+    base_prompt: str, grouped: Dict[str, List[CommentMeta]], cap: int = 40
+) -> str:
+    """카테고리별 좋아요순 상위 댓글만 추려 인사이트 프롬프트를 만든다.
+
+    전량을 다시 보내면 입력 토큰이 두 배가 되므로 상위 cap개만 보낸다.
+    """
+    parts: List[str] = [base_prompt]
+    for label in (LABEL_POSITIVE, LABEL_NEGATIVE, LABEL_NEUTRAL):
+        items = sorted(grouped[label], key=lambda c: c.like_count, reverse=True)[:cap]
+        parts.append(f"\n[{label}] ({len(grouped[label])}건)")
+        if not items:
+            parts.append("(없음)")
+        else:
+            parts.extend(f"- {c.text}" for c in items)
+    return "\n".join(parts)
+
+
+def parse_insight_response(raw: str) -> Dict[str, Dict[str, Any]]:
+    """인사이트 응답을 카테고리별 dict로 변환한다. 실패 시 빈 구조."""
+    empty = {"summary": "", "key_points": [], "insights": ""}
+    out = {
+        LABEL_POSITIVE: dict(empty),
+        LABEL_NEGATIVE: dict(empty),
+        LABEL_NEUTRAL: dict(empty),
+    }
+    try:
+        parsed = json.loads(_extract_json_object(_strip_fence(raw)))
+    except (json.JSONDecodeError, TypeError):
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    for label in (LABEL_POSITIVE, LABEL_NEGATIVE, LABEL_NEUTRAL):
+        entry = parsed.get(label)
+        if not isinstance(entry, dict):
+            continue
+        kp = entry.get("key_points")
+        out[label] = {
+            "summary": str(entry.get("summary") or ""),
+            "key_points": [str(x) for x in kp] if isinstance(kp, list) else [],
+            "insights": str(entry.get("insights") or ""),
+        }
+    return out
+
+
+async def run_comment_analysis(
+    group, video_pk: int, video_id: str, user_id: int, requested_limit: int
+) -> None:
+    """BackgroundTasks 진입점. 예외를 밖으로 던지지 않는다.
+
+    크레딧은 수집 완료 후에 확정 기록하고, LLM 실패 시 환급(원장 행 삭제)한다.
+    실행되지 않은 분석에 크레딧을 물리지 않기 위해서다.
+    """
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from sqlalchemy import delete, select, update
+
+    from app.control_db import get_sessionmaker
+    from app.models.control.comment_analysis_run import CommentAnalysisRun
+    from app.models.pg.comment_analysis import (
+        STATUS_DONE, STATUS_FAILED, CommentAnalysis,
+    )
+    from app.models.pg.video import Video
+    from app.services.ai_usage_service import record_usage
+    from app.services.comment_prompts import DEFAULT_INSIGHT_PROMPT
+    from app.services.db_engine import data_plane_engine_manager as dpm
+    from app.services.global_settings import resolve_youtube_key
+    from app.services.llm_client import LiteLLMClient
+    from app.services.quota_service import (
+        QuotaExceeded, check_comment_analysis_quota, credits_for,
+    )
+    from app.services.settings_manager import get_settings_manager
+    from app.services.yt_quota_service import make_recorder
+    from app.services.youtube_api import YouTubeAPIClient
+
+    run_id: int | None = None
+
+    async def _fail(message: str) -> None:
+        if run_id is not None:
+            async with get_sessionmaker()() as s:
+                async with s.begin():
+                    await s.execute(
+                        delete(CommentAnalysisRun).where(
+                            CommentAnalysisRun.run_id == run_id
+                        )
+                    )
+        async with dpm.group_session(group) as s:
+            async with s.begin():
+                await s.execute(
+                    update(CommentAnalysis)
+                    .where(CommentAnalysis.video_pk == video_pk)
+                    .values(status=STATUS_FAILED, error=message[:2000])
+                )
+
+    try:
+        # 1) 수집 — 이 단계 실패는 원장 기록 이전이므로 자연히 무차감이다.
+        polling = await get_settings_manager().get_polling(group.group_id)
+        api_key = await resolve_youtube_key(group.group_id)
+        if not api_key:
+            await _fail("YouTube API 키가 없습니다.")
+            return
+        polling = replace(polling, youtube_api_key=api_key)
+        api = YouTubeAPIClient(polling, recorder=make_recorder(api_key))
+        try:
+            comments = await api.list_comment_threads(video_id, requested_limit)
+        finally:
+            await api.aclose()
+
+        if not comments:
+            await _fail("분석할 댓글이 없습니다.")
+            return
+
+        # 2) 크레딧 확정 — 요청 시점 검사와의 경합을 닫기 위해 같은 트랜잭션에서 재검사.
+        credits = credits_for(requested_limit)
+        async with get_sessionmaker()() as s:
+            async with s.begin():
+                try:
+                    await check_comment_analysis_quota(s, user_id, requested_limit)
+                except QuotaExceeded as e:
+                    await _fail(e.detail)
+                    return
+                row = CommentAnalysisRun(
+                    user_id=user_id,
+                    group_id=group.group_id,
+                    video_id=video_id,
+                    credits=credits,
+                    requested_limit=requested_limit,
+                    comment_count=len(comments),
+                )
+                s.add(row)
+                await s.flush()
+                run_id = row.run_id
+
+        # 3) 분류 + 인사이트
+        gateway = await get_settings_manager().get_ai_gateway(group.group_id)
+        prompts = await get_settings_manager().get_prompts(group.group_id)
+        model = gateway.primary_model
+        client = LiteLLMClient(gateway)
+        totals = {"input": 0, "output": 0}
+
+        async def _call(prompt_text: str, _batch_size: int) -> str:
+            res = await client.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt_text}],
+                response_format={"type": "json_object"},
+                temperature=gateway.temperature,
+            )
+            totals["input"] += res.input_tokens or 0
+            totals["output"] += res.output_tokens or 0
+            return res.content
+
+        try:
+            labels, failures = await classify_comments(
+                comments, _call, base_prompt=prompts.comment_analysis_prompt
+            )
+            grouped = group_by_label(comments, labels)
+            insight_raw = await _call(
+                build_insight_prompt(DEFAULT_INSIGHT_PROMPT, grouped), 0
+            )
+            insights = parse_insight_response(insight_raw)
+        finally:
+            await client.aclose()
+            await record_usage(
+                user_id=user_id,
+                group_id=group.group_id,
+                purpose="comment_analysis",
+                model=model,
+                input_tokens=totals["input"],
+                output_tokens=totals["output"],
+                video_pk=video_pk,
+            )
+
+        # 4) 저장
+        result = {
+            "categories": {
+                label: {
+                    **insights[label],
+                    "top_comments": pick_top_comments(grouped[label]),
+                }
+                for label in (LABEL_POSITIVE, LABEL_NEGATIVE, LABEL_NEUTRAL)
+            },
+            "order": "relevance",
+            "batch_failures": failures,
+        }
+        async with dpm.group_session(group) as s:
+            async with s.begin():
+                # 분석 시점 영상 전체 댓글 수를 스냅샷한다 — 이후 videos.comment_count와
+                # 비교해 신선도 배너를 띄운다. 통계 미갱신 영상은 수집분으로 폴백.
+                current_total = (
+                    await s.execute(
+                        select(Video.comment_count).where(Video.video_pk == video_pk)
+                    )
+                ).scalar_one_or_none()
+                await s.execute(
+                    update(CommentAnalysis)
+                    .where(CommentAnalysis.video_pk == video_pk)
+                    .values(
+                        status=STATUS_DONE,
+                        fetched_count=len(comments),
+                        total_count=current_total or len(comments),
+                        positive_count=len(grouped[LABEL_POSITIVE]),
+                        negative_count=len(grouped[LABEL_NEGATIVE]),
+                        neutral_count=len(grouped[LABEL_NEUTRAL]),
+                        result=result,
+                        model=model,
+                        partial=failures > 0,
+                        error=None,
+                        analyzed_at=datetime.now(timezone.utc),
+                    )
+                )
+    except Exception as e:  # noqa: BLE001 — 백그라운드 작업은 예외를 삼키고 상태로 남긴다
+        print(f"[comment-analysis] 실패: {e}")
+        await _fail(str(e))
