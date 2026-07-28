@@ -24,6 +24,12 @@ class Plan(Base):
     max_video_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     monthly_cost_budget_usd: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
     min_poll_interval_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_comment_analyses_per_month: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
+    )
+    max_comments_per_analysis: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1000"
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

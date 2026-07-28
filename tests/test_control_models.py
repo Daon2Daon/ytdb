@@ -68,6 +68,7 @@ def test_user_limits_model_columns():
     assert cols == {
         "user_id", "max_groups", "max_channels_total", "max_analyses_per_day",
         "max_video_minutes", "monthly_cost_budget_usd", "min_poll_interval_min",
+        "max_comment_analyses_per_month", "max_comments_per_analysis",
         "note", "updated_at",
     }
     # user_id 외 한도 컬럼은 전부 NULL 허용(NULL=플랜 값 사용)

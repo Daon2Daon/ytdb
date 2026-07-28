@@ -32,6 +32,8 @@ class UserLimit(Base):
         Numeric(10, 4), nullable=True
     )
     min_poll_interval_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_comment_analyses_per_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_comments_per_analysis: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()

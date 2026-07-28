@@ -65,6 +65,7 @@ async def ensure_control_schema() -> None:
         analysis_delivery,
         channel_registry,
         channel_subscription,
+        comment_analysis_run,
         global_setting,
         group,
         invitation,
@@ -132,3 +133,31 @@ async def ensure_control_schema() -> None:
                     f"ADD COLUMN IF NOT EXISTS {col} TIMESTAMPTZ"
                 )
             )
+        # 댓글 분석 쿼터: 기존 설치 업그레이드 (멱등).
+        # DEFAULT가 있으므로 기존 플랜 행은 자동으로 5 / 1000을 갖는다.
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".plans '
+                "ADD COLUMN IF NOT EXISTS max_comment_analyses_per_month "
+                "INTEGER NOT NULL DEFAULT 5"
+            )
+        )
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".plans '
+                "ADD COLUMN IF NOT EXISTS max_comments_per_analysis "
+                "INTEGER NOT NULL DEFAULT 1000"
+            )
+        )
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".user_limits '
+                "ADD COLUMN IF NOT EXISTS max_comment_analyses_per_month INTEGER"
+            )
+        )
+        await conn.execute(
+            text(
+                f'ALTER TABLE "{APP_SCHEMA}".user_limits '
+                "ADD COLUMN IF NOT EXISTS max_comments_per_analysis INTEGER"
+            )
+        )
