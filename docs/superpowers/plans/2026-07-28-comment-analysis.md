@@ -2981,10 +2981,12 @@ git commit -m "test: 댓글 반응 분석 통합 검증"
 
 ## 완료 기준
 
-- [x] `python -m pytest tests/ -q` 전체 통과 — 538 passed / 1 failed
-      (`test_instant_analyze_daily_quota_400`은 이 기능과 무관한 기존 실패:
-      즉시분석 라우트가 관리자 전용 403으로 바뀌었는데 테스트는 role=user로 400을 기대)
-- [x] `cd frontend && npm test` 전체 통과 — 76 passed / 13 files
+- [x] `python -m pytest tests/ -q` 전체 통과 — **553 passed / 0 failed**
+      (작성 당시엔 538 passed / 1 failed였다. `test_instant_analyze_daily_quota_400`은
+      이 기능과 무관한 기존 실패로, 즉시분석 라우트가 관리자 전용 403으로 바뀌었는데
+      테스트가 role=user로 400을 기대하던 것 — 커밋 2ff39d9에서 게이트에 맞춰 정리했다)
+- [x] `cd frontend && npm test` 전체 통과 — 80 passed / 13 files
+      (작성 당시 76건. 이후 `showsResult`·claim 관련 테스트가 추가됐다)
 - [x] `cd frontend && npm run build` 성공 — 363 모듈
 - [x] 관리자가 수량 제한 없이 분석 가능 — `/api/me/comment-credits`가 `unlimited: true`,
       `per_analysis_max: 100000`. 실제 E2E로 done 확인
@@ -3006,23 +3008,63 @@ git commit -m "test: 댓글 반응 분석 통합 검증"
       · 실패 상태: 오류 메시지 + `크레딧은 차감되지 않았습니다` 표시, 버튼이
         `분석하기`로 복귀. 원장과 실제로 일치함을 DB로 교차 확인
 
-## 검증에서 발견된 미해결 항목
+## 검증에서 발견된 항목과 처리 결과
 
-1. **`ai_usage.cost_usd`가 NULL로 남아 예산 안전망이 작동하지 않는다.** 단가표 키는
-   `gemini-3.1-flash-lite`인데 원장 모델명은 `gemini/gemini-3.1-flash-lite`이고,
+작성 시점에는 1~3번이 미해결이었다. **네 건 모두 해결됐으며**, 아래는 그 경위다.
+4번은 계획서 작성 이후 코드 점검에서 새로 발견된 결함이다.
+
+1. ~~**`ai_usage.cost_usd`가 NULL로 남아 예산 안전망이 작동하지 않는다.**~~ → **해결(설정)**
+   단가표 키는 `gemini-3.1-flash-lite`인데 원장 모델명은 `gemini/gemini-3.1-flash-lite`이고,
    `resolve_price_for_model`은 단가표 키가 모델명의 접두사일 때만 매칭한다.
-   이 기능이 만든 문제가 아니다 — 기존 `analysis` 용도도 8행 중 1행만 비용이 있다.
-   설계 스펙 §은 `monthly_cost_budget_usd`를 안전망으로 삼으므로, 관리자 전역 설정의
-   단가표에 `gemini/` 접두사를 포함한 키를 추가해야 실제로 동작한다.
+   이 기능이 만든 문제가 아니었다 — 기존 `analysis` 용도도 8행 중 1행만 비용이 있었다.
+   코드 수정 없이 관리자 전역 설정의 단가표에 `gemini/` 접두사를 포함한 키를 추가해
+   해소했다. 2026-07-28 실측: `comment_analysis` 원장에 `cost_usd`가
+   `0.000514` / `0.000511`로 정상 기록된다. `monthly_cost_budget_usd` 안전망이
+   이제 실제로 동작한다.
 
-2. **실패한 재분석이 직전 성공 결과를 화면에서 지운다.** `UNIQUE(video_pk)`로 영상당
-   1행이라 재분석은 같은 행을 `running`으로 되돌리고, 실패하면 `failed`로 끝난다.
-   `result` JSONB 자체는 남지만 프론트가 `status === 'done'`일 때만 결과를 그리므로
-   직전의 정상 결과가 보이지 않게 된다. UI 검증 중 실제로 발생했다(긍정 30건 결과가
-   게이트웨이 DNS 실패 후 사라짐). 히스토리 미보존은 설계 결정이지만, 실패 시
-   직전 결과를 계속 보여줄지는 재고 여지가 있다.
+2. ~~**실패한 재분석이 직전 성공 결과를 화면에서 지운다.**~~ → **해결(커밋 bef6cb4)**
+   `UNIQUE(video_pk)`로 영상당 1행이라 재분석은 같은 행을 `running`으로 되돌리고,
+   실패하면 `failed`로 끝난다. `result` JSONB 자체는 남지만 프론트가
+   `status === 'done'`일 때만 결과를 그려 직전의 정상 결과가 사라졌다.
+   `CommentAnalysis.logic.ts`에 `showsResult(status, hasResult)`를 추가해
+   `failed`일 때도 직전 결과를 계속 표시하고 "아래는 직전 분석 결과입니다" 안내를
+   붙인다. `running` 중에는 갱신 중임이 분명하도록 감춘다. 히스토리 미보존은
+   설계 결정 그대로 유지한다.
 
-3. **분류 배치가 전부 실패해도 환급되지 않는다.** `classify_comments`가 실패를 흡수해
-   계속 진행하므로, 인사이트 호출만 성공하면 `status=done` + `partial=true`로 저장되고
-   크레딧은 차감된 채 "중립 100%" 결과가 남는다. 토큰이 실제 소모됐으니 차감이
-   타당하다고 볼 수도 있어 판단을 보류했다 — 바꾸려면 `failures`로 조건 한 줄이면 된다.
+3. ~~**분류 배치가 전부 실패해도 환급되지 않는다.**~~ → **해결(커밋 bef6cb4)**
+   `classify_comments`가 실패를 흡수해 계속 진행하므로 인사이트 호출만 성공하면
+   `status=done` + `partial=true`로 저장되고 크레딧은 차감된 채 "중립 100%" 결과가
+   남았다. `all_batches_failed(failures, comment_count, batch_size)`를 추가해,
+   모든 배치가 실패하면 인사이트 호출로 비용을 더 쓰지 않고 실패 처리해 환급한다.
+   일부만 실패한 경우는 종전대로 `partial=true`로 진행한다.
+
+4. **`_start`의 UPSERT가 `updated_at`을 갱신하지 않아 재분석 시 409가 뚫렸다.**
+   → **해결(커밋 1f7403b)**
+   SQLAlchemy는 `on_conflict_do_update`의 `set_`에 `Column.onupdate`를 적용하지
+   않는다(Core `update()`와 달리). 그래서 `updated_at`은 '직전 실행이 끝난 시각'만
+   담았고, 15분 staleness 검사가 재려던 '현재 실행의 나이'를 한 번도 재지 못했다.
+   직전 분석이 끝난 지 15분 넘은 영상을 재분석하면 시작하는 순간 이미 stale로
+   판정되어, 곧바로 들어온 두 번째 요청이 409 대신 claim에 다시 성공했다 —
+   백그라운드 작업이 둘 붙어 **크레딧이 이중 차감**되고 LLM 토큰과 YouTube 유닛도
+   두 배로 들었다. 최초 분석은 INSERT가 `server_default`로 `updated_at`을 채워
+   방어가 동작했기 때문에 Task 13 검증에서 드러나지 않았다.
+   `set_`에 `updated_at=func.now()`를 명시해 해결했고, 고착 인수 기능은 유지된다.
+   UPSERT 구성은 DB 없이 검증할 수 있도록 `build_claim_stmt()`로 추출했다.
+
+   검증: 실 Postgres에 실 스키마를 복제해 수정 전/후를 대조했다(수정 전 2회 claim →
+   수정 후 두 번째가 0행). 테스트 서버 실호출로 요청 1 → 202, 요청 2 → 409를 확인했고
+   크레딧 원장·AI 사용량 원장 모두 1행씩만 쌓여 이중 차감이 없음을 교차 확인했다.
+
+## 회고 — 검증이 놓친 지점
+
+4번은 Task 13의 통합 검증을 통과하고도 남아 있었다. 원인은 **검증 시나리오가 항상
+"첫 분석"에서 출발**했기 때문이다. 첫 분석은 INSERT 경로라 `server_default`가
+`updated_at`을 채워 방어가 정상 동작하고, 결함은 "이미 분석된 영상을 다시 분석할 때"만
+드러난다. 상태를 갖는 기능은 빈 상태(첫 실행)뿐 아니라 **기존 상태 위에서 다시 실행하는
+경로**를 따로 밟아야 한다.
+
+또한 `bef6cb4`가 동시성 방어(1번 지적)와 고착 인수(2번 지적)를 함께 넣으면서, 뒤에
+넣은 staleness 조건이 앞의 동시성 방어를 무력화했다. 두 조건이 같은 컬럼을 공유하는데
+그 컬럼의 갱신 주체를 확인하지 않은 탓이다. 당시 이 UPSERT에는 테스트가 없었고
+수동 확인만 있었다 — 지금은 `tests/test_comment_analysis_api.py`가 컴파일된 SQL로
+`set_`과 `WHERE`를 함께 고정한다.
